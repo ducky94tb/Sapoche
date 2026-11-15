@@ -58,5 +58,57 @@ void main() {
       expect(menu.bottom, lessThanOrEqualTo(bar.top), reason: 'the menu is above the bar: $menu against $bar');
       expect(find.text(S.playNext), findsOneWidget);
     });
+
+    testWidgets('closes, and nothing breaks, when the window turns into a phone while it is open', (tester) async {
+      await _likedWithPlayer(tester, songs: 3);
+      await tester.tap(find.byIcon(Icons.more_horiz_rounded).at(1));
+      await tester.pumpAndSettle();
+      expect(find.text(S.playNext), findsOneWidget);
+      // A tablet turned upright: the button the menu came from is made over as the one of a phone
+      tester.view.physicalSize = const Size(420, 800);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text(S.playNext), findsNothing);
+      expect(find.byIcon(Icons.more_horiz_rounded), findsWidgets);
+    });
+
+    testWidgets('closes when the window is turned between two wide layouts', (tester) async {
+      await _likedWithPlayer(tester, songs: 3);
+      await tester.tap(find.byIcon(Icons.more_horiz_rounded).at(1));
+      await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(700, 1000);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text(S.playNext), findsNothing);
+    });
+
+    testWidgets('and the sheet of a phone, turned into a wide window, both go on working', (tester) async {
+      await _likedWithPlayer(tester, songs: 3);
+      tester.view.physicalSize = const Size(420, 800);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.more_horiz_rounded).at(1));
+      await tester.pumpAndSettle();
+      expect(find.text(S.playNext), findsOneWidget);
+      tester.view.physicalSize = const Size(1280, 800);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      // The sheet is still a sheet, and a line of it still does its work
+      await tester.tap(find.text(S.playNext));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text(S.playNext), findsNothing);
+    });
+
+    testWidgets('the "+" of the library, a menu of its own, survives the window turning', (tester) async {
+      await _likedWithPlayer(tester, songs: 1);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.add_rounded).first);
+      await tester.pumpAndSettle();
+      expect(find.text(S.newFolder), findsOneWidget);
+      tester.view.physicalSize = const Size(420, 800);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
   });
 }

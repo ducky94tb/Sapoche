@@ -1,0 +1,2 @@
+Sửa màn hình xám khi xoay tablet hoặc đổi cỡ cửa sổ web
+- Xoay tablet (hoặc kéo đổi cỡ cửa sổ trình duyệt) khi menu "..." của bài hát, album hay playlist đang mở làm cả app xám cho đến khi bấm Back. Nay menu tự đóng khi cửa sổ đổi cỡ và app vẫn như cũ.

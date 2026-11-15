@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show FlutterView;
 
 import 'package:flutter/material.dart';
 
@@ -132,29 +133,87 @@ class _SongHeadState extends State<_SongHead> {
 /// Where a popup menu of [lines] lines (and a head, if [head]) opens from the button of [button]: under it, as a popup
 /// does, unless that would reach the floating player at the foot of a wide window, and then above it. The popup's own
 /// fitting only keeps it on the screen, and the player is drawn on the screen, over the page.
+///
+/// The popup lays itself out again whenever the window changes, and by then the page may have been made over (a tablet
+/// turned on its side gets another layout, so the button is a new one): it keeps to where it last was rather than ask
+/// a button that is gone, which would break the whole screen. [showPopup] closes it as the window changes.
 RelativeRect Function(BuildContext, BoxConstraints) popupAbovePlayer(
   BuildContext button, {
   required int lines,
   bool head = false,
-}) => (route, constraints) {
+}) {
+  // The button's box as it is now: a button made over leaves it detached, and that is how to know it is gone
   final box = button.findRenderObject() as RenderBox;
-  final size = constraints.biggest;
-  final at = box.localToGlobal(Offset.zero) & box.size;
-  // A popup menu is padded 8 dp above and below its lines, and its lines are as tall as a thing to tap
-  final height =
-      16 + lines * kMinInteractiveDimension + (head ? _SongHead.heightOf : 0);
-  final floor = size.height - HomeShell.bottomInsetOf(button);
-  var top = at.top;
-  if (top + height > floor) {
-    // Flipped: its foot on the button's head, and never below the floor
-    top = math.min(at.top, floor) - height;
-    if (top < 8) top = (floor - height).clamp(8.0, size.height);
+  RelativeRect? last;
+  return (route, constraints) {
+    final size = constraints.biggest;
+    if (!box.attached || !box.hasSize) {
+      return last ?? RelativeRect.fromLTRB(0, 0, size.width, size.height);
+    }
+    final at = box.localToGlobal(Offset.zero) & box.size;
+    // A popup menu is padded 8 dp above and below its lines, and its lines are as tall as a thing to tap
+    final height =
+        16 + lines * kMinInteractiveDimension + (head ? _SongHead.heightOf : 0);
+    final floor = size.height - HomeShell.bottomInsetOf(button);
+    var top = at.top;
+    if (top + height > floor) {
+      // Flipped: its foot on the button's head, and never below the floor
+      top = math.min(at.top, floor) - height;
+      if (top < 8) top = (floor - height).clamp(8.0, size.height);
+    }
+    return last = RelativeRect.fromRect(
+      Rect.fromLTWH(at.left, top, at.width, at.height),
+      Offset.zero & size,
+    );
+  };
+}
+
+/// A popup menu of [lines] from the button of [button], with the song at its head if [head]: [showMenu] with the make
+/// and the place every popup of the app has, and one thing more. It closes when the window changes size (a tablet
+/// turned, a browser window dragged), since the place it was opened for is gone with the page it was drawn over.
+Future<String?> showPopup(
+  BuildContext button, {
+  required List<MenuLine> lines,
+  Track? head,
+}) {
+  final p = button.palette;
+  final navigator = Navigator.of(button, rootNavigator: true);
+  final watch = _ClosesOnResize(navigator, View.of(button))..start();
+  return showMenu<String>(
+    context: button,
+    useRootNavigator: true,
+    color: p.menu,
+    surfaceTintColor: Colors.transparent,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    items: popupLines(lines, head: head),
+    positionBuilder: popupAbovePlayer(
+      button,
+      lines: lines.length,
+      head: head != null,
+    ),
+  ).whenComplete(watch.stop);
+}
+
+/// Pops the menu that is on top of [navigator] when the size of [view] changes. A popup is modal, so while this runs it
+/// is the top route.
+class _ClosesOnResize with WidgetsBindingObserver {
+  _ClosesOnResize(this.navigator, this.view) : _size = view.physicalSize;
+
+  final NavigatorState navigator;
+  final FlutterView view;
+  final Size _size;
+
+  void start() => WidgetsBinding.instance.addObserver(this);
+
+  void stop() => WidgetsBinding.instance.removeObserver(this);
+
+  @override
+  void didChangeMetrics() {
+    if (view.physicalSize == _size) return;
+    stop();
+    if (navigator.mounted) navigator.maybePop();
   }
-  return RelativeRect.fromRect(
-    Rect.fromLTWH(at.left, top, at.width, at.height),
-    Offset.zero & size,
-  );
-};
+}
 
 /// The "…" of a song. On a phone it opens a sheet from the bottom, with the cover, the title and the artist of the song
 /// at its head and a line for each thing to do, as the music apps do; where there is room (a tablet on its side, a
@@ -258,20 +317,7 @@ class _SongPopupState extends State<_SongPopup> {
   Future<void> _open() async {
     final made = widget.lines();
     if (made.isEmpty) return;
-    final p = context.palette;
-    final value = await showMenu<String>(
-      context: context,
-      useRootNavigator: true,
-      color: p.menu,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      items: popupLines(made, head: widget.track),
-      positionBuilder: popupAbovePlayer(
-        context,
-        lines: made.length,
-        head: true,
-      ),
-    );
+    final value = await showPopup(context, lines: made, head: widget.track);
     if (value != null && mounted) widget.onSelected(value);
   }
 
@@ -451,16 +497,7 @@ class MoreMenuButton extends StatelessWidget {
         tooltip: label,
         style: style,
         onPressed: () async {
-          final p = button.palette;
-          final value = await showMenu<String>(
-            context: button,
-            useRootNavigator: true,
-            color: p.menu,
-            surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            items: popupLines(lines),
-            positionBuilder: popupAbovePlayer(button, lines: lines.length),
-          );
+          final value = await showPopup(button, lines: lines);
           if (value != null && button.mounted) onSelected(value);
         },
       ),

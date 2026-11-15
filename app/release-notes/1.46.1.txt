@@ -1,0 +1,2 @@
+Fixed a gray screen when turning a tablet or resizing the web window
+- Turning a tablet (or resizing the browser window) while the "..." menu of a song, album or playlist was open turned the whole app gray until you pressed Back. The menu now closes when the window changes size, and the app stays as it was.
