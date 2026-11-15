@@ -1,6 +1,7 @@
 package app.sapoche
 
 import android.app.Application
+import app.sapoche.core.PictureInfo
 import app.sapoche.core.AudioQuality
 import app.sapoche.core.FreshVisitors
 import app.sapoche.core.InnertubePlayer
@@ -46,7 +47,7 @@ class SapocheApp : Application() {
         val limitMb = getSharedPreferences("sapoche", MODE_PRIVATE).getInt("cache_limit_mb", DEFAULT_CACHE_MB)
         caches = MediaCaches(this, limitMb * 1024L * 1024L)
         loudness = LoudnessBook(library, CoroutineScope(SupervisorJob() + Dispatchers.IO))
-        mediaData = MediaData(caches, streams, { videoMaxHeight }, { VideoPicker.budgetKbps(recentBestKbps, weakNetwork) }, { AudioQuality.effective(audioQuality, weakNetwork, bandwidthKbps) }, deviceMusic, loudness) { EventLog.d("cache", it) }
+        mediaData = MediaData(caches, streams, { pictureCeiling() }, { VideoPicker.budgetKbps(recentBestKbps, weakNetwork) }, { AudioQuality.effective(audioQuality, weakNetwork, bandwidthKbps) }, deviceMusic, loudness) { EventLog.d("cache", it) }
         downloader = Downloader(library, mediaData::download, { EventLog.d("download", it) }, ::hasInternet)
         val music = MusicClient(region = ::phoneRegion)
         musicFeed = MusicFeed(music, LyricsClient(), LyricsStore(File(cacheDir, "lyrics")))
@@ -56,6 +57,24 @@ class SapocheApp : Application() {
         heat = Heat(this)
         updater = Updater(this, UpdateClient(Config.SERVER, headers = { Config.authHeaders }))
         updateNotifier = UpdateNotifier(this)
+        watchMetered()
+        // The phone's decoders are listed once, now, instead of while a song waits for its picture
+        Thread { PictureDecoders.maxHeight }.start()
+    }
+
+    /** Keeps [metered] true to the network, and has the picture follow it when it changes. */
+    private fun watchMetered() {
+        val manager = getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        metered = manager.isActiveNetworkMetered
+        manager.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: android.net.Network, capabilities: android.net.NetworkCapabilities) {
+                val now = !capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+                if (now == metered) return
+                metered = now
+                EventLog.d("net", "metered network: $now")
+                refreshPicture?.invoke()
+            }
+        })
     }
 
     /** The country of the phone's settings, like "VN": what YouTube shows first follows it. */
@@ -105,8 +124,28 @@ class SapocheApp : Application() {
             private set
 
         fun noteBandwidth(kbps: Long) {
+            // A ceiling above 1080p waits for a measure (see VideoPicker.startCeiling); the picture goes to it by itself once there is one
             recentBestKbps = maxOf(kbps, recentBestKbps * 85 / 100)
         }
+
+        /** The network is paid by the amount (mobile data, a hotspot of another phone): the picture stays at 1080p. */
+        @Volatile
+        var metered = false
+
+        /** The tallest picture to play now: what the person chose, as far as this phone and this network allow. */
+        fun pictureCeiling(): Int {
+            val chosen = minOf(videoMaxHeight, PictureDecoders.maxHeight)
+            return if (metered) minOf(chosen, VideoPicker.H264_MAX_HEIGHT) else chosen
+        }
+
+        fun pictureBudgetKbps(): Long = VideoPicker.budgetKbps(recentBestKbps, weakNetwork)
+
+        /** What the screen is told of the picture that plays; see [PictureInfo]. */
+        val picture = MutableStateFlow(PictureInfo())
+
+        /** Has [picture] worked out again, on the main thread; set by the playback service. */
+        @Volatile
+        var refreshPicture: (() -> Unit)? = null
 
         lateinit var resolver: NewPipeResolver
             private set

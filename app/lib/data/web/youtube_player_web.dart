@@ -121,10 +121,40 @@ class YoutubePlayer extends PlayerPort {
   /// A frame of 360 or less is given a picture of 480 whatever it is: that is the lowest the frame goes.
   static int _layoutHeight(int quality) => quality <= 480 ? 360 : quality;
 
+  /// A taller picture comes by itself, as the frame is laid out larger; the frame never goes back to a lower one it already
+  /// has, so for a lower one the video is loaded again where it is: the picture and the sound stop for a moment.
   @override
-  void setVideoHeight(int height) {
+  Future<void> setVideoHeight(int height) async {
+    final lower = _layoutHeight(height) < _layoutHeight(_height);
     _height = height;
     _fitFrame();
+    if (lower) await _loadAgain();
+  }
+
+  /// Loads the video again at the place it is, playing if it was playing, once the frame has laid out at its new size.
+  Future<void> _loadAgain() async {
+    final player = _player;
+    final videoId = _loadedVideoId;
+    if (player == null || videoId == null || _waitPlaying != null) return;
+    final generation = _generation;
+    final at = player.getCurrentTime() ?? 0;
+    final wasPlaying = _state == _playing || _state == _buffering;
+    final waiting = _waitPlaying = Completer<void>();
+    player.mute();
+    player.loadVideoById({'videoId': videoId, 'startSeconds': at}.jsify()! as JSObject);
+    try {
+      await waiting.future.timeout(const Duration(seconds: 8));
+    } on TimeoutException {
+      // The frame went on by itself or waits for a tap: nothing more to do here
+    } finally {
+      if (identical(_waitPlaying, waiting)) _waitPlaying = null;
+    }
+    if (generation != _generation) return;
+    if (!wasPlaying) {
+      player.pauseVideo();
+      player.seekTo(at, true);
+    }
+    player.unMute();
   }
 
   void _fitFrame() {

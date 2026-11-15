@@ -432,7 +432,21 @@ final class Bridge {
 
     private func emitPosition() {
         guard visible, sink != nil else { return }
-        emit(UiJson.position(controller.view.value, controller.playerInfo()))
+        let info = controller.playerInfo()
+        emit(UiJson.position(controller.view.value, info))
+        // The heights are part of the state, which is sent again when they change
+        if pictureInfo(info) != lastPicture { emitState() }
+    }
+
+    private var lastPicture = PictureInfo()
+
+    /// What the screen is told of the heights of the picture (see [PictureInfo]).
+    private func pictureInfo(_ player: PlayerInfo) -> PictureInfo {
+        PictureInfo.of(
+            heights: player.videoLevels, now: player.videoLevels.isEmpty ? 0 : player.videoHeight, asked: videoHeight,
+            metered: NetworkState.shared.metered,
+            budgetKbps: VideoPicker.budgetKbps(bandwidthKbps: NetworkState.shared.bandwidthKbps, weak: NetworkState.shared.weak)
+        )
     }
 
     /// Drift and speed change every half second and are not part of the state; and nothing is built or sent while the
@@ -449,8 +463,9 @@ final class Bridge {
 
     private func emitState() {
         guard sink != nil else { return }
+        lastPicture = pictureInfo(controller.playerInfo())
         let state = UiJson.state(controller.view.value, trimMs: controller.trimMs, video: controller.videoMode, videoHeight: videoHeight,
-                                 playbackSpeed: controller.playbackSpeed)
+                                 playbackSpeed: controller.playbackSpeed, picture: lastPicture)
         if state == lastState { return }
         lastState = state
         emit(state)
@@ -793,6 +808,8 @@ final class Bridge {
             }
         case "videoQuality":
             prefs.set(int64("height") > 0 ? int64("height") : 720, for: "video_height")
+            // The song that plays goes to the new height, with its sound going on
+            controller.videoQualityChanged()
             lastState = nil
             emitState()
         case "playbackSpeed":

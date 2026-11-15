@@ -320,10 +320,10 @@ class SapocheBridge(
                     launch {
                         // Drift and speed change every half second and are not part of the state; and
                         // nothing is built or sent while the screen is off, the UI catches up when it returns
-                        combine(group.view.map(::structure).distinctUntilChanged(), shown) { view, on -> view.takeIf { on } }
+                        combine(group.view.map(::structure).distinctUntilChanged(), shown, SapocheApp.picture) { view, on, _ -> view.takeIf { on } }
                             .filterNotNull()
                             .collect { view ->
-                                val state = UiJson.state(view, group.trimMs, group.videoMode, SapocheApp.videoMaxHeight, group.playbackSpeed)
+                                val state = UiJson.state(view, group.trimMs, group.videoMode, SapocheApp.videoMaxHeight, group.playbackSpeed, SapocheApp.picture.value)
                                 if (state != lastState) {
                                     lastState = state
                                     emit(state)
@@ -806,12 +806,12 @@ class SapocheBridge(
                 group.setTrim((call.argument<Number>("ms") ?: 0).toLong())
                 // The trim is part of the state the UI shows, but the room itself did not change
                 lastState = null
-                emit(UiJson.state(group.view.value, group.trimMs, group.videoMode, SapocheApp.videoMaxHeight, group.playbackSpeed))
+                emit(UiJson.state(group.view.value, group.trimMs, group.videoMode, SapocheApp.videoMaxHeight, group.playbackSpeed, SapocheApp.picture.value))
             }
             "videoMode" -> {
                 group.setVideoMode(call.argument<Boolean>("on") == true)
                 lastState = null
-                emit(UiJson.state(group.view.value, group.trimMs, group.videoMode, SapocheApp.videoMaxHeight, group.playbackSpeed))
+                emit(UiJson.state(group.view.value, group.trimMs, group.videoMode, SapocheApp.videoMaxHeight, group.playbackSpeed, SapocheApp.picture.value))
             }
             "videoVisible" -> {
                 pictureShown = call.argument<Boolean>("visible") == true
@@ -822,13 +822,15 @@ class SapocheBridge(
                 val height = (call.argument<Number>("height") ?: SapocheApp.DEFAULT_VIDEO_HEIGHT).toInt()
                 SapocheApp.videoMaxHeight = height
                 prefs.edit().putInt("video_height", height).apply()
+                // The song that plays goes to the new height by itself (see PictureTrackSelector), with no loading of it again
+                SapocheApp.refreshPicture?.invoke()
                 lastState = null
-                emit(UiJson.state(group.view.value, group.trimMs, group.videoMode, SapocheApp.videoMaxHeight, group.playbackSpeed))
+                emit(UiJson.state(group.view.value, group.trimMs, group.videoMode, SapocheApp.videoMaxHeight, group.playbackSpeed, SapocheApp.picture.value))
             }
             "playbackSpeed" -> {
                 group.setPlaybackSpeed((call.argument<Number>("speed") ?: 1).toFloat())
                 lastState = null
-                emit(UiJson.state(group.view.value, group.trimMs, group.videoMode, SapocheApp.videoMaxHeight, group.playbackSpeed))
+                emit(UiJson.state(group.view.value, group.trimMs, group.videoMode, SapocheApp.videoMaxHeight, group.playbackSpeed, SapocheApp.picture.value))
             }
             else -> {
                 when (call.method) {

@@ -83,20 +83,37 @@ final class HlsTests: XCTestCase {
         XCTAssertTrue(text.contains("#EXT-X-TARGETDURATION:6\n"))
     }
 
-    func testTheMasterPlaylistPlaysThePictureWithTheSound() {
-        let video = URL(string: "sapoche-hls://playlist/2-v.m3u8")!
+    func testTheMasterPlaylistListsEveryHeightOfThePictureWithTheSound() {
         let audio = URL(string: "sapoche-hls://playlist/1-a.m3u8")!
-        XCTAssertEqual(HlsPlaylist.master(video: video, videoCodec: "avc1.4d401f", audio: audio, audioCodec: "mp4a.40.2", bandwidth: 830_000), """
+        let high = HlsPlaylist.Variant(url: URL(string: "sapoche-hls://playlist/2-v720.m3u8")!, codec: "avc1.4d401f", width: 1280, height: 720, bandwidth: 700_000, fps: 30)
+        let low = HlsPlaylist.Variant(url: URL(string: "sapoche-hls://playlist/3-v360.m3u8")!, codec: "avc1.4d401e", width: 0, height: 360, bandwidth: 300_000, fps: 0)
+        XCTAssertEqual(HlsPlaylist.master(variants: [high, low], audio: audio, audioCodec: "mp4a.40.2", soundBandwidth: 128_000), """
         #EXTM3U
         #EXT-X-VERSION:7
         #EXT-X-INDEPENDENT-SEGMENTS
         #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="sound",NAME="Sound",DEFAULT=YES,AUTOSELECT=YES,URI="sapoche-hls://playlist/1-a.m3u8"
-        #EXT-X-STREAM-INF:BANDWIDTH=830000,CODECS="avc1.4d401f,mp4a.40.2",AUDIO="sound"
-        sapoche-hls://playlist/2-v.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=828000,CODECS="avc1.4d401f,mp4a.40.2",RESOLUTION=1280x720,FRAME-RATE=30.000,AUDIO="sound"
+        sapoche-hls://playlist/2-v720.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=428000,CODECS="avc1.4d401e,mp4a.40.2",RESOLUTION=640x360,AUDIO="sound"
+        sapoche-hls://playlist/3-v360.m3u8
 
         """)
-        let unknown = HlsPlaylist.master(video: video, videoCodec: "avc1.4d401f", audio: audio, audioCodec: nil, bandwidth: 0)
-        XCTAssertTrue(unknown.contains("#EXT-X-STREAM-INF:BANDWIDTH=1,AUDIO=\"sound\"\n"), "no codecs rather than half of them")
+        let unknown = HlsPlaylist.master(variants: [low], audio: audio, audioCodec: nil, soundBandwidth: 0)
+        XCTAssertTrue(unknown.contains("#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=640x360,AUDIO=\"sound\"\n"), "no codecs rather than half of them")
+    }
+
+    func testAPlaylistKeptAsTheWayToMakeItIsMadeWhenAskedForOnceAndThenKept() async throws {
+        let playlists = HlsPlaylists()
+        let made = ManyCalls()
+        let address = playlists.addLazy(name: "x-720p") { made.add(); return "text" }
+        XCTAssertNil(playlists.text(for: address), "not made yet")
+        let first = try await playlists.resolve(address)
+        let second = try await playlists.resolve(address)
+        XCTAssertEqual([first, second], ["text", "text"])
+        XCTAssertEqual(made.count, 1, "made once")
+        XCTAssertEqual(playlists.text(for: address), "text")
+        let other = try await playlists.resolve(URL(string: "https://example.invalid/x.m3u8")!)
+        XCTAssertNil(other)
     }
 
     func testTheCodecIsReadFromTheType() {
@@ -115,7 +132,7 @@ final class HlsTests: XCTestCase {
         XCTAssertNotEqual(first, second, "the same song twice gets two addresses")
         XCTAssertEqual(playlists.text(for: second), "two")
         XCTAssertNil(playlists.text(for: URL(string: "https://example.invalid/\(first.lastPathComponent)")!))
-        for index in 0..<16 { _ = playlists.add("more \(index)", name: "n") }
+        for index in 0..<24 { _ = playlists.add("more \(index)", name: "n") }
         XCTAssertNil(playlists.text(for: first), "let go")
         XCTAssertNil(playlists.text(for: second), "let go")
     }
@@ -153,6 +170,8 @@ final class IndexedResolver: StreamResolver, @unchecked Sendable {
 
     var audio: [Stream]
     var video: Stream?
+    /// Other heights of the picture, at addresses "v360", "v1080".
+    var otherHeights: [Int: Stream] = [:]
     private(set) var resolves = 0
     /// The server the addresses of the audio name, and what follows the path (a list of other servers, say).
     var host = "example.invalid"
@@ -176,10 +195,13 @@ final class IndexedResolver: StreamResolver, @unchecked Sendable {
             AudioSource(url: "https://\(host)/a\(number)\(query)", mimeType: "audio/mp4; codecs=\"mp4a.40.2\"", bitrateKbps: 128 - number,
                         contentLength: stream.size, itag: 140 - number, index: Self.ranges(stream))
         }
-        let videos = video.map {
+        let videos = (video.map {
             [VideoSource(url: "https://example.invalid/v", height: 720, codec: "avc1.4d401f", bitrateKbps: 700, itag: 136,
                          contentLength: $0.size, index: Self.ranges($0))]
-        } ?? []
+        } ?? []) + otherHeights.sorted { $0.key < $1.key }.map { height, stream in
+            VideoSource(url: "https://example.invalid/v\(height)", height: height, codec: "avc1.4d401f", bitrateKbps: height,
+                        itag: height, contentLength: stream.size, index: Self.ranges(stream), width: height * 16 / 9, fps: 30)
+        }
         return Resolved(track: TrackInfo(videoId: videoId, title: "T", artist: "A", thumbUrl: nil, durationSec: 264),
                         best: sources[0], all: sources, videos: videos, userAgent: "test-agent")
     }
@@ -220,7 +242,9 @@ final class RangedFetcher: FileFetcher, @unchecked Sendable {
 
     private func stream(_ url: URL) -> IndexedResolver.Stream? {
         let name = url.lastPathComponent
-        return name == "v" ? resolver.video : resolver.audio[Int(name.dropFirst()) ?? 0]
+        if name == "v" { return resolver.video }
+        if name.hasPrefix("v"), let height = Int(name.dropFirst()) { return resolver.otherHeights[height] }
+        return resolver.audio[Int(name.dropFirst()) ?? 0]
     }
 }
 
@@ -367,6 +391,40 @@ final class PiecesTests: XCTestCase {
         XCTAssertEqual(fetcher.whole, [])
     }
 
+    func testEveryHeightIsOfferedTheOnePickedStartsAndTheOthersAreLaidOutWhenAsked() async throws {
+        let resolver = IndexedResolver(audio: [stream(pieces: 3, of: 1000)], video: stream(pieces: 5, of: 3000))
+        resolver.otherHeights = [360: stream(pieces: 5, of: 1000), 1080: stream(pieces: 5, of: 6000)]
+        let (media, fetcher, _) = library(resolver)
+        let both = try await XCTUnwrapAsync(await media.pictured("vid00000001", maxHeight: 720))
+        XCTAssertEqual(both.levels.map(\.height), [720, 360, 1080], "the one picked first, the others lowest first")
+        let master = try XCTUnwrap(media.playlists.text(for: both.url))
+        let heights = master.split(separator: "\n").filter { $0.hasPrefix("#EXT-X-STREAM-INF") }
+            .compactMap { $0.components(separatedBy: "RESOLUTION=").last?.components(separatedBy: ",").first }
+        XCTAssertEqual(heights, ["1280x720", "640x360", "1920x1080"])
+        let lists = master.split(separator: "\n").filter { $0.hasPrefix("sapoche-hls://") && !$0.contains("URI=") }.compactMap { URL(string: String($0)) }
+        XCTAssertEqual(lists.count, 3)
+        XCTAssertNotNil(media.playlists.text(for: lists[0]), "what starts is laid out already")
+        XCTAssertNil(media.playlists.text(for: lists[2]), "the other heights are laid out when the player asks")
+        let read = fetcher.ranges.count
+        let resolved = try await media.playlists.resolve(lists[2])
+        let tall = try XCTUnwrap(resolved)
+        XCTAssertTrue(tall.contains("https://example.invalid/v1080"))
+        XCTAssertEqual(fetcher.ranges.count, read + 1, "one read of the index for it")
+        XCTAssertEqual(fetcher.whole, [])
+    }
+
+    func testTheCeilingDecidesWhichHeightStartsAndIsNeverAboveWhatAnIPhonePlays() async throws {
+        let resolver = IndexedResolver(audio: [stream(pieces: 3, of: 1000)], video: stream(pieces: 5, of: 3000))
+        resolver.otherHeights = [360: stream(pieces: 5, of: 1000), 1080: stream(pieces: 5, of: 6000)]
+        let (media, _, _) = library(resolver)
+        let low = try await XCTUnwrapAsync(await media.pictured("vid00000001", maxHeight: 360))
+        XCTAssertEqual(low.levels.first?.height, 360)
+        let high = try await XCTUnwrapAsync(await media.pictured("vid00000001", maxHeight: 2160))
+        XCTAssertEqual(high.levels.first?.height, 1080)
+        XCTAssertEqual(VideoPicker.startCeiling(maxHeight: 2160, budgetKbps: 0), 1080)
+        XCTAssertEqual(VideoPicker.startCeiling(maxHeight: 480, budgetKbps: 9000), 480)
+    }
+
     func testAStreamThatBrokeIsResolvedAgainWhenItIsLoadedNext() async throws {
         let resolver = IndexedResolver(audio: [stream(pieces: 3, of: 1000)])
         let (media, _, _) = library(resolver)
@@ -384,6 +442,14 @@ final class PiecesTests: XCTestCase {
         let both = try await media.pictured("vid00000001", maxHeight: 720)
         XCTAssertNil(both)
     }
+}
+
+/// Counts the calls of a closure that may run on any thread.
+final class ManyCalls: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    var count: Int { lock.withLock { calls } }
+    func add() { lock.withLock { calls += 1 } }
 }
 
 /// XCTUnwrap for a value that took an await to get.

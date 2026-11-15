@@ -1,5 +1,6 @@
 package app.sapoche
 
+import app.sapoche.core.PictureInfo
 import app.sapoche.sync.Connection
 import app.sapoche.sync.MissedReactions
 import app.sapoche.sync.QueueItem
@@ -14,7 +15,7 @@ object UiJson {
      * Structure of what is playing: the room, or outside one the personal queue in the same shape (no
      * room code, no members). Changes rarely, so the UI only rebuilds when this differs.
      */
-    fun state(view: GroupController.View, trimMs: Long, video: Boolean = false, videoHeight: Int = 720, playbackSpeed: Float = 1f): String {
+    fun state(view: GroupController.View, trimMs: Long, video: Boolean = false, videoHeight: Int = 720, playbackSpeed: Float = 1f, picture: PictureInfo = PictureInfo()): String {
         val snap = view.snapshot
         val state = snap.state
         val local = view.local
@@ -44,6 +45,12 @@ object UiJson {
             .put("trimMs", trimMs)
             .put("video", video)
             .put("videoHeight", videoHeight)
+            // The heights the playing song has that this phone plays, the one playing (0 when none), the tallest this phone
+            // plays, and why the picture is shorter than asked: metered, network, video, or null
+            .put("videoHeights", JSONArray(picture.heights))
+            .put("videoHeightNow", picture.now)
+            .put("videoHeightMax", picture.max)
+            .put("videoLimit", picture.limit ?: JSONObject.NULL)
             .put("playbackSpeed", playbackSpeed.toDouble())
             .put("solo", snap.solo)
             .put("soloItemId", snap.soloItemId ?: JSONObject.NULL)

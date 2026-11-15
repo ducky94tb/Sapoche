@@ -1044,6 +1044,11 @@ RoomSnapshot sampleRoom({
   bool? shuffle,
   bool encrypted = false,
   bool encryptionKey = false,
+  int videoHeight = 720,
+  List<int> videoHeights = const [],
+  int videoHeightNow = 0,
+  int videoHeightMax = 1080,
+  String? videoLimit,
 
   /// Outside a room: the personal queue.
   bool local = false,
@@ -1068,6 +1073,11 @@ RoomSnapshot sampleRoom({
   shuffle: shuffle,
   encrypted: encrypted,
   encryptionKey: encryptionKey,
+  videoHeight: videoHeight,
+  videoHeights: videoHeights,
+  videoHeightNow: videoHeightNow,
+  videoHeightMax: videoHeightMax,
+  videoLimit: videoLimit,
   members:
       members ??
       const [

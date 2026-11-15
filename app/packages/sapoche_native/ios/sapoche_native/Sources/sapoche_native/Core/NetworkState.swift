@@ -23,6 +23,15 @@ final class NetworkState: @unchecked Sendable {
         set { lock.withLock { onlineValue = newValue } }
     }
 
+    private var meteredValue = false
+
+    /// The network is paid by the amount or the person asked to spare it (mobile data, the hotspot of another phone: `NWPath.isExpensive`
+    /// and `isConstrained`): a picture taller than 1080p waits for another network. Written by the platform when the path changes.
+    var metered: Bool {
+        get { lock.withLock { meteredValue } }
+        set { lock.withLock { meteredValue = newValue } }
+    }
+
     /// What the player last measured the network to carry, in kbps; 0 until it measured.
     var bandwidthKbps: Int64 {
         get { lock.withLock { bandwidthValue } }

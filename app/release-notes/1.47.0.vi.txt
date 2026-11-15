@@ -1,0 +1,6 @@
+Hình nét hơn tới 4K, đổi chất lượng không dừng bài, và bình luận YouTube
+- Video nay có thể là 1440p hoặc 2160p (4K) trên điện thoại giải mã được bằng phần cứng. Chọn chất lượng ở Cài đặt hoặc trong cài đặt video; chỉ hiện những mức mà bài thật sự có.
+- Đổi chất lượng hình khi đang phát nay có tác dụng ngay và tiếng không bao giờ dừng, kể cả giữa 1080p và 1440p/2160p. Trước đây chỉ áp dụng từ bài sau.
+- Khi dùng dữ liệu di động, hình giữ ở 1080p và bạn được báo một lần cho mỗi bài; sang Wi-Fi thì hình tự lên. Cài đặt video nói vì sao hình thấp hơn mức bạn chọn: mạng chậm, hoặc bài không có mức cao hơn.
+- Điện thoại không phát được quá 1080p thì Cài đặt nói rõ và không hiện các mức cao hơn.
+- Đọc được bình luận YouTube của bài ngay trong player, và số lượt thích hiện bên cạnh.

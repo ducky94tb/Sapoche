@@ -8,6 +8,8 @@ struct PlayerInfo: Equatable {
     var durationMs: Int64 = 0
     var videoWidth = 0
     var videoHeight = 0
+    /// The heights the picture of this song has, lowest first; empty when it plays without one.
+    var videoLevels: [Int] = []
     /// The picture is wanted but this song plays without one.
     var noPicture = false
     /// Paused on this device while the room plays on, see `GroupController.heldBack`.
@@ -54,6 +56,10 @@ protocol PlayerEngine: PlayerPort {
     /// The picture is on screen ([visible]) or not; when it is not, it is neither downloaded nor decoded.
     func setVideoVisible(_ visible: Bool)
 
+    /// The tallest picture asked for changed (`maxVideoHeight`, or the network became metered): the song that plays goes to
+    /// the new height with the sound going on.
+    func videoQualityChanged()
+
     /// The id of the texture the picture is drawn into; throws where pictures cannot be played.
     func videoSurface() throws -> Int64
 
@@ -75,6 +81,7 @@ struct VideoUnavailable: Error, LocalizedError {
 extension PlayerEngine {
     func setVideoMode(_ on: Bool) {}
     func setVideoVisible(_ visible: Bool) {}
+    func videoQualityChanged() {}
     func videoSurface() throws -> Int64 { throw VideoUnavailable() }
     func setVideoWatching(_ on: Bool, width: Int, height: Int) {}
     func pictureInPictureSupported() -> Bool { false }
@@ -580,6 +587,9 @@ final class GroupController {
 
     /// The picture is on screen; when it is not, it is neither downloaded nor decoded.
     func setVideoVisible(_ visible: Bool) { engine.setVideoVisible(visible) }
+
+    /// The tallest picture asked for changed.
+    func videoQualityChanged() { engine.videoQualityChanged() }
 
     /// Where the player draws the picture; throws where pictures cannot be played.
     func videoSurface() throws -> Int64 { try engine.videoSurface() }

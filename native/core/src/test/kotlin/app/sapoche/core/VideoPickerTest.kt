@@ -79,4 +79,44 @@ class VideoPickerTest {
         assertEquals(2706L, VideoPicker.budgetKbps(4300, weak = false))
         assertEquals(1L, VideoPicker.budgetKbps(150, weak = false), "never below one: 0 would mean no limit")
     }
+
+    private fun vp9(height: Int, kbps: Int, codec: String = "vp09.00.50.08") = source(height, format = "WEBM", codec = codec, kbps = kbps)
+
+    @Test
+    fun `above 1080p only VP9 is offered and it is taken when the phone plays it`() {
+        val sources = listOf(source(1080, kbps = 4300), vp9(1440, 9000), vp9(2160, 18000), source(720, kbps = 1000))
+        assertEquals(2160, VideoPicker.pick(sources, 2160)?.height)
+        assertEquals(1440, VideoPicker.pick(sources, 1440)?.height)
+        assertEquals(1080, VideoPicker.pick(sources, 1080)?.height, "a ceiling of 1080 is what it was")
+        assertEquals(1440, VideoPicker.pick(sources, 2160) { it.height <= 1440 }?.height, "this phone plays no more than 1440p")
+        assertEquals("avc1.4d401f", VideoPicker.pick(sources, 2160) { it.height <= 1080 }?.codec, "none above 1080p: as before")
+        assertEquals(1440, VideoPicker.pick(sources, 2160, budgetKbps = 12000)?.height, "2160p does not fit the link")
+        assertEquals(1080, VideoPicker.pick(sources, 2160, budgetKbps = 5000)?.height)
+    }
+
+    @Test
+    fun `HDR is never taken`() {
+        val hdr = vp9(2160, 20000, codec = "vp09.02.51.10.01.09.16.09.00")
+        val sources = listOf(source(1080, kbps = 4300), hdr)
+        assertEquals(1080, VideoPicker.pick(sources, 2160)?.height)
+        assertEquals(listOf(source(1080, kbps = 4300)), VideoPicker.playable(sources) { true })
+    }
+
+    @Test
+    fun `VP9 written as plain vp9 is taken like the one with its profile`() {
+        val sources = listOf(source(1080, kbps = 4300), vp9(2160, 18000, codec = "vp9"))
+        assertEquals(2160, VideoPicker.pick(sources, 2160)?.height)
+    }
+
+    @Test
+    fun `a ceiling above 1080p waits for a measured link`() {
+        assertEquals(1080, VideoPicker.startCeiling(2160, 0))
+        assertEquals(2160, VideoPicker.startCeiling(2160, 3000))
+        assertEquals(720, VideoPicker.startCeiling(720, 0))
+    }
+
+    @Test
+    fun `the heights to choose from are those of the playable streams`() {
+        assertEquals(listOf(360, 720, 1080), VideoPicker.heights(listOf(source(1080), source(360), source(720), vp9(720, 700))))
+    }
 }

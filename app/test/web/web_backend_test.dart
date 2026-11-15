@@ -550,6 +550,37 @@ void main() {
     expect(player.videoHeight, 1080);
   });
 
+  test('a browser is offered pictures up to 2160p', () async {
+    final (backend, _) = await backendWith((_) => http.Response('{}', 200));
+    final events = <BackendEvent>[];
+    backend.events.listen(events.add);
+    await Future<void>.delayed(Duration.zero);
+    expect(events.whereType<StateEvent>().last.snapshot.videoHeightMax, 2160);
+  });
+
+  test('a lower quality says the picture is loaded again until it is back, a higher one says nothing', () async {
+    final (backend, _) = await backendWith((_) => http.Response('{}', 200));
+    final events = <BackendEvent>[];
+    backend.events.listen(events.add);
+    await Future<void>.delayed(Duration.zero);
+    final player = backend.player as FakePlayer;
+    String? limit() => events.whereType<StateEvent>().last.snapshot.videoLimit;
+
+    await backend.setVideoQuality(1440);
+    await Future<void>.delayed(Duration.zero);
+    expect(limit(), isNull, reason: 'taller comes by itself');
+
+    player.videoHeightDone = Completer<void>();
+    final lowering = backend.setVideoQuality(720);
+    await Future<void>.delayed(Duration.zero);
+    expect(limit(), 'reload');
+    expect(player.videoHeight, 720);
+    player.videoHeightDone!.complete();
+    await lowering;
+    await Future<void>.delayed(Duration.zero);
+    expect(limit(), isNull);
+  });
+
   group('a touch on a notice with no page open', () {
     /// A room whose server answers the join with a state and an empty chat.
     SocketOpener room(List<String> sent) => (url, {required onOpen, required onMessage, required onClose}) {

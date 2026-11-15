@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'dart:convert';
 
 import 'package:fake_async/fake_async.dart';
@@ -79,8 +81,14 @@ class FakePlayer extends PlayerPort {
   @override
   void pauseAtEnd(bool on) => pausesAtEnd = on;
 
+  /// Set to hold [setVideoHeight] back, as a picture that is loaded again is.
+  Completer<void>? videoHeightDone;
+
   @override
-  void setVideoHeight(int height) => videoHeight = height;
+  Future<void> setVideoHeight(int height) async {
+    videoHeight = height;
+    await videoHeightDone?.future;
+  }
 
   @override
   void setNext(QueueEntry? item) => calls.add('next ${item?.id}');

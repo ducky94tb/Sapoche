@@ -69,6 +69,9 @@ struct VideoSource: Equatable {
     let itag: Int
     var contentLength: Int64 = -1
     var index: DashRanges? = nil
+    var width = 0
+    /// Frames per second; 0 when the answer does not say.
+    var fps = 0
 }
 
 /// How much sound a song is fetched in, from the least data to the most YouTube offers. [level] is what the settings keep
@@ -134,17 +137,36 @@ enum VideoPicker {
         return max(1, bandwidthKbps * 2 / 3 - soundKbps)
     }
 
+    /// The tallest picture an iPhone plays: H.264 stops there, and above it YouTube has only VP9, which AVFoundation does not
+    /// play (see `docs/systems/ios.md`). Mirrors `VideoPicker.H264_MAX_HEIGHT` of Kotlin.
+    static let maxPlayableHeight = 1080
+
+    /// The tallest the picture may be at the start of a song, as Kotlin's `startCeiling`: nothing above 1080p is ever offered here.
+    static func startCeiling(maxHeight: Int, budgetKbps: Int64) -> Int {
+        min(maxHeight, maxPlayableHeight)
+    }
+
     /// The tallest stream that fits within [maxHeight] and, when [budgetKbps] is above 0, takes no more than it. When
     /// nothing fits (the video has only larger streams, or only dearer ones) the smallest available one is used rather
     /// than none at all. Only H.264 is on offer: it is what an iPhone plays.
     static func pick(_ sources: [VideoSource], maxHeight: Int, budgetKbps: Int64 = 0) -> VideoSource? {
-        let playable = sources.filter { $0.codec.hasPrefix("avc1") }
+        let playable = playable(sources)
         guard !playable.isEmpty else { return nil }
         let fitting = playable.filter { $0.height <= maxHeight && (budgetKbps <= 0 || Int64($0.bitrateKbps) <= budgetKbps) }
         guard let tallest = fitting.map(\.height).max() else {
             return playable.min { ($0.height, $0.bitrateKbps) < ($1.height, $1.bitrateKbps) }
         }
         return fitting.filter { $0.height == tallest }.max { $0.bitrateKbps < $1.bitrateKbps }
+    }
+
+    /// The streams of [sources] this phone plays, which go into the playlist of a song: the H.264 ones.
+    static func playable(_ sources: [VideoSource]) -> [VideoSource] {
+        sources.filter { $0.codec.hasPrefix("avc1") }
+    }
+
+    /// The heights of [sources] that can be chosen, lowest first.
+    static func heights(_ sources: [VideoSource]) -> [Int] {
+        Array(Set(playable(sources).map(\.height))).sorted()
     }
 }
 
@@ -405,7 +427,8 @@ actor YouTubeResolver: StreamResolver {
                   let height = format.at("height").int, height > 0 else { return nil }
             let codec = mime.components(separatedBy: "codecs=\"").last?.components(separatedBy: "\"").first ?? ""
             return VideoSource(url: url, height: height, codec: codec, bitrateKbps: (format.at("bitrate").int ?? 0) / 1000, itag: format.at("itag").int ?? -1,
-                               contentLength: format.at("contentLength").int64 ?? -1, index: DashRanges.of(format))
+                               contentLength: format.at("contentLength").int64 ?? -1, index: DashRanges.of(format),
+                               width: format.at("width").int ?? 0, fps: format.at("fps").int ?? 0)
         }
         return Resolved(track: track, best: best, all: sources, videos: videos)
     }

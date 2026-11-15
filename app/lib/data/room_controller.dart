@@ -236,6 +236,18 @@ class RoomController extends ChangeNotifier {
     }
   }
 
+  /// The song whose picture was last held to 1080p by mobile data, so that the person is told once for each.
+  String? _meteredToldFor;
+
+  /// Mobile data keeps a picture that was asked taller to 1080p: said once for each song, not at every change of state.
+  void _tellMetered(RoomSnapshot snapshot) {
+    if (snapshot.videoLimit != 'metered') return;
+    final song = snapshot.current?.id;
+    if (song == null || song == _meteredToldFor) return;
+    _meteredToldFor = song;
+    _messages.add(S.videoLimitMeteredNotice);
+  }
+
   void _onEvent(BackendEvent event) {
     switch (event) {
       case StateEvent(:final snapshot):
@@ -243,6 +255,7 @@ class RoomController extends ChangeNotifier {
         final code = snapshot.room;
         if (code != null) _recents?.touch(code, name: snapshot.name);
         _snapshot = snapshot;
+        _tellMetered(snapshot);
         _syncSecret(snapshot);
         // The chat belongs to its room: out of it, or in another one, it is gone
         if (_chatRoom != null && code != _chatRoom) _forgetChat();

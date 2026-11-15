@@ -410,7 +410,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('settings-playback')));
     await tester.pumpAndSettle();
     expect(find.text('Autoplay'), findsWidgets);
+    // The heights of the picture are chips that wrap, so the last group is further down than it was
+    await tester.scrollUntilVisible(find.text('Latency trim'), 200);
     expect(find.text('Latency trim'), findsOneWidget);
+    await tester.fling(find.byType(Scrollable).first, const Offset(0, 3000), 3000);
+    await tester.pumpAndSettle();
 
     await tester.pageBack();
     await tester.pumpAndSettle();

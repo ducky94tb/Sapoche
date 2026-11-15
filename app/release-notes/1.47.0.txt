@@ -1,0 +1,6 @@
+Sharper video up to 4K, change the quality without stopping the song, and YouTube comments
+- Video can now be 1440p or 2160p (4K) on phones that decode it in hardware. Pick the quality in Settings or in the video's settings; only the heights the song really has are offered.
+- Changing the picture quality while a song plays now takes effect at once and the sound never stops, also between 1080p and 1440p/2160p. Before it only applied from the next song.
+- On mobile data the picture stays at 1080p and you are told once for each song; on Wi-Fi it goes up by itself. The video settings say why the picture is lower than the one you chose: slow network, or the song has nothing taller.
+- On phones that cannot play more than 1080p, Settings says so and does not offer the taller heights.
+- You can read the YouTube comments of a song in the player, and its like count shows beside it.

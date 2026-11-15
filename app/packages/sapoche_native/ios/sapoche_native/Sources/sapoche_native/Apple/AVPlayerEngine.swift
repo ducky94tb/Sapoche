@@ -59,6 +59,8 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
     private var cancellables: Set<AnyCancellable> = []
     private var itemCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     private var outputs: [ObjectIdentifier: AVPlayerItemVideoOutput] = [:]
+    /// The heights of the picture of an item made with all of them (see `MediaLibrary.pictured`), by item.
+    private var levels: [ObjectIdentifier: [VideoSource]] = [:]
     private var sessionActive = false
     /// The last item whose failure was told, so that it is told once.
     private weak var reportedFailure: AVPlayerItem?
@@ -280,6 +282,7 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
             durationMs: seconds.isFinite && seconds > 0 ? Int64(seconds * 1000) : 0,
             videoWidth: Int(size.width),
             videoHeight: Int(size.height),
+            videoLevels: currentHasVideo ? VideoPicker.heights(currentPlayerItem.flatMap { levels[ObjectIdentifier($0)] } ?? []) : [],
             noPicture: wantsVideo && current != nil && !currentHasVideo && pictureless == current?.videoId,
             speed: speed
         )
@@ -399,6 +402,8 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
         let video: Bool
         let inPieces: Bool
         let streamed: Bool
+        /// The heights of the picture, when the playlist holds more than one.
+        var levels: [VideoSource] = []
     }
 
     /// Makes the item for a song: its sound, and its picture with it when that is wanted and the video has one. The two
@@ -408,7 +413,9 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
         if wantsVideo && pictureInPieces {
             do {
                 if let both = try await library.pictured(queued.videoId, maxHeight: maxVideoHeight(), budgetKbps: pictureBudgetKbps()) {
-                    return Built(item: withPicture(plain(asset(both))), video: true, inPieces: true, streamed: true)
+                    let item = withPicture(plain(asset(both)))
+                    applyCeiling(item, both.levels)
+                    return Built(item: item, video: true, inPieces: true, streamed: true, levels: both.levels)
                 }
             } catch {
                 // Cancelled when the song was changed meanwhile: nothing went wrong
@@ -429,6 +436,29 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
             }
         }
         return Built(item: plain(audio), video: false, inPieces: false, streamed: !playable.isFile)
+    }
+
+    /// The tallest the player may go to for [item], which holds [levels]: the biggest of them within the height asked for, or the
+    /// smallest when all are taller. Changing it while the song plays has the player move to the new height by itself, the
+    /// sound going on; how it goes while the link is slow is the player's, which may stay lower.
+    private func applyCeiling(_ item: AVPlayerItem, _ levels: [VideoSource]) {
+        guard !levels.isEmpty else { return }
+        self.levels[ObjectIdentifier(item)] = levels
+        let asked = VideoPicker.startCeiling(maxHeight: maxVideoHeight(), budgetKbps: 0)
+        let within = levels.filter { $0.height <= asked }
+        let allowed = within.isEmpty ? levels.filter { $0.height == levels.map(\.height).min() } : within
+        let tallest = allowed.map(\.height).max() ?? 0
+        let width = allowed.map { $0.width > 0 ? $0.width : $0.height * 16 / 9 }.max() ?? 0
+        item.preferredMaximumResolution = CGSize(width: width, height: tallest)
+    }
+
+    /// The tallest picture asked for changed: what plays and what is queued go to the new height where they can. A picture
+    /// put beside the sound in a composition (the way out when the pieces would not play) has one height and keeps it.
+    func videoQualityChanged() {
+        for item in [currentPlayerItem, queuedPlayerItem].compactMap({ $0 }) {
+            if let held = levels[ObjectIdentifier(item)] { applyCeiling(item, held) }
+        }
+        onChange?()
     }
 
     /// Lets the picture of [item] be drawn into the texture.
@@ -543,6 +573,7 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
             player.remove(queued)
             itemCancellables[ObjectIdentifier(queued)] = nil
             outputs[ObjectIdentifier(queued)] = nil
+            levels[ObjectIdentifier(queued)] = nil
         }
         queuedPlayerItem = nil
         queuedHasVideo = false
@@ -556,6 +587,9 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
         let kept = keeping.flatMap { item in outputs[ObjectIdentifier(item)].map { (ObjectIdentifier(item), $0) } }
         outputs.removeAll()
         if let kept { outputs[kept.0] = kept.1 }
+        let keptLevels = keeping.flatMap { item in levels[ObjectIdentifier(item)].map { (ObjectIdentifier(item), $0) } }
+        levels.removeAll()
+        if let keptLevels { levels[keptLevels.0] = keptLevels.1 }
     }
 
     /// Waits until the item can start at once; throws when it cannot be played or takes too long.

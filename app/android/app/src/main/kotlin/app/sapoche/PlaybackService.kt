@@ -24,6 +24,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.dash.DashMediaSource
+import app.sapoche.core.PictureInfo
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -94,10 +96,15 @@ class PlaybackService : MediaLibraryService() {
             pictureShown = { SapocheApp.pictureShown },
         )
 
+        val pictures = PictureTrackSelector(this, SapocheApp::pictureCeiling, SapocheApp::pictureBudgetKbps)
+        SapocheApp.refreshPicture = { main.post { if (::player.isInitialized) publishPicture() } }
+
         player = ExoPlayer.Builder(this)
+            .setTrackSelector(pictures)
             .setMediaSourceFactory(
                 SapocheMediaSourceFactory(
                     DefaultMediaSourceFactory(dataSourceFactory).setLoadErrorHandlingPolicy(PatientLoadErrorPolicy()),
+                    DashMediaSource.Factory(dataSourceFactory).setLoadErrorHandlingPolicy(PatientLoadErrorPolicy()),
                 ),
             )
             .setLoadControl(loadControl)
@@ -637,6 +644,21 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** Tells the screen the heights the picture has and which plays (see [PictureInfo]); on the main thread. */
+    private fun publishPicture() {
+        val heights = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+            .flatMap { group -> (0 until group.length).filter { group.isTrackSupported(it) }.map { group.getTrackFormat(it).height } }
+            .filter { it > 0 }.distinct().sorted()
+        val info = PictureInfo.of(
+            heights, player.videoFormat?.height ?: 0, SapocheApp.videoMaxHeight, PictureDecoders.maxHeight,
+            SapocheApp.metered, SapocheApp.pictureBudgetKbps(),
+        )
+        if (info != SapocheApp.picture.value) {
+            EventLog.d("picture", "heights=${info.heights} now=${info.now}p max=${info.max}p limit=${info.limit}")
+            SapocheApp.picture.value = info
+        }
+    }
+
     private inner class PlayerEvents : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             EventLog.d("player", "state=${stateName(playbackState)} item=${currentId()}")
@@ -660,6 +682,17 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
             updateWidgets()
+        }
+
+        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) = publishPicture()
+
+        private var sizeHeight = 0
+
+        // Told again at every surface it is given, which is no news: only a new height is
+        override fun onVideoSizeChanged(size: androidx.media3.common.VideoSize) {
+            if (size.height == sizeHeight) return
+            sizeHeight = size.height
+            publishPicture()
         }
 
         override fun onPlayerError(error: PlaybackException) {

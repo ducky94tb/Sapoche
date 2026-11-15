@@ -425,6 +425,12 @@ actor StreamCache {
         return (pick, resolved.userAgent)
     }
 
+    /// Every picture stream of [videoId] an iPhone plays, with the user agent they expect; empty when it has none.
+    func videos(_ videoId: String) async throws -> (sources: [VideoSource], userAgent: String) {
+        let resolved = try await resolved(videoId)
+        return (VideoPicker.playable(resolved.videos), resolved.userAgent)
+    }
+
     /// What is known about the song: its title, artist, picture and length, from the same resolve as its stream.
     func track(_ videoId: String) async throws -> TrackInfo {
         try await resolved(videoId).track
@@ -475,6 +481,8 @@ struct Playable: Equatable {
     let url: URL
     let isFile: Bool
     let headers: [String: String]
+    /// The heights of the picture a playlist holds, the one it starts with first; empty when it holds one stream or none.
+    var levels: [VideoSource] = []
 
     /// Whether this is a playlist kept in [HlsPlaylists], which the player reads through a resource loader.
     var isPlaylist: Bool { url.scheme == HlsPlaylists.scheme }
@@ -638,21 +646,44 @@ actor MediaLibrary {
         return Playable(url: url, isFile: false, headers: ["User-Agent": pick.userAgent])
     }
 
-    /// The sound of [videoId] with its picture, at most [maxHeight] tall and what [budgetKbps] allows, both played from their streams in pieces: one
-    /// playlist of the two. Nil when the video has no picture an iPhone plays or the picture has no index; throws
-    /// when the pieces cannot be laid out.
+    /// The sound of [videoId] with its picture, every height of it the phone plays in one master playlist, to start with the
+    /// one that fits [maxHeight] and what [budgetKbps] allows: the player moves to another height with the sound going on
+    /// when asked to (`preferredMaximumResolution`) or when the link says so. The pieces of each stream are laid out when
+    /// the player asks for its playlist, and read from its index then. Nil when the video has no picture an iPhone plays or
+    /// the one to start with has no index; throws when the sound's pieces cannot be laid out.
     func pictured(_ videoId: String, maxHeight: Int, budgetKbps: Int64 = 0) async throws -> Playable? {
         if LocalMusic.isLocal(videoId) { return nil }
-        guard let picture = try await streams.video(videoId, maxHeight: maxHeight, budgetKbps: budgetKbps), let index = picture.source.index,
-              let pictureURL = URL(string: picture.source.url) else { return nil }
+        let (sources, userAgent) = try await streams.videos(videoId)
+        let startCeiling = VideoPicker.startCeiling(maxHeight: maxHeight, budgetKbps: budgetKbps)
+        guard let first = VideoPicker.pick(sources, maxHeight: startCeiling, budgetKbps: budgetKbps), first.index != nil else { return nil }
         let sound = try await soundInPieces(videoId)
-        let segments = try await pieces(pictureURL, index, contentLength: picture.source.contentLength, userAgent: picture.userAgent)
-        let pictureList = playlists.add(HlsPlaylist.media(url: hosts.preferred(picture.source.url), initEnd: index.initEnd, segments: segments), name: videoId + "-picture")
+        // The one to start with first, then the others, lowest first: the player starts with the first it reads
+        let levels = [first] + sources.filter { $0.itag != first.itag && $0.index != nil }.sorted { ($0.height, $0.bitrateKbps) < ($1.height, $1.bitrateKbps) }
+        var variants: [HlsPlaylist.Variant] = []
+        for source in levels {
+            guard let index = source.index, let url = URL(string: source.url) else { continue }
+            let address = hosts.preferred(source.url)
+            let name = videoId + "-\(source.height)p"
+            let list: URL
+            if source.itag == first.itag {
+                // What starts must be readable: its pieces are laid out now, so that a stream that does not add up is found out
+                // here and the picture is made another way, not by a player that stops
+                let segments = try await pieces(url, index, contentLength: source.contentLength, userAgent: userAgent)
+                list = playlists.add(HlsPlaylist.media(url: address, initEnd: index.initEnd, segments: segments), name: name)
+            } else {
+                list = playlists.addLazy(name: name) { [self] in
+                    let segments = try await pieces(url, index, contentLength: source.contentLength, userAgent: userAgent)
+                    return HlsPlaylist.media(url: address, initEnd: index.initEnd, segments: segments)
+                }
+            }
+            variants.append(HlsPlaylist.Variant(url: list, codec: source.codec, width: source.width, height: source.height,
+                                                bandwidth: source.bitrateKbps * 1000, fps: source.fps))
+        }
         let master = HlsPlaylist.master(
-            video: pictureList, videoCodec: picture.source.codec, audio: sound.url,
-            audioCodec: HlsPlaylist.codec(ofType: sound.pick.mimeType), bandwidth: (picture.source.bitrateKbps + sound.pick.bitrateKbps) * 1000
+            variants: variants, audio: sound.url, audioCodec: HlsPlaylist.codec(ofType: sound.pick.mimeType),
+            soundBandwidth: sound.pick.bitrateKbps * 1000
         )
-        return Playable(url: playlists.add(master, name: videoId + "-both"), isFile: false, headers: ["User-Agent": picture.userAgent])
+        return Playable(url: playlists.add(master, name: videoId + "-both"), isFile: false, headers: ["User-Agent": userAgent], levels: levels)
     }
 
     /// Brings [videoId] onto the disk for next time while it plays from its stream, when it is short enough to keep.

@@ -754,22 +754,23 @@ class _SettingsPageState extends State<SettingsPage> {
           listenable: model.room,
           builder: (context, _) => Padding(
             padding: const EdgeInsets.all(12),
-            child: SegmentedButton<int>(
-              showSelectedIcon: false,
-              expandedInsets: EdgeInsets.zero,
-              style: SegmentedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                selectedBackgroundColor: context.palette.primaryContainer,
-                selectedForegroundColor: context.palette.onPrimaryContainer,
-                foregroundColor: context.palette.textSecondary,
-                side: BorderSide(color: context.palette.outline),
-              ),
-              segments: [
-                for (final h in videoQualities)
-                  ButtonSegment(value: h, label: Text('${h}p')),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SettingQualityChips(snapshot: model.room.snapshot, onPick: model.room.setVideoQuality),
+                // A phone that plays no more than 1080p, or 1440p: said, rather than leaving the missing heights to be wondered about
+                if (!kIsWeb && model.room.snapshot.videoHeightMax < 2160)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      S.videoLimitDevice(model.room.snapshot.videoHeightMax),
+                      key: const ValueKey('quality-device-limit'),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: context.palette.textSecondary,
+                      ),
+                    ),
+                  ),
               ],
-              selected: {model.room.snapshot.videoHeight},
-              onSelectionChanged: (s) => model.room.setVideoQuality(s.first),
             ),
           ),
         ),
@@ -2029,6 +2030,37 @@ class _TasteStats extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The heights of the picture to choose from on this device. What was chosen on a device that plays more is shown as
+/// the tallest this one has.
+class _SettingQualityChips extends StatelessWidget {
+  const _SettingQualityChips({required this.snapshot, required this.onPick});
+
+  final RoomSnapshot snapshot;
+  final ValueChanged<int> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final options = videoQualities(snapshot);
+    final chosen = options.lastWhere(
+      (h) => h <= snapshot.videoHeight,
+      orElse: () => options.first,
+    );
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final h in options)
+          ChoiceChip(
+            key: ValueKey('setting-quality-$h'),
+            label: Text(qualityName(h)),
+            selected: chosen == h,
+            onSelected: (_) => onPick(h),
+          ),
+      ],
     );
   }
 }

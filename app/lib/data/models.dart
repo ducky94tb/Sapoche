@@ -456,6 +456,10 @@ class RoomSnapshot {
     this.loading = false,
     this.video = false,
     this.videoHeight = 720,
+    this.videoHeights = const [],
+    this.videoHeightNow = 0,
+    this.videoHeightMax = 1080,
+    this.videoLimit,
     this.playbackSpeed = 1.0,
     this.name,
     this.ownerId,
@@ -497,6 +501,19 @@ class RoomSnapshot {
 
   /// Tallest picture fetched, in pixels.
   final int videoHeight;
+
+  /// The heights the playing song's picture has that this device plays; empty when none is known (no picture yet).
+  final List<int> videoHeights;
+
+  /// The height playing now, 0 when no picture plays.
+  final int videoHeightNow;
+
+  /// The tallest picture this device plays at all, whatever the song.
+  final int videoHeightMax;
+
+  /// Why the picture is shorter than [videoHeight] asks: `metered` (mobile data keeps it to 1080p), `network` (the link was
+  /// too slow for more), `video` (the song has no taller one), `reload` (it is being loaded again); null for none.
+  final String? videoLimit;
 
   /// How fast this device plays outside a room, 1 being normal. In a room it is always 1.
   final double playbackSpeed;
@@ -643,6 +660,13 @@ class RoomSnapshot {
     loading: json['loading'] as bool? ?? false,
     video: json['video'] as bool? ?? false,
     videoHeight: (json['videoHeight'] as num?)?.toInt() ?? 720,
+    videoHeights: [
+      for (final h in json['videoHeights'] as List<dynamic>? ?? const [])
+        (h as num).toInt(),
+    ],
+    videoHeightNow: (json['videoHeightNow'] as num?)?.toInt() ?? 0,
+    videoHeightMax: (json['videoHeightMax'] as num?)?.toInt() ?? 1080,
+    videoLimit: json['videoLimit'] as String?,
     playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,
     name: json['name'] as String?,
     ownerId: json['ownerId'] as String?,

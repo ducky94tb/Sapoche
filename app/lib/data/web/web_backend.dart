@@ -1459,12 +1459,27 @@ class WebBackend extends BackendDefaults {
   /// What a frame of YouTube is asked for until the person says otherwise: the lowest it goes.
   static const _defaultVideoHeight = 480;
 
-  /// The size the picture is fetched at, from the next song on, or as soon as the frame is shown larger.
+  /// The tallest picture a browser is offered. The frame of YouTube picks its quality by the size it is laid out at, so any
+  /// height up to what the video has can be asked for (8K only where the browser decodes it, which the frame decides).
+  static const _videoHeightMax = 2160;
+
+  /// The picture is being loaded again at a lower height, which the frame does not go to by itself: the screen says so.
+  var _reloadingPicture = false;
+
+  /// The size the picture is fetched at: at once for a taller one, by loading the picture again at the same place for a
+  /// lower one, as the frame never goes back to a lower quality it already has.
   @override
   Future<void> setVideoQuality(int height) async {
+    final lower = height < _videoHeight;
     await prefs.setInt(_keyVideoHeight, height);
-    player.setVideoHeight(height);
+    _reloadingPicture = lower;
     _emitState();
+    try {
+      await player.setVideoHeight(height);
+    } finally {
+      _reloadingPicture = false;
+      _emitState();
+    }
   }
 
   /// Up to [limit] songs or, without [songsOnly], videos matching [query]. The apps read the whole of YouTube for
@@ -1634,6 +1649,8 @@ class WebBackend extends BackendDefaults {
       // Audio is the way of every other device: the cover. Video shows the frame of YouTube in its place
       video: _video,
       videoHeight: _videoHeight,
+      videoHeightMax: _videoHeightMax,
+      videoLimit: _reloadingPicture ? 'reload' : null,
       playbackSpeed: inRoom ? 1 : _speed,
       name: state?.name,
       ownerId: state?.ownerId,
@@ -1676,6 +1693,7 @@ class WebBackend extends BackendDefaults {
       snapshot.playbackSpeed,
       snapshot.video,
       snapshot.videoHeight,
+      snapshot.videoLimit,
     ].join('|');
     if (key == _lastKey) return;
     _lastKey = key;

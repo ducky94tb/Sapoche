@@ -5,6 +5,7 @@ import app.sapoche.core.AudioQuality
 import app.sapoche.core.OkHttpDownloader
 import app.sapoche.sync.LoadFailure
 import app.sapoche.sync.LocalMusic
+import androidx.media3.datasource.ByteArrayDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.datasource.DataSpec
@@ -58,7 +59,10 @@ class MediaData(
                 pick.loudnessDb?.let { loudness.heard(videoId, it) }
                 spec.withUri(Uri.parse(pick.url))
             }
-            SapocheMediaSourceFactory.VIDEO_SCHEME -> spec.withUri(Uri.parse(streams.getVideo(videoId, maxVideoHeight(), videoBudgetKbps())))
+            SapocheMediaSourceFactory.VIDEO_SCHEME -> {
+                // "<videoId>/<itag>": one stream of the manifest
+                spec.withUri(Uri.parse(streams.videoUrl(videoId.substringBefore('/'), videoId.substringAfter('/').toInt())))
+            }
             else -> spec
         }
     }
@@ -71,7 +75,7 @@ class MediaData(
     suspend fun warm(videoId: String, withVideo: Boolean) = withContext(Dispatchers.IO) {
         try {
             streams.getAudio(videoId, caches.pinned(videoId), audioQuality())
-            if (withVideo) streams.getVideo(videoId, maxVideoHeight(), videoBudgetKbps())
+            if (withVideo) streams.videoManifest(videoId, maxVideoHeight(), videoBudgetKbps(), PictureDecoders::decodable)
         } catch (e: IOException) {
             log("$videoId could not be made ready in advance: ${e.message}")
         }
@@ -91,7 +95,11 @@ class MediaData(
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
             .setUpstreamDataSourceFactory(played)
         val picture = resolving(http, caches.play)
-        return DataSource.Factory { Routed(sound.createDataSource(), picture.createDataSource(), device) }
+        return DataSource.Factory {
+            Routed(sound.createDataSource(), picture.createDataSource(), device) { videoId ->
+                streams.videoManifest(videoId, maxVideoHeight(), videoBudgetKbps(), PictureDecoders::decodable).toByteArray()
+            }
+        }
     }
 
     /**
@@ -161,7 +169,13 @@ class MediaData(
      * Sound goes to [sound], anything else to [picture]. The sound of a music file on this phone is read from the file
      * itself: it is not in any cache, and needs no resolving.
      */
-    private class Routed(private val sound: DataSource, private val picture: DataSource, private val device: DeviceMusic) : DataSource {
+    private class Routed(
+        private val sound: DataSource,
+        private val picture: DataSource,
+        private val device: DeviceMusic,
+        /** The manifest of the picture of a song, made up when the player asks for it. */
+        private val manifest: (String) -> ByteArray,
+    ) : DataSource {
         private var active: DataSource? = null
         private val file by lazy { device.fileSource() }
 
@@ -184,7 +198,11 @@ class MediaData(
                     throw LoadFailure(LoadFailure.Reason.UNPLAYABLE, "The file of $videoId cannot be read: ${e.message}", e)
                 }
             }
-            val source = if (dataSpec.uri.scheme == SapocheMediaSourceFactory.AUDIO_SCHEME) sound else picture
+            val source = when (dataSpec.uri.scheme) {
+                SapocheMediaSourceFactory.AUDIO_SCHEME -> sound
+                SapocheMediaSourceFactory.MANIFEST_SCHEME -> ByteArrayDataSource(manifest(videoId))
+                else -> picture
+            }
             active = source
             return source.open(dataSpec)
         }

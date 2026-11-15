@@ -94,6 +94,38 @@ enum HlsPlaylist {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// One height of the picture in a master playlist: the address of its playlist, and what the player needs to know to choose.
+    struct Variant: Equatable {
+        let url: URL
+        let codec: String
+        let width: Int
+        let height: Int
+        /// Bits per second, of the picture alone.
+        let bandwidth: Int
+        let fps: Int
+    }
+
+    /// The playlist that plays the picture of any of [variants] with the sound of [audio]: the player starts with the
+    /// first, and goes to another by itself when the link or the ceiling it was given (`preferredMaximumResolution`) says
+    /// so, with the sound going on. [soundBandwidth] is in bits per second. Codecs are left out when the sound's is not
+    /// known, rather than told wrong.
+    static func master(variants: [Variant], audio: URL, audioCodec: String?, soundBandwidth: Int) -> String {
+        var lines = [
+            "#EXTM3U",
+            "#EXT-X-VERSION:7",
+            "#EXT-X-INDEPENDENT-SEGMENTS",
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"sound\",NAME=\"Sound\",DEFAULT=YES,AUTOSELECT=YES,URI=\"\(audio.absoluteString)\"",
+        ]
+        for variant in variants {
+            let codecs = audioCodec.map { ",CODECS=\"\(variant.codec),\($0)\"" } ?? ""
+            let width = variant.width > 0 ? variant.width : variant.height * 16 / 9
+            let rate = variant.fps > 0 ? ",FRAME-RATE=\(variant.fps).000" : ""
+            lines.append("#EXT-X-STREAM-INF:BANDWIDTH=\(max(variant.bandwidth + soundBandwidth, 1))\(codecs),RESOLUTION=\(width)x\(variant.height)\(rate),AUDIO=\"sound\"")
+            lines.append(variant.url.absoluteString)
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
     /// The playlist that plays the picture of [video] with the sound of [audio], two playlists of single streams.
     /// [bandwidth] is in bits per second. Codecs are left out when the sound's is not known, rather than told wrong.
     static func master(video: URL, videoCodec: String, audio: URL, audioCodec: String?, bandwidth: Int) -> String {
@@ -119,33 +151,80 @@ enum HlsPlaylist {
 
 /// The playlists handed to the player, by address. Apple's player cannot be given a playlist as text: it asks for it at
 /// an address of this scheme, through a resource loader that looks it up here. Only the last few are kept.
+///
+/// A playlist can also be kept as the way to make it ([addLazy]), for the heights of a picture that the player may never
+/// ask for: reading the index of a stream is a request, and a song has a handful of heights.
 final class HlsPlaylists: @unchecked Sendable {
     static let scheme = "sapoche-hls"
-    private static let kept = 16
+    private static let kept = 24
 
     private let lock = NSLock()
     private var texts: [String: String] = [:]
+    private var makers: [String: @Sendable () async throws -> String] = [:]
     private var order: [String] = []
     private var added = 0
 
     /// Keeps [text] and gives the address it is asked for by; [name] only helps a person reading the logs.
     func add(_ text: String, name: String) -> URL {
+        let key = newKey(name)
         lock.lock()
         defer { lock.unlock() }
-        added += 1
-        let key = "\(added)-" + name.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
         texts[key] = text
-        order.append(key)
-        while order.count > Self.kept { texts[order.removeFirst()] = nil }
-        return URL(string: "\(Self.scheme)://playlist/\(key).m3u8")!
+        remember(key)
+        return address(key)
     }
 
-    /// The playlist at [url]; nil when it is not one of these, or was let go.
+    /// Keeps the way to make a playlist and gives the address it is asked for by; [make] runs when the player asks, and the
+    /// text it gives is then kept.
+    func addLazy(name: String, make: @escaping @Sendable () async throws -> String) -> URL {
+        let key = newKey(name)
+        lock.lock()
+        defer { lock.unlock() }
+        makers[key] = make
+        remember(key)
+        return address(key)
+    }
+
+    /// The playlist at [url] if it is already made; nil when it is not one of these, was let go, or has yet to be made.
     func text(for url: URL) -> String? {
         guard url.scheme == Self.scheme else { return nil }
         let key = url.deletingPathExtension().lastPathComponent
         lock.lock()
         defer { lock.unlock() }
         return texts[key]
+    }
+
+    /// The playlist at [url], made now when it is one that was kept as a way to make it; nil when it is not one of these or
+    /// was let go. Throws what making it threw.
+    func resolve(_ url: URL) async throws -> String? {
+        guard url.scheme == Self.scheme else { return nil }
+        let key = url.deletingPathExtension().lastPathComponent
+        let (text, make): (String?, (@Sendable () async throws -> String)?) = lock.withLock { (texts[key], makers[key]) }
+        if let text { return text }
+        guard let make else { return nil }
+        let made = try await make()
+        lock.withLock { if makers[key] != nil { texts[key] = made } }
+        return made
+    }
+
+    private func newKey(_ name: String) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        added += 1
+        return "\(added)-" + name.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+    }
+
+    /// Called with the lock held.
+    private func remember(_ key: String) {
+        order.append(key)
+        while order.count > Self.kept {
+            let old = order.removeFirst()
+            texts[old] = nil
+            makers[old] = nil
+        }
+    }
+
+    private func address(_ key: String) -> URL {
+        URL(string: "\(Self.scheme)://playlist/\(key).m3u8")!
     }
 }

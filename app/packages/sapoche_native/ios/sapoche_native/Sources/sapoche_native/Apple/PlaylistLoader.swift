@@ -13,17 +13,38 @@ final class PlaylistLoader: NSObject, AVAssetResourceLoaderDelegate {
         self.log = log
     }
 
+    /// The request of the player, which is answered from another thread once the playlist is made.
+    private struct Pending: @unchecked Sendable {
+        let request: AVAssetResourceLoadingRequest
+    }
+
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
                         shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url, url.scheme == HlsPlaylists.scheme else { return false }
-        guard let text = playlists.text(for: url) else {
-            // Let go to make room for newer ones: the item fails, and whoever plays it loads it again
-            let log = log
-            let name = url.lastPathComponent
-            DispatchQueue.main.async { log("the player asked for a playlist that is no longer kept: \(name)") }
-            loadingRequest.finishLoading(with: URLError(.fileDoesNotExist))
-            return true
+        let playlists = playlists
+        let log = log
+        let pending = Pending(request: loadingRequest)
+        // One of the heights of a picture is laid out now, from its index, if the player asks for it only now
+        Task {
+            do {
+                guard let text = try await playlists.resolve(url) else {
+                    // Let go to make room for newer ones: the item fails, and whoever plays it loads it again
+                    let name = url.lastPathComponent
+                    DispatchQueue.main.async { log("the player asked for a playlist that is no longer kept: \(name)") }
+                    pending.request.finishLoading(with: URLError(.fileDoesNotExist))
+                    return
+                }
+                Self.answer(pending.request, with: text)
+            } catch {
+                let name = url.lastPathComponent
+                DispatchQueue.main.async { log("could not lay out the playlist \(name): \(error.localizedDescription)") }
+                pending.request.finishLoading(with: error)
+            }
         }
+        return true
+    }
+
+    private static func answer(_ loadingRequest: AVAssetResourceLoadingRequest, with text: String) {
         let data = Data(text.utf8)
         if let information = loadingRequest.contentInformationRequest {
             information.contentType = "public.m3u-playlist"
@@ -36,6 +57,5 @@ final class PlaylistLoader: NSObject, AVAssetResourceLoaderDelegate {
             request.respond(with: data.subdata(in: start..<end))
         }
         loadingRequest.finishLoading()
-        return true
     }
 }

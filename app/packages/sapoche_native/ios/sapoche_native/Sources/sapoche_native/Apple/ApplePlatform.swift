@@ -71,6 +71,7 @@ final class ApplePlatform: NSObject, PlatformServices, UIDocumentPickerDelegate,
         }
         monitor.pathUpdateHandler = { [weak self] path in
             let expensive = path.isExpensive || path.isConstrained
+            NetworkState.shared.metered = expensive
             let ok = path.status == .satisfied
             let types = Set([NWInterface.InterfaceType.wifi, .cellular, .wiredEthernet].filter { path.usesInterfaceType($0) })
             Task { @MainActor in self?.pathChanged(metered: expensive || !ok, satisfied: ok, interfaces: types) }

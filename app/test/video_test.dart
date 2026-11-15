@@ -92,9 +92,15 @@ Future<FakeBackend> openVideo(
   Size screen = const Size(540, 1200),
   int positionMs = 4000,
   bool pip = true,
+  String language = 'en',
 }) async {
   recordSystem(tester);
-  final (backend, room) = await pumpApp(tester, pipSupported: pip);
+  final (backend, room) = await pumpApp(
+    tester,
+    pipSupported: pip,
+    prefs: language == 'en' ? const {} : {'language': language},
+  );
+  S.current = language;
   lastRoom = room;
   tester.view.physicalSize = screen * 2;
   backend.emit(StateEvent(snapshot ?? sampleRoom(video: true)));
@@ -511,6 +517,175 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('quality-1080')));
       await tester.pump();
       expect(backend.calls, contains('videoQuality 1080'));
+    });
+
+    videoTest('1440p and 2160p are offered only where the device plays them', (
+      tester,
+    ) async {
+      await openVideo(tester);
+      await openSettings(tester);
+      expect(find.byKey(const ValueKey('quality-1080')), findsOneWidget);
+      expect(find.byKey(const ValueKey('quality-1440')), findsNothing);
+      expect(find.byKey(const ValueKey('quality-2160')), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      final backend = await openVideo(
+        tester,
+        snapshot: sampleRoom(video: true, videoHeightMax: 2160),
+      );
+      await openSettings(tester);
+      expect(find.text('2160p 4K'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('quality-1440')));
+      await tester.pump();
+      expect(backend.calls, contains('videoQuality 1440'));
+    });
+
+    videoTest('only the heights the song has are offered', (tester) async {
+      await openVideo(
+        tester,
+        snapshot: sampleRoom(
+          video: true,
+          videoHeightMax: 2160,
+          videoHeights: [144, 360, 720, 1080],
+          videoHeight: 2160,
+          videoHeightNow: 1080,
+        ),
+      );
+      await openSettings(tester);
+      expect(find.byKey(const ValueKey('quality-360')), findsOneWidget);
+      expect(find.byKey(const ValueKey('quality-480')), findsNothing);
+      expect(find.byKey(const ValueKey('quality-2160')), findsNothing);
+      // 2160p was asked, and the tallest there is, 1080p, is what is chosen and what plays
+      expect(
+        tester
+            .widget<ChoiceChip>(find.byKey(const ValueKey('quality-1080')))
+            .selected,
+        isTrue,
+      );
+    });
+
+    videoTest('the height that plays is marked when a limit holds it below the one chosen', (
+      tester,
+    ) async {
+      await openVideo(
+        tester,
+        snapshot: sampleRoom(
+          video: true,
+          videoHeightMax: 2160,
+          videoHeights: [360, 720, 1080, 1440, 2160],
+          videoHeight: 2160,
+          videoHeightNow: 1080,
+          videoLimit: 'network',
+        ),
+      );
+      await openSettings(tester);
+      expect(
+        tester
+            .widget<ChoiceChip>(find.byKey(const ValueKey('quality-2160')))
+            .selected,
+        isTrue,
+      );
+      final playing = tester.widget<ChoiceChip>(
+        find.byKey(const ValueKey('quality-1080')),
+      );
+      expect(playing.selected, isFalse);
+      expect((playing.avatar! as Icon).semanticLabel, S.videoPlayingNow);
+    });
+
+    for (final (limit, expected) in <(String?, String Function())>[
+      (null, () => S.videoApplyNow),
+      ('metered', () => S.videoLimitMetered),
+      ('video', () => S.videoLimitVideo(720)),
+      ('network', () => S.videoLimitNetwork(480)),
+      ('reload', () => S.videoLimitReload),
+    ]) {
+      videoTest('the note under the heights says why: $limit', (tester) async {
+        await openVideo(
+          tester,
+          snapshot: sampleRoom(
+            video: true,
+            videoHeights: [360, 480, 720],
+            videoHeightNow: 480,
+            videoLimit: limit,
+          ),
+        );
+        await openSettings(tester);
+        expect(find.text(expected()), findsOneWidget);
+      });
+    }
+
+    videoTest('while mobile data holds the picture, the heights above 1080p say Wi-Fi', (
+      tester,
+    ) async {
+      await openVideo(
+        tester,
+        snapshot: sampleRoom(
+          video: true,
+          videoHeightMax: 2160,
+          videoHeights: [720, 1080, 1440, 2160],
+          videoHeight: 2160,
+          videoHeightNow: 1080,
+          videoLimit: 'metered',
+        ),
+      );
+      await openSettings(tester);
+      Icon? wifi(int h) => tester
+          .widget<ChoiceChip>(find.byKey(ValueKey('quality-$h')))
+          .avatar as Icon?;
+      expect(wifi(1440)?.icon, Icons.wifi_rounded);
+      expect(wifi(2160)?.icon, Icons.wifi_rounded);
+      expect(wifi(1080)?.icon, Icons.play_arrow_rounded, reason: 'what plays');
+    });
+
+    for (final (width, language, text) in <(double, String, double)>[
+      (360, 'en', 1.3),
+      (360, 'vi', 1.3),
+      (411, 'vi', 1.0),
+      (1280, 'en', 1.0),
+    ]) {
+      videoTest('the sheet with every height and a note fits at ${width}dp, $language, text $text', (tester) async {
+        tester.platformDispatcher.textScaleFactorTestValue = text;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await openVideo(
+          tester,
+          screen: Size(width, 800),
+          language: language,
+          snapshot: sampleRoom(
+            video: true,
+            videoHeightMax: 2160,
+            videoHeights: [144, 240, 360, 480, 720, 1080, 1440, 2160],
+            videoHeight: 2160,
+            videoHeightNow: 1440,
+            videoLimit: 'metered',
+          ),
+        );
+        final behind = tester.takeException();
+        await openSettings(tester);
+        expect(tester.takeException(), isNull, reason: 'nothing overflows ($behind before it was opened)');
+        for (final h in [360, 480, 720, 1080, 1440, 2160]) {
+          final size = tester.getSize(find.byKey(ValueKey('quality-$h')));
+          expect(size.height, greaterThanOrEqualTo(48), reason: 'the chip for $h is a touch target');
+        }
+        expect(find.byKey(const ValueKey('quality-note')), findsOneWidget);
+      });
+    }
+
+    videoTest('mobile data is told once for each song', (tester) async {
+      final backend = await openVideo(tester);
+      final messages = <String>[];
+      lastRoom.messages.listen(messages.add);
+      RoomSnapshot metered(int song) => sampleRoom(
+        video: true,
+        index: song,
+        videoHeightMax: 2160,
+        videoLimit: 'metered',
+      );
+      backend.emit(StateEvent(metered(0)));
+      backend.emit(StateEvent(metered(0)));
+      await settle(tester, 100);
+      expect(messages, [S.videoLimitMeteredNotice]);
+      backend.emit(StateEvent(metered(1)));
+      await settle(tester, 100);
+      expect(messages, [S.videoLimitMeteredNotice, S.videoLimitMeteredNotice]);
     });
 
     videoTest('in a room the speed cannot be changed, and it says why', (

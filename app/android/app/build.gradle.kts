@@ -98,6 +98,7 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
 
     implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-exoplayer-dash:1.11.1")
     implementation("androidx.media3:media3-session:1.11.1")
     // Streams are fetched with the same OkHttp as the resolver, so both reach YouTube from the same address
     implementation("androidx.media3:media3-datasource-okhttp:1.11.1")

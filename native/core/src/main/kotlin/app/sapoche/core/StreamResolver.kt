@@ -42,7 +42,16 @@ data class VideoSource(
     val bitrateKbps: Int,
     val contentLength: Long,
     val itag: Int,
+    val width: Int = 0,
+    /** Frames per second; 0 when the answer does not say (30 is then assumed). */
+    val fps: Int = 0,
+    /** Where the header of the stream (`Initialization`) and its index of segments (`indexRange`) lie in it; null when not told. */
+    val initRange: ByteRange? = null,
+    val indexRange: ByteRange? = null,
 )
+
+/** Bytes [first] to [last], both included, as in an HTTP `Range` header. */
+data class ByteRange(val first: Long, val last: Long)
 
 data class Resolved(
     val track: TrackInfo,

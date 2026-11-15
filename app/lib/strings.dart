@@ -1115,12 +1115,41 @@ abstract final class S {
   static String get videoSection => _t('Video', 'Video');
   static String get videoQuality => _t('Picture quality', 'Chất lượng hình');
   static String get videoQualityHelp => _t(
-    'Applies from the next song. This is the most: on a slow connection the picture is lowered by itself to keep up. Higher quality uses more data. Music keeps playing when the screen is off; the picture does not.',
-    'Áp dụng từ bài sau. Đây là mức cao nhất: khi mạng chậm, hình tự hạ xuống để theo kịp. Chất lượng cao hơn tốn nhiều dữ liệu hơn. Nhạc vẫn phát khi tắt màn hình; hình thì không.',
+    'A change applies at once, without stopping the song. This is the most: on a slow connection the picture is lowered by itself to keep up. Higher quality uses more data; above 1080p only on Wi-Fi. Music keeps playing when the screen is off; the picture does not.',
+    'Đổi là áp dụng ngay, bài không dừng. Đây là mức cao nhất: khi mạng chậm, hình tự hạ xuống để theo kịp. Chất lượng cao hơn tốn nhiều dữ liệu hơn; trên 1080p chỉ khi dùng Wi-Fi. Nhạc vẫn phát khi tắt màn hình; hình thì không.',
   );
   static String get videoQualityHelpWeb => _t(
-    'Applies from the next song, or at once for a higher quality. A browser does not show a picture below 480p, so 480p is the lowest; the connection can still bring less. Higher quality uses more data.',
-    'Áp dụng từ bài sau, hoặc ngay nếu chọn chất lượng cao hơn. Trình duyệt không phát hình thấp hơn 480p nên 480p là mức thấp nhất; đường truyền yếu vẫn có thể cho hình kém hơn. Chất lượng cao hơn tốn nhiều dữ liệu hơn.',
+    'A higher quality applies at once; a lower one loads the picture again for a moment. A browser does not show a picture below 480p, so 480p is the lowest; the connection can still bring less. Higher quality uses more data.',
+    'Lên cao hơn thì áp dụng ngay; xuống thấp hơn thì hình tải lại một chút. Trình duyệt không phát hình thấp hơn 480p nên 480p là mức thấp nhất; đường truyền yếu vẫn có thể cho hình kém hơn. Chất lượng cao hơn tốn nhiều dữ liệu hơn.',
+  );
+  static String get videoApplyNow => _t(
+    'Applies at once; the song keeps playing',
+    'Áp dụng ngay, bài vẫn tiếp tục phát',
+  );
+  static String get videoApplyNowWeb => _t(
+    'A higher quality applies at once; a lower one loads the picture again for a moment',
+    'Lên cao hơn thì áp dụng ngay; xuống thấp hơn thì hình tải lại một chút',
+  );
+  static String get videoPlayingNow => _t('Playing now', 'Đang phát');
+  static String get videoLimitMetered => _t(
+    'On mobile data the picture is at most 1080p. Higher only on Wi-Fi.',
+    'Đang dùng dữ liệu di động: hình tối đa 1080p. Cao hơn chỉ khi dùng Wi-Fi.',
+  );
+  static String get videoLimitMeteredNotice => _t(
+    'On mobile data: the picture is at most 1080p',
+    'Đang dùng dữ liệu di động: hình tối đa 1080p',
+  );
+  static String videoLimitVideo(int h) =>
+      _t('This video has no more than ${h}p', 'Video này tối đa ${h}p');
+  static String videoLimitNetwork(int h) => _t(
+    'The network cannot carry more: playing ${h}p',
+    'Mạng chưa đủ cho mức cao hơn: đang phát ${h}p',
+  );
+  static String get videoLimitReload =>
+      _t('Loading the picture again…', 'Đang tải lại hình…');
+  static String videoLimitDevice(int h) => _t(
+    'This device plays pictures up to ${h}p',
+    'Máy này phát hình tối đa ${h}p',
   );
   static String get pause => _t('Pause', 'Tạm dừng');
   static String get fullScreen => _t('Full screen', 'Toàn màn hình');
@@ -1142,8 +1171,6 @@ abstract final class S {
   static String seconds(int n) => _t('$n seconds', '$n giây');
   static String get fillScreen => _t('Fill the screen', 'Lấp đầy màn hình');
   static String get fitScreen => _t('Fit the screen', 'Vừa màn hình');
-  static String get qualityNextSong =>
-      _t('Applies from the next song', 'Áp dụng từ bài sau');
 
   // Who is in the room
   static String get membersTitle => _t('In the room', 'Trong phòng');

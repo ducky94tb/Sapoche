@@ -6,7 +6,7 @@ enum UiJson {
     /// Structure of what is playing: the room, or outside one the personal queue in the same shape (no room code, no
     /// members). Changes rarely, so the UI only rebuilds when this differs.
     static func state(_ view: GroupController.View, trimMs: Int64, video: Bool = false, videoHeight: Int = 720,
-                      playbackSpeed: Float = 1) -> String {
+                      playbackSpeed: Float = 1, picture: PictureInfo = PictureInfo()) -> String {
         let snap = view.snapshot
         let state = snap.state
         let local = view.local
@@ -38,6 +38,12 @@ enum UiJson {
             "trimMs": trimMs,
             "video": video,
             "videoHeight": videoHeight,
+            // The heights the playing song has that this phone plays, the one playing (0 when none), the tallest this phone
+            // plays, and why the picture is shorter than asked: metered, network, video, or null
+            "videoHeights": picture.heights,
+            "videoHeightNow": picture.now,
+            "videoHeightMax": picture.max,
+            "videoLimit": picture.limit ?? NSNull(),
             "playbackSpeed": Double(playbackSpeed),
             "solo": snap.solo,
             "soloItemId": snap.soloItemId ?? NSNull(),

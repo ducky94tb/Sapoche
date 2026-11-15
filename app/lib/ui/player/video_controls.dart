@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/models.dart';
 import '../../data/room_controller.dart';
 import '../../strings.dart';
 import '../../theme/palette.dart';
@@ -12,9 +13,19 @@ import '../widgets/like_button.dart';
 import '../widgets/playback_bar.dart';
 import '../widgets/video_view.dart';
 
-/// The heights the picture can be fetched at, the tallest first offered last. A browser's frame does not go below 480.
-List<int> get videoQualities =>
-    kIsWeb ? const [480, 720, 1080] : const [360, 480, 720, 1080];
+/// The heights the picture can be fetched at on this device, the tallest last: 1440p and 2160p only when the device
+/// plays them (`videoHeightMax`). A browser's frame does not go below 480.
+List<int> videoQualities(RoomSnapshot snapshot) => [
+  for (final h in kIsWeb ? const [480, 720, 1080, 1440, 2160, 4320] : const [360, 480, 720, 1080, 1440, 2160])
+    if (h <= snapshot.videoHeightMax || h <= 1080) h,
+];
+
+/// How a height is named: `1080p`, and the usual name beside the two a person knows by it.
+String qualityName(int height) => switch (height) {
+  2160 => '2160p 4K',
+  4320 => '4320p 8K',
+  _ => '${height}p',
+};
 
 /// The speeds a song can be played at outside a room.
 const playbackSpeeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
@@ -689,6 +700,66 @@ Future<void> showVideoSettings(
   builder: (context) => _VideoSettings(controller: controller),
 );
 
+/// The line under the heights: what limits the picture now, or that a change is made at once.
+String _qualityNote(RoomSnapshot snapshot) {
+  final now = snapshot.videoHeightNow;
+  final heights = snapshot.videoHeights;
+  return switch (snapshot.videoLimit) {
+    'metered' => S.videoLimitMetered,
+    'video' when heights.isNotEmpty => S.videoLimitVideo(heights.last),
+    'network' when now > 0 => S.videoLimitNetwork(now),
+    'reload' => S.videoLimitReload,
+    _ => kIsWeb ? S.videoApplyNowWeb : S.videoApplyNow,
+  };
+}
+
+/// The heights to choose from, as chips: those this device plays of what the playing song has, the chosen one marked,
+/// and the one playing when it is another (a limit holds the picture below what was asked).
+class _QualityChips extends StatelessWidget {
+  const _QualityChips({required this.snapshot, required this.onPick});
+
+  final RoomSnapshot snapshot;
+  final ValueChanged<int> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final all = videoQualities(snapshot);
+    final has = snapshot.videoHeights;
+    final options = has.isEmpty
+        ? all
+        : [
+            for (final h in all)
+              if (has.contains(h)) h,
+          ];
+    if (options.isEmpty) return const SizedBox.shrink();
+    // What is asked is the most: the tallest the song has within it is the one that is chosen
+    final chosen = options.lastWhere(
+      (h) => h <= snapshot.videoHeight,
+      orElse: () => options.first,
+    );
+    final now = snapshot.videoHeightNow;
+    final p = context.palette;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final h in options)
+          ChoiceChip(
+            key: ValueKey('quality-$h'),
+            label: Text(qualityName(h)),
+            avatar: h > 1080 && snapshot.videoLimit == 'metered'
+                ? Icon(Icons.wifi_rounded, size: 16, color: p.textSecondary)
+                : now == h && now != chosen
+                ? Icon(Icons.play_arrow_rounded, size: 18, semanticLabel: S.videoPlayingNow)
+                : null,
+            selected: chosen == h,
+            onSelected: (_) => onPick(h),
+          ),
+      ],
+    );
+  }
+}
+
 class _VideoSettings extends StatelessWidget {
   const _VideoSettings({required this.controller});
 
@@ -714,22 +785,11 @@ class _VideoSettings extends StatelessWidget {
               children: [
                 Text(S.videoSettings, style: theme.titleLarge),
                 heading(S.videoQuality),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final h in videoQualities)
-                      ChoiceChip(
-                        key: ValueKey('quality-$h'),
-                        label: Text('${h}p'),
-                        selected: snapshot.videoHeight == h,
-                        onSelected: (_) => controller.setVideoQuality(h),
-                      ),
-                  ],
-                ),
+                _QualityChips(snapshot: snapshot, onPick: controller.setVideoQuality),
                 const SizedBox(height: 6),
                 Text(
-                  S.qualityNextSong,
+                  _qualityNote(snapshot),
+                  key: const ValueKey('quality-note'),
                   style: theme.bodySmall?.copyWith(color: p.textSecondary),
                 ),
                 heading(S.playbackSpeed),

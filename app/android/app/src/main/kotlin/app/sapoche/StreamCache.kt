@@ -9,6 +9,7 @@ import app.sapoche.core.ProbeResult
 import app.sapoche.core.Resolved
 import app.sapoche.core.StreamResolver
 import app.sapoche.core.VideoPicker
+import app.sapoche.core.VideoManifest
 import app.sapoche.core.VideoSource
 import app.sapoche.sync.LoadFailure
 import kotlinx.coroutines.CancellationException
@@ -51,6 +52,7 @@ class StreamCache(
         val audio: List<AudioSource>,
         val videos: List<VideoSource>,
         val resolvedAtMs: Long,
+        val durationMs: Long = 0,
     ) {
         val url get() = best.url
     }
@@ -88,38 +90,50 @@ class StreamCache(
     }
 
     /**
-     * Returns a validated URL of the picture-only stream for [videoId], the tallest one within
-     * [maxHeight] that a link carrying what [budgetKbps] allows can bring (see [VideoPicker]). It comes from the same
-     * resolve as the audio URL. The address is kept by the stream it is of, not by the limits that picked it, as those
-     * change with the network from one song to the next.
+     * Returns the manifest of the picture of [videoId] (see [VideoManifest]): every stream this phone [decodable] plays,
+     * so that the player can move between them while the song goes on. Before it is given out the stream the player
+     * will start with, the one [VideoPicker] picks for [maxHeight] and [budgetKbps], is probed like the sound is. It
+     * comes from the same resolve as the audio. The address of a stream is kept by the stream it is of, not by the
+     * limits that picked it, as those change with the network from one song to the next.
      */
-    fun getVideo(videoId: String, maxHeight: Int, budgetKbps: Long = 0): String {
+    fun videoManifest(videoId: String, maxHeight: Int, budgetKbps: Long, decodable: (VideoSource) -> Boolean): String {
         synchronized(locks.getOrPut(videoId) { Any() }) {
             var lastProblem = "unknown"
             for (attempt in 1..MAX_ATTEMPTS) {
                 val entry = entry(videoId)
-                val pick = VideoPicker.pick(entry.videos, maxHeight, budgetKbps)
+                val playable = VideoPicker.playable(entry.videos, decodable)
+                val pick = VideoPicker.pick(playable, VideoPicker.startCeiling(maxHeight, budgetKbps), budgetKbps)
                     ?: throw IOException("$videoId has no video stream")
                 val key = "$videoId#${pick.itag}"
-                videoEntries[key]?.takeIf { System.currentTimeMillis() - it.resolvedAtMs < MAX_AGE_MS }?.let { return it.url }
-                val probed = runBlocking { probe.check(pick.url, pick.contentLength) }
-                EventLog.d(
-                    "resolve",
-                    "$videoId video attempt=$attempt itag=${pick.itag} ${pick.height}p ${pick.format} ${pick.codec} " +
-                        "${pick.bitrateKbps}kbps (up to ${maxHeight}p, budget ${budgetKbps}kbps) " +
-                        "probe=${probed.headStatus}/${probed.midStatus}/${probed.tailStatus} " +
-                        if (probed.ok) "OK" else "POISONED",
-                )
-                if (probed.ok) {
+                if (videoEntries[key]?.let { System.currentTimeMillis() - it.resolvedAtMs < MAX_AGE_MS } != true) {
+                    val probed = runBlocking { probe.check(pick.url, pick.contentLength) }
+                    EventLog.d(
+                        "resolve",
+                        "$videoId video attempt=$attempt itag=${pick.itag} ${pick.height}p ${pick.format} ${pick.codec} " +
+                            "${pick.bitrateKbps}kbps (up to ${maxHeight}p, budget ${budgetKbps}kbps, ${playable.size} streams) " +
+                            "probe=${probed.headStatus}/${probed.midStatus}/${probed.tailStatus} " +
+                            if (probed.ok) "OK" else "POISONED",
+                    )
+                    if (!probed.ok) {
+                        lastProblem = "probe ${probed.headStatus}/${probed.midStatus}/${probed.tailStatus}"
+                        entries.remove(videoId) // the next round resolves again
+                        continue
+                    }
                     videoEntries[key] = VideoEntry(pick.url, System.currentTimeMillis())
-                    return pick.url
                 }
-                lastProblem = "probe ${probed.headStatus}/${probed.midStatus}/${probed.tailStatus}"
-                entries.remove(videoId) // the next round resolves again
+                return VideoManifest.dash(playable, entry.durationMs) { videoAddress(videoId, it.itag) }
+                    ?: throw IOException("$videoId has no picture stream that tells where its segments are")
             }
             throw IOException("Could not get a working video stream for $videoId after $MAX_ATTEMPTS attempts ($lastProblem)")
         }
     }
+
+    /** The address a stream of the manifest is read from, which [videoUrl] turns into the real one when it is opened. */
+    fun videoAddress(videoId: String, itag: Int) = "${SapocheMediaSourceFactory.VIDEO_SCHEME}:$videoId/$itag"
+
+    /** The real address of the picture stream [itag] of [videoId], from the resolve the manifest came from. */
+    fun videoUrl(videoId: String, itag: Int): String =
+        entry(videoId).videos.firstOrNull { it.itag == itag }?.url ?: throw IOException("$videoId has no picture stream $itag")
 
     private val warmLock = Any()
     private var warmQueue: List<String> = emptyList()
@@ -197,7 +211,7 @@ class StreamCache(
             var waited = false
             try {
                 val resolved = resolver.resolve(videoId)
-                val entry = Entry(resolved.best, resolved.all, resolved.videos, System.currentTimeMillis())
+                val entry = Entry(resolved.best, resolved.all, resolved.videos, System.currentTimeMillis(), resolved.track.durationSec * 1000L)
                 if (resolved.via == InnertubePlayer.VIA) {
                     // The addresses of the app API have not been seen to break, so the song starts at once and the probe runs
                     // beside it; if it finds the address broken, the address is dropped and the player's own retry (see

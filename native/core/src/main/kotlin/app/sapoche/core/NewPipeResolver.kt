@@ -151,6 +151,10 @@ class NewPipeResolver(
         bitrateKbps = bitrate / 1000,
         contentLength = itagItem?.contentLength ?: -1,
         itag = id.toIntOrNull() ?: itagItem?.id ?: -1,
+        width = width,
+        fps = fps.coerceAtLeast(0),
+        initRange = itagItem?.let { if (it.initEnd > 0) ByteRange(it.initStart.toLong(), it.initEnd.toLong()) else null },
+        indexRange = itagItem?.let { if (it.indexEnd > 0) ByteRange(it.indexStart.toLong(), it.indexEnd.toLong()) else null },
     )
 
     private fun AudioStream.toSource() = AudioSource(

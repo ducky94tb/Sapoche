@@ -45,8 +45,10 @@ abstract class PlayerPort {
   /// Asks the player to stop, and not to move on, when the song that plays now is over; [onPausedAtEnd] says it did.
   void pauseAtEnd(bool on) {}
 
-  /// The picture quality to ask for, as a height in pixels, from the next song on. A player may not be able to.
-  void setVideoHeight(int height) {}
+  /// The picture quality to ask for, as a height in pixels: a taller one at once where the player can, a shorter one from the
+  /// next song on, or at once by loading the picture again. Completes when the picture is back, which is at once for a player
+  /// that cannot. A player may not be able to change the height at all.
+  Future<void> setVideoHeight(int height) async {}
 
   /// Queue [item] to play right after the current one, or drop the queued item when null. A player that cannot play
   /// without a gap may ignore it, but then must never call [onAdvanced].

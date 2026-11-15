@@ -192,7 +192,17 @@ class InnertubePlayer(
                 bitrateKbps = (format.at("bitrate").string()?.toIntOrNull() ?: 0) / 1000,
                 contentLength = format.at("contentLength").string()?.toLongOrNull() ?: -1,
                 itag = format.at("itag").string()?.toIntOrNull() ?: -1,
+                width = format.at("width").string()?.toIntOrNull() ?: 0,
+                fps = format.at("fps").string()?.toIntOrNull() ?: 0,
+                initRange = range(format.at("initRange")),
+                indexRange = range(format.at("indexRange")),
             )
+        }
+
+        private fun range(element: JsonElement?): ByteRange? {
+            val first = element.at("start").string()?.toLongOrNull() ?: return null
+            val last = element.at("end").string()?.toLongOrNull() ?: return null
+            return ByteRange(first, last)
         }
 
         /**
