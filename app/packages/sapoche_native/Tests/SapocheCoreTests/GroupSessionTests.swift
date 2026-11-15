@@ -764,6 +764,83 @@ final class GroupSessionTests: XCTestCase {
         XCTAssertFalse(h.player.playing)
     }
 
+    private let item3 = QueueItem(id: "q3", videoId: "kJQP7kiw5Fk", title: "Song 3", artist: "Artist", thumb: nil, durMs: 190_000, addedBy: "dev-a")
+
+    /// The room's state with [queue], on [index]; [autoplay] is the room's switch.
+    private func roomState(_ queue: [QueueItem], index: Int, phase: String, epoch: Int64, autoplay: Bool? = true) -> ServerMessage {
+        .state(serverNow: 0, you: "dev-a",
+               state: RoomState(queue: queue, index: index, phase: phase, startedAt: 0, positionMs: 0, epoch: epoch, autoplay: autoplay),
+               members: [], protocolVersion: 0)
+    }
+
+    /// Alone, on the last of the room's two songs, which has ended: this device stopped at the end of the queue.
+    private func soloAtTheEnd() async -> Harness {
+        let h = await playingFirstOfTwo()
+        h.session.goSolo()
+        await h.step(500)
+        h.session.soloNext()
+        await h.step(500)
+        h.player.onEnded?()
+        await h.step(500)
+        XCTAssertFalse(h.player.playing)
+        return h
+    }
+
+    func testAloneAtTheEndOfTheQueueSongsTheRoomAddsAfterwardsPlayOn() async {
+        let h = await soloAtTheEnd()
+        h.message(roomState([item, item2, item3], index: 1, phase: "idle", epoch: 3))
+        await h.step(500)
+        XCTAssertEqual(h.player.loaded, item3)
+        XCTAssertTrue(h.player.playing)
+        XCTAssertEqual(h.session.snapshot.value.soloItemId, "q3")
+    }
+
+    func testAloneAtTheEndWhenTheRoomHasClearedTheSongsAutoplayPutBeforeItFollowsTheSongTheRoomIsOn() async {
+        let h = await soloAtTheEnd()
+        h.message(roomState([item3], index: 0, phase: "idle", epoch: 3))
+        await h.step(500)
+        XCTAssertFalse(h.player.playing, "an idle room has nothing to follow yet")
+        h.message(roomState([item3], index: 0, phase: "preparing", epoch: 4))
+        await h.step(500)
+        XCTAssertEqual(h.player.loaded, item3)
+        XCTAssertTrue(h.player.playing)
+    }
+
+    func testAloneAtTheEndTheWaitIsOverAfterTenMinutes() async {
+        let h = await soloAtTheEnd()
+        await h.step(10 * 60_000 + 1)
+        h.message(roomState([item, item2, item3], index: 1, phase: "idle", epoch: 3))
+        await h.step(500)
+        XCTAssertFalse(h.player.playing)
+        // And it does not come back to life later
+        h.message(roomState([item, item2, item3], index: 1, phase: "idle", epoch: 4))
+        await h.step(500)
+        XCTAssertFalse(h.player.playing)
+    }
+
+    func testAloneAtTheEndAnythingThePersonDoesEndsTheWait() async {
+        let h = await soloAtTheEnd()
+        h.session.soloPause()
+        await h.step(100)
+        h.message(roomState([item, item2, item3], index: 1, phase: "idle", epoch: 3))
+        await h.step(500)
+        XCTAssertFalse(h.player.playing)
+    }
+
+    func testAloneAtTheEndTheRoomsAutoplayTurnedOffMeansNoWait() async {
+        let h = await playingFirstOfTwo()
+        h.message(roomState([item, item2], index: 0, phase: "playing", epoch: 1, autoplay: false))
+        h.session.goSolo()
+        await h.step(500)
+        h.session.soloNext()
+        await h.step(500)
+        h.player.onEnded?()
+        await h.step(500)
+        h.message(roomState([item, item2, item3], index: 1, phase: "idle", epoch: 3, autoplay: false))
+        await h.step(500)
+        XCTAssertFalse(h.player.playing)
+    }
+
     func testAfterARestartListeningAloneComesBackPausedOnTheSongItWasOn() async {
         let h = harness()
         h.session.restoreSolo(itemId: "q2")

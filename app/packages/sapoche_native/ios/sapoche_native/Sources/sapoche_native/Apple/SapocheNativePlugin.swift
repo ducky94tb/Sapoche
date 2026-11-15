@@ -105,6 +105,7 @@ final class SapocheRuntime {
 
         let engine = AVPlayerEngine(library: media, maxVideoHeight: { Int(prefs.int64("video_height") ?? 720) }, log: { EventLog.d("player", $0) })
         self.engine = engine
+        let platform = platform
         controller = GroupController(
             engine: engine,
             prefs: prefs,
@@ -122,7 +123,9 @@ final class SapocheRuntime {
             },
             moreLike: { seeds, exclude, count in try await suggestions.afterMany(seeds, exclude: exclude, count: count) },
             tasteOffer: { try await suggestions.offer() },
-            secrets: KeychainSecrets()
+            secrets: KeychainSecrets(),
+            // The songs autoplay looks for between two songs are fetched in the background too: iOS suspends the app a few seconds after the sound stops
+            awake: { work in await platform.whileInBackground(timeUp: {}, work) }
         )
         bridge = Bridge(controller: controller, prefs: prefs, platform: platform, store: store, resolver: resolver, streams: streams,
                         music: feed, suggestions: suggestions, media: media, files: files, downloader: downloader, http: http,

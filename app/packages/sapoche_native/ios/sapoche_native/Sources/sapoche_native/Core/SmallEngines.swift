@@ -33,6 +33,37 @@ enum Queues {
         return result
     }
 
+    /// How long autoplay waits before each further try when the one before found no songs; the first try is at once.
+    static let autoplayRetryMs: [Int64] = [3_000, 10_000, 30_000]
+
+    /// Looks for songs with [attempt] until it finds some: at once, then after each wait of [delaysMs]. A try that throws
+    /// counts as one that found nothing (a brief loss of the network, YouTube slow), and [missed] hears of each, with the
+    /// number of the try (from 1) and the error if there was one. The waits end quietly, with no songs, when [stillWanted]
+    /// is no longer true before a try: the person asked for something else, or the room moved on. Being cancelled is not
+    /// caught.
+    @MainActor
+    static func retrying<T>(delaysMs: [Int64] = Queues.autoplayRetryMs, time: TimeSource, stillWanted: () -> Bool,
+                            missed: (Int, Error?) -> Void = { _, _ in }, attempt: () async throws -> [T]) async throws -> [T] {
+        var number = 0
+        while stillWanted() {
+            number += 1
+            var failure: Error?
+            var found: [T] = []
+            do {
+                found = try await attempt()
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                failure = error
+            }
+            if !found.isEmpty { return found }
+            missed(number, failure)
+            if number > delaysMs.count { break }
+            try await time.sleep(ms: delaysMs[number - 1])
+        }
+        return []
+    }
+
     /// The songs a room's autoplay looks for more of: [ask], the last song, then the songs of [queue] that members put
     /// there, the latest first, one for each member who has not a song among them yet. Songs autoplay itself put there
     /// are not a member's choice and are left out. A room where one member added everything gives [ask] alone, as it

@@ -284,6 +284,7 @@ async function main() {
   if (process.env.SIM_RELEASE) await updateSection(JSON.parse(process.env.SIM_RELEASE));
   await playlistAndRepeatSection();
   await autoplaySection();
+  await autoplayFullQueueSection();
   await weakNetworkSection();
   await tasteSection();
   if (process.env.SIM_FILL_MS) await autoplayRetrySection(Number(process.env.SIM_FILL_MS));
@@ -1383,13 +1384,29 @@ async function autoplaySection() {
   await b.waitFor((m) => m.t === "autoplay.fill");
   check("a device listening alone is passed over for one that follows the room", await a.stays((m) => m.t === "autoplay.fill", 300));
 
-  // A song nobody could play does not ask for more, or a run of broken songs would never end
-  b.send({ t: "queue.addMany", tracks: [track(VIDEO_B, "Five")] });
-  const five = await b.waitFor((m) => m.t === "prepare");
+  // A song nobody could play is asked about like any other, but not after a run of them, or broken songs would never end
+  const breakOne = async (title, videoId) => {
+    b.send({ t: "queue.addMany", tracks: [track(videoId, title)] });
+    const broken = await b.waitFor((m) => m.t === "prepare");
+    quiet();
+    b.send({ t: "resolveFailed", epoch: broken.epoch });
+    return b.waitFor((m) => m.t === "state" && m.state.phase === "idle");
+  };
+  await breakOne("Five", VIDEO_B);
+  check("the first song nobody could play still asks for more", (await b.waitFor((m) => m.t === "autoplay.fill")).t === "autoplay.fill");
+  await breakOne("Six", VIDEO_C);
+  check("so does the second", (await b.waitFor((m) => m.t === "autoplay.fill")).t === "autoplay.fill");
+  const third = await breakOne("Seven", VIDEO_A);
+  check("the third in a row does not", await b.stays((m) => m.t === "autoplay.fill", 400));
+  check("and the run is not in what members see", !("unplayableRun" in third.state));
+
+  // Turned on when the room already ran out of songs: it asks at once, with the last song
+  b.send({ t: "autoplay", on: false });
+  await b.waitFor((m) => m.t === "state" && m.state.autoplay === false);
   quiet();
-  b.send({ t: "resolveFailed", epoch: five.epoch });
-  await b.waitFor((m) => m.t === "state" && m.state.phase === "idle");
-  check("a song nobody could play does not ask for more", await b.stays((m) => m.t === "autoplay.fill", 400));
+  b.send({ t: "autoplay", on: true });
+  const late = await b.waitFor((m) => m.t === "autoplay.fill");
+  check("turning autoplay on in a room that ran out asks for songs like the last one", late.videoId === VIDEO_A && late.title === "Seven");
 
   // Like repeat, it is the owner's alone once guests may only add songs
   a.send({ t: "solo", on: false });
@@ -1400,6 +1417,33 @@ async function autoplaySection() {
   const refused = await b.waitFor((m) => m.t === "error");
   check("guests that may only add songs cannot change it", refused.code === "forbidden");
   [a, b].forEach((x) => x.close());
+}
+
+/** A queue the members filled to the limit still gets autoplay's songs: what was played makes room at the head. */
+async function autoplayFullQueueSection() {
+  console.log("Autoplay: a full queue");
+  const [a] = await freshRoom(["Fa"]);
+  const id = (i) => `fq${String(i).padStart(9, "0")}`;
+  const tracks = (from, n) => Array.from({ length: n }, (_, i) => ({ videoId: id(from + i), title: `Song ${from + i}`, artist: "x", durMs: 200000 }));
+  a.send({ t: "queue.addMany", tracks: tracks(0, 100) });
+  await a.waitFor((m) => m.t === "state" && m.state.queue.length === 100);
+  a.send({ t: "queue.addMany", tracks: tracks(100, 100) });
+  const full = await a.waitFor((m) => m.t === "state" && m.state.queue.length === 200);
+  a.send({ t: "jump", id: full.state.queue[199].id });
+  const last = await a.waitFor((m) => m.t === "prepare" && m.index === 199);
+  a.send({ t: "ready", epoch: last.epoch });
+  await a.waitFor((m) => m.t === "start");
+  a.inbox.length = 0;
+  a.send({ t: "next" });
+  const ask = await a.waitFor((m) => m.t === "autoplay.fill");
+  check("a room whose queue is full still asks", ask.videoId === id(199));
+  a.send({ t: "queue.addMany", tracks: tracks(1000, 5), auto: true });
+  const filled = await a.waitFor((m) => m.t === "state" && m.state.queue.some((q) => q.auto));
+  const q = filled.state.queue;
+  check("autoplay's songs were added and the queue stays at the limit", q.length === 200 && q.filter((x) => x.auto).length === 5, String(q.length));
+  check("what was played, at the head, made room", q[0].title === "Song 5" && q[194].title === "Song 199");
+  check("and the first of the new songs plays", filled.state.index === 195 && filled.state.phase === "preparing", `${filled.state.index} ${filled.state.phase}`);
+  a.close();
 }
 
 /** A device asked for songs that sends none (offline, in the background, nothing found) must not leave the room at a stop. */
@@ -1442,6 +1486,40 @@ async function autoplayRetrySection(fillMs) {
   check("a device that was asked is not asked again while others were not", !a.inbox.some(isFill) && next.inbox.filter(isFill).length === 1);
   quiet(); // the questions counted above are not new ones
   check("three devices are asked at most", (await all([a, b, c], (x) => x.stays(isFill, fillMs * 2))).every(Boolean));
+
+  // Three questions that nobody answers do not end it: a device that comes in, asks to be brought up to date or stops
+  // listening on its own is asked in a new round, up to FILL_ROUNDS_MAX (5) rounds in all
+  const code = a.ws.url.split("/room/")[1].split("?")[0];
+  const d = new Client(code, "Rd-id", "Rd");
+  const everyone = () => [a, b, c, d];
+  const askedIn = async (trigger, label) => {
+    everyone().forEach((x) => (x.inbox.length = 0));
+    await trigger();
+    await sleep(500);
+    const got = everyone().filter((x) => x.inbox.some(isFill));
+    check(label, got.length === 1 && got[0].inbox.find(isFill).epoch === first.epoch && got[0].inbox.find(isFill).videoId === VIDEO_A, String(got.length));
+    await sleep(fillMs * 2 + 600); // the other two questions of the round go out and the round ends
+  };
+  await askedIn(() => d.join(false), "a device that joins an idle room that was not answered is asked");
+  await askedIn(() => c.send({ t: "resync" }), "so is one that asks to be brought up to date");
+  await askedIn(async () => {
+    b.send({ t: "solo", on: true });
+    await sleep(300);
+    everyone().forEach((x) => (x.inbox.length = 0));
+    b.send({ t: "solo", on: false });
+  }, "so is one that stops listening on its own");
+  await askedIn(() => c.send({ t: "resync" }), "the fifth round is the last one asked");
+  everyone().forEach((x) => (x.inbox.length = 0));
+  c.send({ t: "resync" });
+  check("and no sixth round follows", (await all(everyone(), (x) => x.stays(isFill, 800))).every(Boolean));
+  d.close();
+
+  // Someone who clears the queue does not want the room to start by itself again
+  a.send({ t: "queue.clear" });
+  await a.waitFor((m) => m.t === "state" && m.state.queue.length === 0);
+  quiet();
+  c.send({ t: "resync" });
+  check("a room whose queue was cleared asks nobody", (await all([a, b, c], (x) => x.stays(isFill, 800))).every(Boolean));
 
   // An answer ends it: the room plays and nobody is asked again
   quiet();

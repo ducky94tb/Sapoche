@@ -138,6 +138,11 @@ final class GroupSession {
     /// Whether the song loading while alone plays once it is there; play and pause during the load only flip this.
     private var soloPlayOnLoad = false
 
+    /// When this device, listening alone, ran out of songs at the end of the room's queue and stopped, while the room's
+    /// autoplay was on: it carries on with what the room adds after that, for `soloWaitMs`. Nil when it is not waiting
+    /// (the person did anything since, or the wait ran out).
+    private var soloEndedAt: Int64?
+
     private var prepareJob: Job?
     private var startJob: Job?
     private var driftJob: Job?
@@ -252,6 +257,7 @@ final class GroupSession {
     /// after, and work still waiting in it would never run and leave the room's song playing.
     func close() {
         held = false
+        soloEndedAt = nil
         cancelPlayback()
         player.stop()
         loadedItemId = nil
@@ -308,6 +314,7 @@ final class GroupSession {
         scope.launch { [weak self] in
             guard let self, !self.solo else { return }
             self.solo = true
+            self.soloEndedAt = nil
             self.held = false
             self.prepareJob?.cancel()
             self.startJob?.cancel()
@@ -341,6 +348,7 @@ final class GroupSession {
         scope.launch { [weak self] in
             guard let self, self.solo else { return }
             self.solo = false
+            self.soloEndedAt = nil
             self.held = false
             self.soloJob?.cancel()
             self.handledEpoch = -1 // whatever the room says next counts, even if its epoch looks familiar
@@ -365,6 +373,7 @@ final class GroupSession {
     func soloPlay() {
         scope.launch { [weak self] in
             guard let self else { return }
+            self.soloEndedAt = nil
             if self.soloJob?.isActive == true {
                 // The song is on its way: it plays once it is there
                 self.soloPlayOnLoad = true
@@ -382,6 +391,7 @@ final class GroupSession {
     func soloPause() {
         scope.launch { [weak self] in
             guard let self else { return }
+            self.soloEndedAt = nil
             // A song still on its way stays paused when it gets there
             self.soloPlayOnLoad = false
             self.snapshot.update { $0.loading = false }
@@ -391,7 +401,9 @@ final class GroupSession {
 
     func soloSeek(_ positionMs: Int64) {
         scope.launch { [weak self] in
-            guard let self, self.loadedItemId != nil else { return }
+            guard let self else { return }
+            self.soloEndedAt = nil
+            guard self.loadedItemId != nil else { return }
             try await self.player.seekTo(max(positionMs, 0))
         }
     }
@@ -415,13 +427,16 @@ final class GroupSession {
 
     func soloJump(_ itemId: String) {
         scope.launch { [weak self] in
-            guard let self, let item = self.state?.queue.first(where: { $0.id == itemId }) else { return }
+            guard let self else { return }
+            self.soloEndedAt = nil
+            guard let item = self.state?.queue.first(where: { $0.id == itemId }) else { return }
             self.soloLoad(item, 0, play: true)
         }
     }
 
     /// Moves [delta] items along the room's queue from where this device is.
     private func soloStep(_ delta: Int, auto: Bool) {
+        soloEndedAt = nil
         guard let s = state else { return }
         let at = s.queue.firstIndex { $0.id == snapshot.value.soloItemId } ?? -1
         var target = at < 0 ? s.index : at + delta
@@ -431,8 +446,12 @@ final class GroupSession {
             if delta < 0 && !s.queue.isEmpty {
                 target = 0
             } else {
-                // Ran out of songs: stop where we are
+                // Ran out of songs: stop where we are, and carry on if the room's autoplay adds some soon
                 player.pause()
+                if delta > 0 && s.autoplay != false {
+                    soloEndedAt = time.nowMs()
+                    log("solo waits at the end of the room's queue for songs to come")
+                }
                 return
             }
         }
@@ -476,6 +495,28 @@ final class GroupSession {
         }
     }
 
+    /// This device stopped at the end of the room's queue (see `soloEndedAt`) and the room has songs after the one it was on
+    /// now: the first of them plays. When that song is gone (autoplay clears what it added before), the song the room is on
+    /// does, as when stepping back from the end. Past `soloWaitMs`, or with autoplay turned off, it gives up waiting.
+    private func soloCarryOn() {
+        guard let since = soloEndedAt, let s = state else { return }
+        if time.nowMs() - since > Self.soloWaitMs || s.autoplay == false {
+            soloEndedAt = nil
+            return
+        }
+        let mine = snapshot.value.soloItemId
+        let next: QueueItem?
+        if let at = s.queue.firstIndex(where: { $0.id == mine }) {
+            next = s.queue.indices.contains(at + 1) ? s.queue[at + 1] : nil
+        } else {
+            next = s.phase != "idle" && s.queue.indices.contains(s.index) ? s.queue[s.index] : nil
+        }
+        guard let next else { return }
+        soloEndedAt = nil
+        log("solo carries on with '\(next.title)', which the room added")
+        soloLoad(next, 0, play: true)
+    }
+
     /// While alone, keep the gapless successor equal to the song after the one this device is on.
     private func soloPreload() {
         let mine = snapshot.value.soloItemId
@@ -496,6 +537,7 @@ final class GroupSession {
         state = newState
         snapshot.update { $0.state = newState; $0.members = members; $0.you = you }
         if solo {
+            soloCarryOn()
             soloPreload() // the queue may have changed under us
             return
         }
@@ -1109,6 +1151,9 @@ final class GroupSession {
     }
 
     /// Below this much time to the scheduled start there is no point in seeking first.
+    /// How long a device listening alone, stopped at the end of the room's queue, waits for songs to come to carry on with.
+    private static let soloWaitMs: Int64 = 10 * 60_000
+
     private static let minTimeToAlignMs: Int64 = 120
     private static let driftTickMs: Int64 = 500
     private static let logEveryTicks = 2 // every second

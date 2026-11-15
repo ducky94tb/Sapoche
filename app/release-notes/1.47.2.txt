@@ -1,0 +1,6 @@
+Autoplay no longer stops at the end of the queue
+- When the queue runs out, the music now carries on more reliably: the search for similar songs is tried again if it finds nothing or the network blinks, and it tries once more when the network comes back.
+- On Android the phone stays awake for the moment between two songs, so it does not fall asleep in the gap with the screen off.
+- In a room, the app that is asked for songs answers once, keeps what it found while offline and sends it when it is back, and the room asks again when a device joins.
+- Listening on your own in a room: when you reach the end, the music carries on with what the room adds next.
+- A room whose queue is full still gets autoplay songs, a song nobody could load no longer ends autoplay by itself, and turning Autoplay on after the queue ended brings the next songs at once.

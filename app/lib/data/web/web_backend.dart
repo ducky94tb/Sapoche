@@ -402,6 +402,7 @@ class WebBackend extends BackendDefaults {
     client.onMessage = (message) {
       if (message is ErrorMessage) _events.add(ErrorEvent(ServerError(message.code, message.message)));
       if (message is AutoplayFillMessage) _fillRoom(message);
+      if (message is StateMessage && _owedFill != null && _fillEpoch == null) _deliverOwedFill(message.state);
       if (message is MediaTicketMessage) {
         _ticketWaiters.remove(message.id)?.complete(MediaTickets.granted(message.tickets));
       }
@@ -487,6 +488,8 @@ class WebBackend extends BackendDefaults {
     }
     _session?.close();
     _sessionEvents?.cancel();
+    _fillEpoch = null;
+    _owedFill = null;
     _local.attach(); // the personal queue gets the player back, paused where it was
     _roomClient = null;
     _session = null;
@@ -810,7 +813,11 @@ class WebBackend extends BackendDefaults {
 
   /// The music carries on with songs like the last when the queue runs out.
   @override
-  Future<void> setAutoplay(bool on) async => prefs.setBool(_keyAutoplay, on);
+  Future<void> setAutoplay(bool on) async {
+    await prefs.setBool(_keyAutoplay, on);
+    // Turned on when the queue had already run out: it carries on now, not at the end of the next queue
+    if (on && _session == null && _local.snapshot.finished && _local.snapshot.queue.isNotEmpty) _autoplay(_local.snapshot.queue.last);
+  }
 
   /// Whether this device offers the songs it loves to a room's autoplay (on unless the person turned it off).
   bool get _shareTasteOn => prefs.getBool(_keyShareTaste) ?? true;
@@ -895,13 +902,27 @@ class WebBackend extends BackendDefaults {
 
   /// The personal queue ran out. Unless the person turned it off, it carries on with songs like the last one, so the
   /// music does not just stop. Nothing happens in a room, or when they asked for something else in the meantime.
-  void _autoplay(QueueEntry last) {
+  void _autoplay(QueueEntry last, {bool retryOfDebt = false}) {
+    _owedAutoplay = null;
     if (!_autoplayOn || _session != null || _autoplaying) return;
     _autoplaying = true;
     () async {
+      // Still wanted: the person did not turn it off, join a room or ask for something else while the songs are looked for
+      bool wanted() => _autoplayOn && _session == null && _local.snapshot.finished;
       try {
-        final more = await _moreLike([last.videoId], {for (final e in _local.snapshot.queue) e.videoId}, _autoplayCount);
-        if (more.isEmpty || _session != null || !_local.snapshot.finished) return;
+        final more = await Queues.retrying<TrackRef>(
+          stillWanted: wanted,
+          missed: (n, e) => _note('local: autoplay try #$n found nothing${e == null ? '' : ': $e'}'),
+          attempt: () => _moreLike([last.videoId], {for (final e in _local.snapshot.queue) e.videoId}, _autoplayCount),
+        );
+        if (more.isEmpty || !wanted()) {
+          // Nothing found though still wanted: one more round when the network comes back, if that is soon
+          if (more.isEmpty && wanted() && !retryOfDebt) {
+            _owedAutoplay = (like: last, since: _now());
+            _note('local: autoplay owes one more try when the network is back, for ${_autoplayOwedMs ~/ 60000} minutes');
+          }
+          return;
+        }
         _note("local: autoplay adds ${more.length} songs like '${last.title}'");
         // Carrying on only adds: what has been played makes room when the new songs would not fit
         _local.dropPlayed(_local.snapshot.queue.length + more.length - LocalSession.maxQueue);
@@ -913,6 +934,27 @@ class WebBackend extends BackendDefaults {
         _autoplaying = false;
       }
     }();
+  }
+
+  /// How long after the last try of autoplay in vain a network coming back earns it one more round.
+  static const _autoplayOwedMs = 5 * 60000;
+
+  /// All the tries of [_autoplay] found nothing and the music is at a stop: the song it looked for songs like, and when
+  /// it gave up. See [networkBack].
+  ({QueueEntry like, int since})? _owedAutoplay;
+
+  /// The page is online again (the browser's `online` event). If the music stopped for want of songs not long ago, one
+  /// more round looks for them; later the music starting by itself would only be a surprise.
+  void networkBack() {
+    final owed = _owedAutoplay;
+    if (owed == null) return;
+    _owedAutoplay = null;
+    if (_now() - owed.since > _autoplayOwedMs) {
+      _note('local: autoplay owes nothing any more: it is too late now');
+      return;
+    }
+    _note('local: autoplay owes nothing any more: the network is back');
+    _autoplay(owed.like, retryOfDebt: true);
   }
 
   var _radioFor = 0;
@@ -940,28 +982,76 @@ class WebBackend extends BackendDefaults {
     }
   }
 
+  /// The epoch of the question [_fillRoom] is looking for songs to answer, while it does.
+  int? _fillEpoch;
+
+  /// Songs found for the room that could not be sent because the connection was down; sent when it is back and the room
+  /// is still waiting for them.
+  ({int epoch, List<TrackRef> songs, String title})? _owedFill;
+
   /// The room's queue ran out and the server asked this device for songs like the last one, as [_autoplay] does for the
-  /// personal queue. Nothing is sent when the room has moved on by the time they arrive, or when none were found.
+  /// personal queue. The search is tried again when it finds nothing, and the same question twice (the server puts it
+  /// again when a device comes in) does not start a second search. Nothing is sent when the room has moved on by the time
+  /// the songs arrive; songs found while the connection was down are sent when it is back (see [_deliverOwedFill]).
   Future<void> _fillRoom(AutoplayFillMessage ask) async {
+    if (_fillEpoch == ask.epoch) {
+      _note('sync: autoplay is asked again for epoch ${ask.epoch}, it is already looking');
+      return;
+    }
+    if (_owedFill?.epoch == ask.epoch && _deliverOwedFill(_session?.snapshot.state)) return;
+    _owedFill = null;
+    _fillEpoch = ask.epoch;
+    bool wanted() => _roomWaits(ask.epoch, _session?.snapshot.state);
     try {
       final entries = _session?.snapshot.state?.queue ?? const <QueueEntry>[];
       // The songs of the queue, and a song of each member who offered some, going round with each time the room runs out
       final seeds = Queues.blend(Queues.seeds(entries, ask.videoId), await _openOffers(ask.tastes), ask.epoch);
-      final more = await _moreLike(seeds, {for (final e in entries) e.videoId}, _autoplayCount);
+      final more = await Queues.retrying<TrackRef>(
+        stillWanted: wanted,
+        missed: (n, e) => _note('sync: autoplay try #$n found nothing for the room${e == null ? '' : ': $e'}'),
+        attempt: () => _moreLike(seeds, {for (final e in _session?.snapshot.state?.queue ?? const <QueueEntry>[]) e.videoId}, _autoplayCount),
+      );
       if (more.isEmpty) {
-        _note('sync: autoplay found nothing for the room, the room asks another device');
+        _note(wanted()
+            ? 'sync: autoplay found nothing for the room, the room asks another device'
+            : 'sync: autoplay found nothing and the room had moved on');
         return;
       }
-      if (_session?.snapshot.state?.epoch != ask.epoch) {
+      if (!wanted()) {
         _note('sync: autoplay found ${more.length} songs but the room had moved on');
         return;
       }
-      _note("sync: autoplay adds ${more.length} songs like '${ask.title}' and ${seeds.length - 1} more to the room");
-      // Marked as autoplay's, so the room keeps them apart from the songs its members chose
-      _send(Wire.queueAddMany(more, auto: true));
+      _note("sync: autoplay found ${more.length} songs like '${ask.title}' and ${seeds.length - 1} more for the room");
+      if (!_sendFill(more)) {
+        _owedFill = (epoch: ask.epoch, songs: more, title: ask.title);
+        _note('sync: fill owed: the room cannot be reached, the songs are kept until it can');
+      }
     } on Object catch (e) {
       _note('sync: autoplay found nothing for the room: $e');
+    } finally {
+      if (_fillEpoch == ask.epoch) _fillEpoch = null;
     }
+  }
+
+  /// Marked as autoplay's, so the room keeps them apart from the songs its members chose. Whether it could be sent.
+  bool _sendFill(List<TrackRef> songs) => _send(Wire.queueAddMany(songs, auto: true));
+
+  /// The room is idle at [epoch] and still asks for songs: the answer to its question can still be used.
+  static bool _roomWaits(int epoch, RoomState? state) =>
+      state != null && state.epoch == epoch && state.phase == 'idle' && state.autoplay != false;
+
+  /// A [state] of the room came: songs [_owedFill] kept are sent if the room still waits for them. Whether anything was sent.
+  bool _deliverOwedFill(RoomState? state) {
+    final owed = _owedFill;
+    if (owed == null) return false;
+    _owedFill = null; // sent or not, an answer is given once
+    if (!_roomWaits(owed.epoch, state)) {
+      _note('sync: fill owed: the room had moved on, the songs are dropped');
+      return false;
+    }
+    final sent = _sendFill(owed.songs);
+    _note("sync: fill owed: ${owed.songs.length} songs like '${owed.title}' ${sent ? 'sent now' : 'could not be sent'}");
+    return sent;
   }
 
   // ------------------------------------------------------------------ chat and reactions

@@ -63,6 +63,13 @@ const DROP_CHECK_MS = 5 * 60 * 1000;
 const FILL_RETRY_MS = 12_000;
 /** How many devices one run-out of the queue is put to in all, the first included. */
 const FILL_ASKS_MAX = 3;
+/**
+ * How many such rounds of questions one run-out of the queue gets in all. A round that ends unanswered is put again
+ * when a device comes in (see [askAgainIfOwed]): this keeps a flapping connection from asking for songs without end.
+ */
+const FILL_ROUNDS_MAX = 5;
+/** After this many songs in a row that nobody could load, the room stops asking autoplay for more: a run of broken songs must end. */
+const UNPLAYABLE_RUN_MAX = 3;
 
 const MAX_MEMBERS = 12;
 const MAX_ROOM_NAME = 32;
@@ -445,6 +452,7 @@ export class Room extends DurableObject<Env> {
     // A device joining mid-preparation must take part in the barrier
     if (this.s.phase === "preparing") this.send(ws, this.prepareMessage());
     this.broadcastMembers();
+    if (!before) await this.askAgainIfOwed(); // a new connection, not a rename
   }
 
   private async onMembersChanged(): Promise<void> {
@@ -938,6 +946,7 @@ export class Room extends DurableObject<Env> {
     await this.releaseGoneWaiter();
     // A device that stopped following can no longer be the one the barrier waits for
     await this.maybeStart();
+    if (!on) await this.askAgainIfOwed();
   }
 
   /** The device is leaving on purpose. An owner hands the room to whoever has been here longest. */
@@ -1060,9 +1069,10 @@ export class Room extends DurableObject<Env> {
   }
 
   /** Sends one device the current state again, plus the prepare it may have missed. */
-  private onResync(ws: WebSocket, me: Attachment): void {
+  private async onResync(ws: WebSocket, me: Attachment): Promise<void> {
     this.send(ws, this.stateMessage(me.id));
     if (this.s.phase === "preparing") this.send(ws, this.prepareMessage());
+    await this.askAgainIfOwed();
   }
 
   /** Closes devices whose connection died silently, and announces devices that went quiet. */
@@ -1114,6 +1124,13 @@ export class Room extends DurableObject<Env> {
       if (this.s.phase !== "idle" || !this.s.autoplay) return;
       this.dropAutoplayed();
       playNext = false;
+      // A queue the members filled has no room for autoplay's songs: what was played, at the head, makes room (the
+      // room is idle, so all of it was), as a personal queue does
+      const over = this.s.queue.length + Math.min(tracks.length, MAX_QUEUE) - MAX_QUEUE;
+      if (over > 0) {
+        this.s.queue.splice(0, over);
+        this.s.index = Math.max(0, this.s.index - over);
+      }
     }
     const items: QueueItem[] = [];
     for (const track of tracks) {
@@ -1208,6 +1225,7 @@ export class Room extends DurableObject<Env> {
   private async onQueueClear(): Promise<void> {
     if (this.s.queue.length === 0) return;
     this.s.queue = [];
+    await this.stopAsking(); // whoever cleared the queue does not want the room to start by itself again
     return this.goIdle();
   }
 
@@ -1321,14 +1339,16 @@ export class Room extends DurableObject<Env> {
     if (members.every((m) => this.s.failedIds.includes(m.id))) {
       const item = this.s.queue[this.s.index];
       this.broadcast({ t: "error", code: "unplayable", message: `Nobody could load: ${item?.title ?? "item"}` });
-      // No autoplay after a song nobody could play: if its successors were broken too it would never end
-      return this.onNext(undefined, false);
+      // Autoplay is asked after a song nobody could play too, but not after a run of them: if its successors were broken too it would never end
+      this.s.unplayableRun = (this.s.unplayableRun ?? 0) + 1;
+      return this.onNext(undefined, this.s.unplayableRun < UNPLAYABLE_RUN_MAX);
     }
     await this.startPlayback();
   }
 
   private async startPlayback(by?: string, why?: "wait"): Promise<void> {
     const startAt = Date.now() + this.leadMs();
+    delete this.s.unplayableRun; // something plays: the run of broken songs is over
     this.s.phase = "playing";
     this.s.startedAt = startAt - this.s.positionMs;
     this.s.readyIds = [];
@@ -1513,6 +1533,12 @@ export class Room extends DurableObject<Env> {
     }
     await this.save();
     this.broadcastState();
+    // Turned on when the room had already run out of songs (idle with a queue means it played all of it): ask now
+    if (on && this.s.phase === "idle" && this.s.queue.length > 0) {
+      delete this.s.fill;
+      delete this.s.alarms.fill;
+      await this.askForMoreSongs(this.s.queue[Math.min(this.s.index, this.s.queue.length - 1)]);
+    }
   }
 
   /**
@@ -1540,7 +1566,7 @@ export class Room extends DurableObject<Env> {
           (x.att.joinedAt ?? 0) - (y.att.joinedAt ?? 0),
       )[0];
     if (!asked) return this.stopAsking();
-    this.s.fill = { videoId: last.videoId, title: last.title, asked: [...before, asked.att.id] };
+    this.s.fill = { videoId: last.videoId, title: last.title, asked: [...before, asked.att.id], rounds: this.s.fill?.rounds };
     if (this.s.fill.asked.length < FILL_ASKS_MAX) this.s.alarms.fill = now + millis(this.env.FILL_MS, FILL_RETRY_MS);
     else delete this.s.alarms.fill;
     await this.save();
@@ -1559,6 +1585,20 @@ export class Room extends DurableObject<Env> {
   private async askAgainForMoreSongs(): Promise<void> {
     const fill = this.s.fill;
     if (!fill || this.s.phase !== "idle" || !this.s.autoplay) return this.stopAsking();
+    await this.askForMoreSongs(fill);
+  }
+
+  /**
+   * The question went out three times and nobody answered, but the room is still idle: a device that comes in (or comes
+   * back, or stops listening on its own) is asked in a new round, up to [FILL_ROUNDS_MAX]. Nothing is done while a round
+   * is still running: it will find the new socket by itself.
+   */
+  private async askAgainIfOwed(): Promise<void> {
+    const fill = this.s.fill;
+    if (!fill || this.s.phase !== "idle" || !this.s.autoplay || this.s.alarms.fill) return;
+    const rounds = (fill.rounds ?? 1) + 1;
+    if (rounds > FILL_ROUNDS_MAX) return;
+    this.s.fill = { ...fill, asked: [], rounds };
     await this.askForMoreSongs(fill);
   }
 
@@ -1794,7 +1834,7 @@ export class Room extends DurableObject<Env> {
   }
 
   private publicState(): PublicState {
-    const { readyIds: _r, failedIds: _f, alarms: _a, shuffleOrder: _o, bgSealed: _s, fill: _fill, ...rest } = this.s;
+    const { readyIds: _r, failedIds: _f, alarms: _a, shuffleOrder: _o, bgSealed: _s, fill: _fill, unplayableRun: _u, ...rest } = this.s;
     return { ...rest, theme: rest.theme ?? "default" };
   }
 

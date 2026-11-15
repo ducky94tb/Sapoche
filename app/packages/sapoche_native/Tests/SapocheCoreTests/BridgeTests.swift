@@ -93,7 +93,11 @@ final class FakeSocket: Socket {
         self.events = events
     }
 
+    /// False while the connection is down: what is sent then goes nowhere.
+    var up = true
+
     func send(_ text: String) -> Bool {
+        guard up else { return false }
         sent.append(text)
         return true
     }
@@ -1262,6 +1266,20 @@ final class GroupControllerTests: XCTestCase {
         XCTAssertTrue(controller.local.snapshot.value.finished)
     }
 
+    func testTurningAutoplayOnAfterTheQueueEndedCarriesOnAtOnce() async {
+        controller.autoplayOn = false
+        controller.requestAddMany([song(1)], playNext: false)
+        await time.advance(100)
+        engine.onEnded?()
+        await time.advance(100)
+        XCTAssertEqual(asked, [])
+        controller.autoplayOn = true
+        await time.advance(100)
+        XCTAssertEqual(asked, ["video000001"])
+        XCTAssertEqual(controller.local.snapshot.value.queue.map(\.videoId), ["video000001", "more0000001"])
+        XCTAssertEqual(engine.loaded?.videoId, "more0000001")
+    }
+
     func testASongAboveTheReferenceLevelIsPlayedQuieterAndTheSwitchTurnsThatOff() async {
         controller.requestAddMany([song(1)], playNext: false)
         await time.advance(100)
@@ -1357,6 +1375,132 @@ final class GroupControllerTests: XCTestCase {
         socket.receive(#"{"t":"autoplay.fill","epoch":4,"videoId":"video000001","title":"Song 1"}"#)
         socket.receive(#"{"t":"state","serverNow":2,"you":"me","protocol":9,"state":{"queue":[{"id":"q1","videoId":"video000001","title":"Song 1","artist":"A","durMs":9,"addedBy":"me"}],"index":0,"phase":"preparing","startedAt":0,"positionMs":0,"epoch":5,"autoplay":true},"members":[]}"#)
         await time.advance(100)
+        XCTAssertFalse(socket.sent.contains { $0.contains("queue.addMany") })
+        room.release()
+    }
+
+    func testTheSearchForSongsAfterTheLastOneIsTriedAgainWhenItFindsNothing() async {
+        var calls = 0
+        let player = FakePlayer(time: time)
+        let more = TrackRef(videoId: "more0000001", title: "More", artist: "A", thumb: nil, durMs: 200_000)
+        let again = GroupController(
+            engine: player, prefs: MemoryStore(), queueFile: QueueFile(url: dir.appendingPathComponent("a.json")),
+            config: { ServerConfig() }, time: time,
+            moreLike: { _, _, _ in
+                calls += 1
+                if calls == 1 { throw URLError(.notConnectedToInternet) }
+                return calls == 2 ? [] : [more]
+            }
+        )
+        again.requestAddMany([song(1)], playNext: false)
+        await time.advance(100)
+        player.onEnded?()
+        await time.advance(100)
+        XCTAssertEqual(calls, 1, "the first try is at once")
+        await time.advance(3_000)
+        XCTAssertEqual(calls, 2)
+        XCTAssertEqual(again.local.snapshot.value.queue.count, 1)
+        await time.advance(10_000)
+        XCTAssertEqual(calls, 3)
+        XCTAssertEqual(again.local.snapshot.value.queue.map(\.videoId), ["video000001", "more0000001"])
+        again.release()
+    }
+
+    func testWhenEveryTryFoundNothingTheNetworkComingBackSoonEarnsOneMoreRound() async {
+        var calls = 0
+        let player = FakePlayer(time: time)
+        let more = TrackRef(videoId: "more0000001", title: "More", artist: "A", thumb: nil, durMs: 200_000)
+        let late = GroupController(
+            engine: player, prefs: MemoryStore(), queueFile: QueueFile(url: dir.appendingPathComponent("l.json")),
+            config: { ServerConfig() }, time: time,
+            moreLike: { _, _, _ in
+                calls += 1
+                return calls <= 4 ? [] : [more]
+            }
+        )
+        late.requestAddMany([song(1)], playNext: false)
+        await time.advance(100)
+        player.onEnded?()
+        await time.advance(45_000)
+        XCTAssertEqual(calls, 4, "four tries, then it gives up")
+        XCTAssertEqual(late.local.snapshot.value.queue.count, 1)
+        late.networkChanged(changed: true)
+        await time.advance(100)
+        XCTAssertEqual(calls, 5)
+        XCTAssertEqual(late.local.snapshot.value.queue.map(\.videoId), ["video000001", "more0000001"])
+        late.release()
+    }
+
+    func testTheNetworkComingBackLongAfterTheMusicStoppedDoesNotStartItAgain() async {
+        var calls = 0
+        let player = FakePlayer(time: time)
+        let late = GroupController(
+            engine: player, prefs: MemoryStore(), queueFile: QueueFile(url: dir.appendingPathComponent("l2.json")),
+            config: { ServerConfig() }, time: time,
+            moreLike: { _, _, _ in
+                calls += 1
+                return []
+            }
+        )
+        late.requestAddMany([song(1)], playNext: false)
+        await time.advance(100)
+        player.onEnded?()
+        await time.advance(45_000)
+        XCTAssertEqual(calls, 4)
+        await time.advance(5 * 60_000)
+        late.networkChanged(changed: true)
+        await time.advance(100)
+        XCTAssertEqual(calls, 4, "a song after minutes of silence would be a surprise, not a repair")
+        late.release()
+    }
+
+    func testAskedTwiceForTheSameQuestionTheRoomsDeviceLooksOnceAndKeepsTheSongsUntilTheRoomCanBeReached() async throws {
+        let sockets = FakeSockets()
+        let more = TrackRef(videoId: "more0000001", title: "More", artist: "A", thumb: nil, durMs: 200_000)
+        var calls = 0
+        let room = GroupController(
+            engine: FakePlayer(time: time), prefs: MemoryStore(), queueFile: QueueFile(url: dir.appendingPathComponent("w.json")),
+            config: { ServerConfig(server: "https://x") }, time: time, sockets: sockets,
+            moreLike: { _, _, _ in
+                calls += 1
+                return calls == 1 ? [] : [more]
+            }
+        )
+        room.join(code: "ABC234", name: "Me", create: false)
+        await time.advance(10)
+        let socket = try XCTUnwrap(sockets.opened.last)
+        socket.open()
+        let idle = #"{"t":"state","serverNow":1,"you":"me","protocol":9,"state":{"queue":[{"id":"q1","videoId":"video000001","title":"Song 1","artist":"A","durMs":9,"addedBy":"me"}],"index":0,"phase":"idle","startedAt":0,"positionMs":0,"epoch":4,"autoplay":true},"members":[]}"#
+        socket.receive(idle)
+        await time.advance(10)
+        socket.sent.removeAll()
+
+        // The same question three times (the server puts it again when a device comes in): one search, which finds nothing at first
+        socket.receive(#"{"t":"autoplay.fill","epoch":4,"videoId":"video000001","title":"Song 1"}"#)
+        socket.receive(#"{"t":"autoplay.fill","epoch":4,"videoId":"video000001","title":"Song 1"}"#)
+        await time.advance(100)
+        socket.receive(#"{"t":"autoplay.fill","epoch":4,"videoId":"video000001","title":"Song 1"}"#)
+        await time.advance(100)
+        XCTAssertEqual(calls, 1)
+
+        // The connection is lost while the search waits to try again: the songs it finds then are kept, not lost
+        socket.up = false
+        await time.advance(3_000)
+        XCTAssertEqual(calls, 2)
+        XCTAssertFalse(socket.sent.contains { $0.contains("queue.addMany") })
+
+        // The connection is back and the room says it is still idle at that epoch: now they are sent
+        socket.up = true
+        socket.receive(idle)
+        await time.advance(10)
+        let many = try XCTUnwrap(socket.sent.compactMap { JSON.parse($0)?.object }.first { $0["t"] as? String == "queue.addMany" })
+        XCTAssertEqual((many["tracks"] as? [[String: Any]])?.first?["videoId"] as? String, "more0000001")
+        XCTAssertEqual(many["auto"] as? Bool, true)
+
+        // Once is enough: the next state does not send them again
+        socket.sent.removeAll()
+        socket.receive(idle)
+        await time.advance(10)
         XCTAssertFalse(socket.sent.contains { $0.contains("queue.addMany") })
         room.release()
     }

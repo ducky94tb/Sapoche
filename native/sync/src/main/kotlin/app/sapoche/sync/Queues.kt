@@ -1,5 +1,8 @@
 package app.sapoche.sync
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+
 object Queues {
     /**
      * The songs of [tracks] worth adding to [queue], whose song at [index] is the one playing: those not
@@ -52,5 +55,41 @@ object Queues {
             result += pick
         }
         return result
+    }
+
+    /** How long autoplay waits before each further try when the one before found no songs; the first try is at once. */
+    val AUTOPLAY_RETRY_MS = listOf(3_000L, 10_000L, 30_000L)
+
+    /**
+     * Looks for songs with [attempt] until it finds some: at once, then after each wait of [delaysMs]. A try that throws
+     * counts as one that found nothing (a brief loss of the network, YouTube slow), and [missed] hears of each, with the
+     * number of the try (from 1) and the error if there was one. The waits end quietly, with no songs, when [stillWanted]
+     * is no longer true before a try: the person asked for something else, or the room moved on. Being cancelled is not
+     * caught.
+     */
+    suspend fun <T> retrying(
+        delaysMs: List<Long> = AUTOPLAY_RETRY_MS,
+        stillWanted: () -> Boolean,
+        missed: (Int, Throwable?) -> Unit = { _, _ -> },
+        attempt: suspend () -> List<T>,
+    ): List<T> {
+        var number = 0
+        while (stillWanted()) {
+            number++
+            var failure: Throwable? = null
+            val found = try {
+                attempt()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failure = e
+                emptyList()
+            }
+            if (found.isNotEmpty()) return found
+            missed(number, failure)
+            if (number > delaysMs.size) break
+            delay(delaysMs[number - 1])
+        }
+        return emptyList()
     }
 }

@@ -176,6 +176,11 @@ class GroupSession {
   /// Whether the song loading while alone plays once it is there; play and pause during the load only flip this.
   bool _soloPlayOnLoad = false;
 
+  /// When this device, listening alone, ran out of songs at the end of the room's queue and stopped, while the room's
+  /// autoplay was on: it carries on with what the room adds after that, for [_soloWaitMs]. Null when it is not waiting
+  /// (the person did anything since, or the wait ran out).
+  int? _soloEndedAt;
+
   Job? _prepareJob;
   Job? _startJob;
   Job? _driftJob;
@@ -251,6 +256,7 @@ class GroupSession {
   /// Stops everything and silences the player.
   void close() {
     _held = false;
+    _soloEndedAt = null;
     _cancelPlayback();
     player.stop();
     _loadedItemId = null;
@@ -304,6 +310,7 @@ class GroupSession {
   void goSolo() {
     if (_solo) return;
     _solo = true;
+    _soloEndedAt = null;
     _held = false;
     _prepareJob?.cancel();
     _startJob?.cancel();
@@ -331,6 +338,7 @@ class GroupSession {
   void rejoin() {
     if (!_solo) return;
     _solo = false;
+    _soloEndedAt = null;
     _held = false;
     _soloJob?.cancel();
     _handledEpoch = -1; // whatever the room says next counts, even if its epoch looks familiar
@@ -349,6 +357,7 @@ class GroupSession {
   }
 
   void soloPlay() {
+    _soloEndedAt = null;
     if (_soloJob?.isActive == true) {
       // The song is on its way: it plays once it is there
       _soloPlayOnLoad = true;
@@ -368,6 +377,7 @@ class GroupSession {
   }
 
   void soloPause() {
+    _soloEndedAt = null;
     // A song still on its way stays paused when it gets there
     _soloPlayOnLoad = false;
     _update((s) => s.copyWith(loading: false));
@@ -375,6 +385,7 @@ class GroupSession {
   }
 
   void soloSeek(int positionMs) {
+    _soloEndedAt = null;
     if (_loadedItemId != null) player.seekTo(positionMs < 0 ? 0 : positionMs);
   }
 
@@ -391,6 +402,7 @@ class GroupSession {
   }
 
   void soloJump(String itemId) {
+    _soloEndedAt = null;
     for (final e in _state?.queue ?? const <QueueEntry>[]) {
       if (e.id == itemId) _soloLoad(e, 0, play: true);
     }
@@ -398,6 +410,7 @@ class GroupSession {
 
   /// Moves [delta] items along the room's queue from where this device is.
   void _soloStep(int delta, {required bool auto}) {
+    _soloEndedAt = null;
     final s = _state;
     if (s == null) return;
     final at = s.queue.indexWhere((e) => e.id == _snapshot.soloItemId);
@@ -408,8 +421,12 @@ class GroupSession {
       if (delta < 0 && s.queue.isNotEmpty) {
         target = 0;
       } else {
-        // Ran out of songs: stop where we are
+        // Ran out of songs: stop where we are, and carry on if the room's autoplay adds some soon
         player.pause();
+        if (delta > 0 && s.autoplay != false) {
+          _soloEndedAt = nowMs();
+          log("solo waits at the end of the room's queue for songs to come");
+        }
         return;
       }
     }
@@ -452,6 +469,30 @@ class GroupSession {
     });
   }
 
+  /// How long a device listening alone, stopped at the end of the room's queue, waits for songs to come to carry on with.
+  static const _soloWaitMs = 10 * 60000;
+
+  /// This device stopped at the end of the room's queue (see [_soloEndedAt]) and the room has songs after the one it was
+  /// on now: the first of them plays. When that song is gone (autoplay clears what it added before), the song the room is
+  /// on does, as when stepping back from the end. Past [_soloWaitMs], or with autoplay turned off, it gives up waiting.
+  void _soloCarryOn() {
+    final since = _soloEndedAt;
+    final s = _state;
+    if (since == null || s == null) return;
+    if (nowMs() - since > _soloWaitMs || s.autoplay == false) {
+      _soloEndedAt = null;
+      return;
+    }
+    final at = s.queue.indexWhere((e) => e.id == _snapshot.soloItemId);
+    final QueueEntry? next = at >= 0
+        ? (at + 1 < s.queue.length ? s.queue[at + 1] : null)
+        : (s.phase != 'idle' && s.index >= 0 && s.index < s.queue.length ? s.queue[s.index] : null);
+    if (next == null) return;
+    _soloEndedAt = null;
+    log("solo carries on with '${next.title}', which the room added");
+    _soloLoad(next, 0, play: true);
+  }
+
   /// While alone, keeps the gapless successor equal to the song after the one this device is on.
   void _soloPreload() {
     final s = _state;
@@ -472,6 +513,7 @@ class GroupSession {
     _state = msg.state;
     _update((s) => s.copyWith(state: msg.state, members: msg.members, you: msg.you));
     if (_solo) {
+      _soloCarryOn();
       _soloPreload(); // the queue may have changed under us
       return;
     }

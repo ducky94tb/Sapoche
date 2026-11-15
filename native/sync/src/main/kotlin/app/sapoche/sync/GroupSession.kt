@@ -174,6 +174,13 @@ class GroupSession(
     /** Whether the song loading while alone plays once it is there; play and pause during the load only flip this. */
     private var soloPlayOnLoad = false
 
+    /**
+     * When this device, listening alone, ran out of songs at the end of the room's queue and stopped, while the room's
+     * autoplay was on: it carries on with what the room adds after that, for [SOLO_WAIT_MS]. Null when it is not waiting
+     * (the person did anything since, or the wait ran out).
+     */
+    private var soloEndedAt: Long? = null
+
     private var prepareJob: Job? = null
     private var startJob: Job? = null
     private var driftJob: Job? = null
@@ -267,6 +274,7 @@ class GroupSession(
      */
     fun close() {
         held = false
+        soloEndedAt = null
         cancelPlayback()
         player.stop()
         loadedItemId = null
@@ -334,6 +342,7 @@ class GroupSession(
         scope.launch {
             if (solo) return@launch
             solo = true
+            soloEndedAt = null
             held = false
             prepareJob?.cancel()
             startJob?.cancel()
@@ -368,6 +377,7 @@ class GroupSession(
         scope.launch {
             if (!solo) return@launch
             solo = false
+            soloEndedAt = null
             held = false
             soloJob?.cancel()
             handledEpoch = -1 // whatever the room says next counts, even if its epoch looks familiar
@@ -390,6 +400,7 @@ class GroupSession(
 
     fun soloPlay() {
         scope.launch {
+            soloEndedAt = null
             if (soloJob?.isActive == true) {
                 // The song is on its way: it plays once it is there
                 soloPlayOnLoad = true
@@ -406,6 +417,7 @@ class GroupSession(
 
     fun soloPause() {
         scope.launch {
+            soloEndedAt = null
             // A song still on its way stays paused when it gets there
             soloPlayOnLoad = false
             _snapshot.update { it.copy(loading = false) }
@@ -414,7 +426,10 @@ class GroupSession(
     }
 
     fun soloSeek(positionMs: Long) {
-        scope.launch { if (loadedItemId != null) player.seekTo(positionMs.coerceAtLeast(0)) }
+        scope.launch {
+            soloEndedAt = null
+            if (loadedItemId != null) player.seekTo(positionMs.coerceAtLeast(0))
+        }
     }
 
     /** Next in the queue after the one this device is on. */
@@ -430,11 +445,15 @@ class GroupSession(
     }
 
     fun soloJump(itemId: String) {
-        scope.launch { state?.queue?.firstOrNull { it.id == itemId }?.let { soloLoad(it, 0, play = true) } }
+        scope.launch {
+            soloEndedAt = null
+            state?.queue?.firstOrNull { it.id == itemId }?.let { soloLoad(it, 0, play = true) }
+        }
     }
 
     /** Moves [delta] items along the room's queue from where this device is. */
     private fun soloStep(delta: Int, auto: Boolean) {
+        soloEndedAt = null
         val s = state ?: return
         val at = s.queue.indexOfFirst { it.id == _snapshot.value.soloItemId }
         var target = if (at < 0) s.index else at + delta
@@ -442,8 +461,12 @@ class GroupSession(
         if (target >= s.queue.size) target = if (s.repeat == "all") 0 else -1
         if (target < 0) {
             if (delta < 0 && s.queue.isNotEmpty()) target = 0 else {
-                // Ran out of songs: stop where we are
+                // Ran out of songs: stop where we are, and carry on if the room's autoplay adds some soon
                 player.pause()
+                if (delta > 0 && s.autoplay != false) {
+                    soloEndedAt = nowMs()
+                    log("solo waits at the end of the room's queue for songs to come")
+                }
                 return
             }
         }
@@ -486,6 +509,26 @@ class GroupSession(
         }
     }
 
+    /**
+     * This device stopped at the end of the room's queue (see [soloEndedAt]) and the room has songs after the one it was on
+     * now: the first of them plays. When that song is gone (autoplay clears what it added before), the song the room is on
+     * does, as when stepping back from the end. Past [SOLO_WAIT_MS], or with autoplay turned off, it gives up waiting.
+     */
+    private fun soloCarryOn() {
+        val since = soloEndedAt ?: return
+        val s = state ?: return
+        if (nowMs() - since > SOLO_WAIT_MS || s.autoplay == false) {
+            soloEndedAt = null
+            return
+        }
+        val at = s.queue.indexOfFirst { it.id == _snapshot.value.soloItemId }
+        val next = if (at >= 0) s.queue.getOrNull(at + 1) else s.queue.getOrNull(s.index)?.takeIf { s.phase != "idle" }
+        if (next == null) return
+        soloEndedAt = null
+        log("solo carries on with '${next.title}', which the room added")
+        soloLoad(next, 0, play = true)
+    }
+
     /** While alone, keep the gapless successor equal to the song after the one this device is on. */
     private fun soloPreload() {
         val s = state
@@ -507,6 +550,7 @@ class GroupSession(
         state = msg.state
         _snapshot.update { it.copy(state = msg.state, members = msg.members, you = msg.you) }
         if (solo) {
+            soloCarryOn()
             soloPreload() // the queue may have changed under us
             return
         }
@@ -1123,6 +1167,9 @@ class GroupSession(
     }
 
     private companion object {
+        /** How long a device listening alone, stopped at the end of the room's queue, waits for songs to come to carry on with. */
+        const val SOLO_WAIT_MS = 10 * 60_000L
+
         /** Below this much time to the scheduled start there is no point in seeking first. */
         const val MIN_TIME_TO_ALIGN_MS = 120L
         const val DRIFT_TICK_MS = 500L

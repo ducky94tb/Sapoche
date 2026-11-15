@@ -355,6 +355,88 @@ void main() {
     });
   });
 
+  /// The room with [songs] songs, on [index]; [autoplay] is the room's switch.
+  RoomState roomOf(int songs, {required int index, required String phase, required int epoch, bool? autoplay = true}) => RoomState(
+    queue: [for (var i = 1; i <= songs; i++) item('$i')],
+    index: index,
+    phase: phase,
+    startedAt: 0,
+    positionMs: 0,
+    epoch: epoch,
+    autoplay: autoplay,
+  );
+
+  /// Alone, on the last of the room's two songs, which has ended: this device stopped at the end of the queue.
+  void soloAtTheEnd({bool? autoplay = true}) {
+    session.onMessage(stateOf(roomOf(2, index: 0, phase: 'playing', epoch: 1, autoplay: autoplay)));
+    async.elapse(const Duration(seconds: 1));
+    session.goSolo();
+    async.elapse(const Duration(milliseconds: 500));
+    session.soloNext();
+    async.elapse(const Duration(milliseconds: 500));
+    player.onEnded?.call();
+    async.elapse(const Duration(milliseconds: 500));
+    expect(player.playing, isFalse);
+  }
+
+  test('alone at the end of the queue, songs the room adds afterwards play on', () {
+    run(() {
+      soloAtTheEnd();
+      session.onMessage(stateOf(roomOf(3, index: 1, phase: 'idle', epoch: 3)));
+      async.elapse(const Duration(milliseconds: 500));
+      expect(player.calls.where((c) => c.startsWith('prepare 3')), hasLength(1));
+      expect(player.playing, isTrue);
+      expect(session.snapshot.soloItemId, '3');
+    });
+  });
+
+  test('alone at the end, when the room has cleared the songs autoplay put before, it follows the song the room is on', () {
+    run(() {
+      soloAtTheEnd();
+      session.onMessage(stateOf(RoomState(queue: [item('3')], index: 0, phase: 'idle', startedAt: 0, positionMs: 0, epoch: 3, autoplay: true)));
+      async.elapse(const Duration(milliseconds: 500));
+      expect(player.playing, isFalse, reason: 'an idle room has nothing to follow yet');
+      session.onMessage(stateOf(RoomState(queue: [item('3')], index: 0, phase: 'preparing', startedAt: 0, positionMs: 0, epoch: 4, autoplay: true)));
+      async.elapse(const Duration(milliseconds: 500));
+      expect(player.calls.where((c) => c.startsWith('prepare 3')), hasLength(1));
+      expect(player.playing, isTrue);
+    });
+  });
+
+  test('alone at the end, the wait is over after ten minutes', () {
+    run(() {
+      soloAtTheEnd();
+      async.elapse(const Duration(minutes: 10, milliseconds: 1));
+      session.onMessage(stateOf(roomOf(3, index: 1, phase: 'idle', epoch: 3)));
+      async.elapse(const Duration(milliseconds: 500));
+      expect(player.playing, isFalse);
+      // And it does not come back to life later
+      session.onMessage(stateOf(roomOf(3, index: 1, phase: 'idle', epoch: 4)));
+      async.elapse(const Duration(milliseconds: 500));
+      expect(player.playing, isFalse);
+    });
+  });
+
+  test('alone at the end, anything the person does ends the wait', () {
+    run(() {
+      soloAtTheEnd();
+      session.soloPause();
+      async.elapse(const Duration(milliseconds: 100));
+      session.onMessage(stateOf(roomOf(3, index: 1, phase: 'idle', epoch: 3)));
+      async.elapse(const Duration(milliseconds: 500));
+      expect(player.playing, isFalse);
+    });
+  });
+
+  test("alone at the end, the room's autoplay turned off means no wait", () {
+    run(() {
+      soloAtTheEnd(autoplay: false);
+      session.onMessage(stateOf(roomOf(3, index: 1, phase: 'idle', epoch: 3, autoplay: false)));
+      async.elapse(const Duration(milliseconds: 500));
+      expect(player.playing, isFalse);
+    });
+  });
+
   test('going solo tells the room and rejoining asks for the state again', () {
     run(() {
       session.onMessage(stateOf(room(phase: 'playing', startedAt: 10000)));

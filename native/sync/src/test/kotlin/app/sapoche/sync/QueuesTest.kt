@@ -1,7 +1,10 @@
 package app.sapoche.sync
 
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class QueuesTest {
 
@@ -96,5 +99,54 @@ class QueuesTest {
         assertEquals(listOf("x", "y", "z", "b", "c"), Queues.blend(listOf("x", "y", "z"), offers, epoch = 1))
         assertEquals(listOf("a", "b"), Queues.blend(listOf("a"), listOf(listOf("a", "b")), epoch = 0))
         assertEquals(listOf("x"), Queues.blend(listOf("x"), emptyList(), epoch = 7))
+    }
+
+    @Test
+    fun `a search that finds songs at once is not repeated`() = runTest {
+        var tries = 0
+        val found = Queues.retrying(stillWanted = { true }) { tries++; listOf("a") }
+        assertEquals(listOf("a"), found)
+        assertEquals(1, tries)
+        assertEquals(0, currentTime)
+    }
+
+    @Test
+    fun `a search that found nothing or failed is tried again after each wait`() = runTest {
+        val missed = ArrayList<Pair<Int, String?>>()
+        var tries = 0
+        val found = Queues.retrying(stillWanted = { true }, missed = { n, e -> missed += n to e?.message }) {
+            when (++tries) {
+                1 -> error("offline")
+                2 -> emptyList()
+                else -> listOf("a")
+            }
+        }
+        assertEquals(listOf("a"), found)
+        assertEquals(3, tries)
+        assertEquals(3_000L + 10_000L, currentTime)
+        assertEquals(listOf(1 to "offline", 2 to null), missed)
+    }
+
+    @Test
+    fun `it gives up after the last wait, four tries in all`() = runTest {
+        var tries = 0
+        val found = Queues.retrying<String>(stillWanted = { true }) { tries++; emptyList() }
+        assertTrue(found.isEmpty())
+        assertEquals(4, tries)
+        assertEquals(43_000L, currentTime)
+    }
+
+    @Test
+    fun `it stops quietly when the songs are no longer wanted`() = runTest {
+        var tries = 0
+        var wanted = true
+        val found = Queues.retrying<String>(stillWanted = { wanted }) {
+            tries++
+            wanted = false // the person asked for something else while the search ran
+            emptyList()
+        }
+        assertTrue(found.isEmpty())
+        assertEquals(1, tries)
+        assertEquals(Queues.retrying<String>(stillWanted = { false }) { error("not asked") }, emptyList())
     }
 }

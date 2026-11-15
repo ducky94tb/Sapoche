@@ -58,4 +58,70 @@ void main() {
     expect(Queues.blend(['a'], [['a', 'b']], 0), ['a', 'b']);
     expect(Queues.blend(['x'], const [], 7), ['x']);
   });
+
+  group('retrying (the cases of QueuesTest.kt)', () {
+    final waits = <int>[];
+    Future<void> pause(Duration d) async => waits.add(d.inMilliseconds);
+    setUp(waits.clear);
+
+    test('a search that finds songs at once is not repeated', () async {
+      var tries = 0;
+      final found = await Queues.retrying<String>(stillWanted: () => true, pause: pause, attempt: () async => ['a'].also(() => tries++));
+      expect(found, ['a']);
+      expect(tries, 1);
+      expect(waits, isEmpty);
+    });
+
+    test('a search that found nothing or failed is tried again after each wait', () async {
+      final missed = <(int, Object?)>[];
+      var tries = 0;
+      final found = await Queues.retrying<String>(
+        stillWanted: () => true,
+        pause: pause,
+        missed: (n, e) => missed.add((n, e)),
+        attempt: () async {
+          tries++;
+          if (tries == 1) throw StateError('offline');
+          return tries == 2 ? <String>[] : ['a'];
+        },
+      );
+      expect(found, ['a']);
+      expect(tries, 3);
+      expect(waits, [3000, 10000]);
+      expect(missed.map((m) => m.$1), [1, 2]);
+      expect(missed[0].$2, isA<StateError>());
+      expect(missed[1].$2, isNull);
+    });
+
+    test('it gives up after the last wait, four tries in all', () async {
+      var tries = 0;
+      final found = await Queues.retrying<String>(stillWanted: () => true, pause: pause, attempt: () async {
+        tries++;
+        return <String>[];
+      });
+      expect(found, isEmpty);
+      expect(tries, 4);
+      expect(waits, [3000, 10000, 30000]);
+    });
+
+    test('it stops quietly when the songs are no longer wanted', () async {
+      var tries = 0;
+      var wanted = true;
+      final found = await Queues.retrying<String>(stillWanted: () => wanted, pause: pause, attempt: () async {
+        tries++;
+        wanted = false; // the person asked for something else while the search ran
+        return <String>[];
+      });
+      expect(found, isEmpty);
+      expect(tries, 1);
+      expect(await Queues.retrying<String>(stillWanted: () => false, pause: pause, attempt: () async => throw StateError('not asked')), isEmpty);
+    });
+  });
+}
+
+extension on List<String> {
+  List<String> also(void Function() f) {
+    f();
+    return this;
+  }
 }

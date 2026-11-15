@@ -31,6 +31,7 @@ import app.sapoche.sync.Protocol
 import app.sapoche.sync.QueueFile
 import app.sapoche.sync.Queues
 import app.sapoche.sync.RoomClient
+import app.sapoche.sync.RoomState
 import app.sapoche.sync.Sleep
 import app.sapoche.sync.SleepTimer
 import app.sapoche.sync.TasteSeed
@@ -116,6 +117,18 @@ class GroupController(
 
     private var autoplayJob: Job? = null
     private var radioJob: Job? = null
+
+    /** Keeps the phone awake between the last song and the next, when ExoPlayer holds nothing (see [AwakeHold]). */
+    private val awake = AwakeHold(context, ownScope)
+
+    /** The job that looks for songs for the room, and the epoch of the question it answers; see [fillRoom]. */
+    private var fillJob: Job? = null
+    private var fillEpoch: Long? = null
+
+    /** Songs found for the room that could not be sent because the connection was down; sent when it is back and the room is still waiting for them. */
+    private var owedFill: OwedFill? = null
+
+    private class OwedFill(val epoch: Long, val songs: List<TrackRef>, val title: String)
 
     /** Songs of different loudness are played at one level, unless the person turned that off. */
     private val balance = VolumeBalance(exo, SapocheApp.loudness, ownScope) { prefs.getBoolean(KEY_NORMALIZE, true) }
@@ -339,6 +352,11 @@ class GroupController(
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) sleep.songEnded()
             }
+
+            // From here ExoPlayer holds the CPU and the Wi-Fi itself
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) awake.release("the music plays")
+            }
         })
         ownScope.launch { local.snapshot.collect { publish() } }
     }
@@ -348,54 +366,177 @@ class GroupController(
      * one, so the music does not just stop. Nothing happens without a network, in a room, or when they
      * asked for something else in the meantime.
      */
-    private fun autoplay(last: QueueItem) {
+    private fun autoplay(last: QueueItem, retryOfDebt: Boolean = false) {
+        forgetOwedAutoplay("autoplay starts")
         if (!autoplayOn || session != null || autoplayJob?.isActive == true || sleep.state.value == Sleep.SongEnd) return
         // A song from a file on this phone has no radio: the last song from YouTube in the queue stands in for it
         val like = if (!LocalMusic.isLocal(last.videoId)) last else local.snapshot.value.queue.lastOrNull { !LocalMusic.isLocal(it.videoId) } ?: return
         autoplayJob = ownScope.launch {
+            // Still wanted: the person did not turn it off, join a room or ask for something else while the songs are looked for
+            val wanted = { autoplayOn && session == null && local.snapshot.value.finished && sleep.state.value != Sleep.SongEnd }
+            var added = false
             try {
-                val more = moreLike(listOf(like.videoId), local.snapshot.value.queue.map { it.videoId }.toSet(), AUTOPLAY_COUNT)
-                if (more.isEmpty() || session != null || !local.snapshot.value.finished) return@launch
+                val more = Queues.retrying(
+                    stillWanted = wanted,
+                    missed = { n, e -> EventLog.d("local", "autoplay try #$n found nothing${e?.let { ": ${it.javaClass.simpleName}: ${it.message}" } ?: ""}") },
+                ) {
+                    awake.hold("autoplay")
+                    moreLike(listOf(like.videoId), local.snapshot.value.queue.map { it.videoId }.toSet(), AUTOPLAY_COUNT)
+                }
+                if (more.isEmpty() || !wanted()) {
+                    // Nothing found though still wanted: one more round when the network comes back, if that is soon
+                    if (more.isEmpty() && wanted() && !retryOfDebt) oweAutoplay(like)
+                    return@launch
+                }
                 EventLog.d("local", "autoplay adds ${more.size} songs like '${like.title}'")
                 // Carrying on only adds: what has been played makes room when the new songs would not fit
                 local.dropPlayed(local.snapshot.value.queue.size + more.size - LocalSession.MAX_QUEUE)
                 sources.mark(more.map { it.videoId }, ListenSource.AUTO)
                 local.add(more, next = false)
+                added = true // the song still has to be fetched: the hold goes when it plays
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 EventLog.d("local", "autoplay found nothing: ${e.javaClass.simpleName}: ${e.message}")
+            } finally {
+                if (!added) awake.release("autoplay gave up")
             }
         }
     }
 
+    /** The song autoplay looked for songs like in vain while still wanted, and when it gave up; see [oweAutoplay]. */
+    private var owedAutoplay: Pair<QueueItem, Long>? = null
+    private var owedNetwork: ConnectivityManager.NetworkCallback? = null
+    private var owedJob: Job? = null
+
+    /**
+     * All the tries of [autoplay] found nothing and the music is at a stop. When the network changes or comes back within
+     * [AUTOPLAY_OWED_MS], one more round is made; later the music starting by itself would only be a surprise.
+     */
+    private fun oweAutoplay(like: QueueItem) {
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return
+        owedAutoplay = like to SystemClock.elapsedRealtime()
+        var current: Network? = null
+        var armed = false // the network that was there when the debt began is not news
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (current != null && current != network) armed = true
+                current = network
+                if (armed) Handler(Looper.getMainLooper()).post { owedNetworkBack() }
+            }
+
+            override fun onLost(network: Network) {
+                if (current == network) {
+                    current = null
+                    armed = true
+                }
+            }
+        }
+        try {
+            cm.registerDefaultNetworkCallback(callback)
+            owedNetwork = callback
+        } catch (e: RuntimeException) {
+            owedAutoplay = null
+            EventLog.d("local", "cannot watch the network for autoplay: ${e.message}")
+            return
+        }
+        owedJob?.cancel()
+        owedJob = ownScope.launch {
+            delay(AUTOPLAY_OWED_MS)
+            forgetOwedAutoplay("it is too late now")
+        }
+        EventLog.d("local", "autoplay owes one more try when the network is back, for ${AUTOPLAY_OWED_MS / 60_000} minutes")
+    }
+
+    private fun owedNetworkBack() {
+        val (like, _) = owedAutoplay ?: return
+        forgetOwedAutoplay("the network is back")
+        autoplay(like, retryOfDebt = true)
+    }
+
+    private fun forgetOwedAutoplay(why: String) {
+        owedJob?.cancel()
+        owedJob = null
+        owedNetwork?.let { callback -> runCatching { context.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(callback) } }
+        owedNetwork = null
+        if (owedAutoplay != null) EventLog.d("local", "autoplay owes nothing any more: $why")
+        owedAutoplay = null
+    }
+
     /**
      * The room's queue ran out and the server asked this device for songs like the last one, as [autoplay] does for the
-     * personal queue. Nothing is sent when the room has moved on by the time they arrive, or when none were found.
+     * personal queue. The search is tried again when it finds nothing, and the same question twice (the server puts it
+     * again when a device comes in) does not start a second search. Nothing is sent when the room has moved on by the
+     * time the songs arrive; songs found while the connection was down are sent when it is back (see [deliverOwedFill]).
      */
     private fun fillRoom(ask: ServerMessage.AutoplayFill) {
-        scope.launch {
+        if (fillJob?.isActive == true) {
+            if (fillEpoch == ask.epoch) {
+                EventLog.d("sync", "autoplay is asked again for epoch ${ask.epoch}, it is already looking")
+                return
+            }
+            fillJob?.cancel()
+        }
+        owedFill?.takeIf { it.epoch == ask.epoch }?.let {
+            if (deliverOwedFill(session?.snapshot?.value?.state)) return
+        }
+        owedFill = null
+        fillEpoch = ask.epoch
+        fillJob = scope.launch {
+            val wanted = { roomWaitsFor(ask.epoch, session?.snapshot?.value?.state) }
+            var answered = false
             try {
                 // The songs of the queue, and a song of each member who offered some, going round with each time the room runs out
                 val seeds = Queues.blend(Queues.seeds(queue(), ask.videoId), openOffers(ask.tastes), ask.epoch)
-                val more = moreLike(seeds, queue().map { it.videoId }.toSet(), AUTOPLAY_COUNT)
+                val more = Queues.retrying(
+                    stillWanted = wanted,
+                    missed = { n, e -> EventLog.d("sync", "autoplay try #$n found nothing for the room${e?.let { ": ${it.javaClass.simpleName}: ${it.message}" } ?: ""}") },
+                ) {
+                    awake.hold("autoplay for the room")
+                    moreLike(seeds, queue().map { it.videoId }.toSet(), AUTOPLAY_COUNT)
+                }
                 if (more.isEmpty()) {
-                    EventLog.d("sync", "autoplay found nothing for the room, the room asks another device")
+                    EventLog.d("sync", if (wanted()) "autoplay found nothing for the room, the room asks another device" else "autoplay found nothing and the room had moved on")
                     return@launch
                 }
-                if (session?.snapshot?.value?.state?.epoch != ask.epoch) {
+                if (!wanted()) {
                     EventLog.d("sync", "autoplay found ${more.size} songs but the room had moved on")
                     return@launch
                 }
-                EventLog.d("sync", "autoplay adds ${more.size} songs like '${ask.title}' and ${seeds.size - 1} more to the room")
-                // Marked as autoplay's, so the room keeps them apart from the songs its members chose
-                send(Protocol.queueAddMany(more, auto = true))
+                EventLog.d("sync", "autoplay found ${more.size} songs like '${ask.title}' and ${seeds.size - 1} more for the room")
+                if (!sendFill(more)) {
+                    owedFill = OwedFill(ask.epoch, more, ask.title)
+                    EventLog.d("sync", "fill owed: the room cannot be reached, the songs are kept until it can")
+                }
+                answered = true // the room starts the song and sends it to prepare: the hold goes when it plays
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 EventLog.d("sync", "autoplay found nothing for the room: ${e.javaClass.simpleName}: ${e.message}")
+            } finally {
+                if (!answered) awake.release("autoplay for the room gave up")
             }
         }
+    }
+
+    /** Marked as autoplay's, so the room keeps them apart from the songs its members chose. Whether it could be sent. */
+    private fun sendFill(songs: List<TrackRef>): Boolean = send(Protocol.queueAddMany(songs, auto = true))
+
+    /** The room is idle at [epoch] and still asks for songs: the answer to its question can still be used. */
+    private fun roomWaitsFor(epoch: Long, state: RoomState?): Boolean =
+        state != null && state.epoch == epoch && state.phase == "idle" && state.autoplay != false
+
+    /** A [state] of the room came: songs [owedFill] kept are sent if the room still waits for them. Whether anything was sent. */
+    private fun deliverOwedFill(state: RoomState?): Boolean {
+        val owed = owedFill ?: return false
+        owedFill = null // sent or not, an answer is given once
+        if (!roomWaitsFor(owed.epoch, state)) {
+            EventLog.d("sync", "fill owed: the room had moved on, the songs are dropped")
+            return false
+        }
+        val sent = sendFill(owed.songs)
+        EventLog.d("sync", "fill owed: ${owed.songs.size} songs like '${owed.title}' ${if (sent) "sent now" else "could not be sent"}")
+        return sent
     }
 
     /** Whether this device offers the songs it loves to a room's autoplay (on unless the person turned it off). */
@@ -507,7 +648,11 @@ class GroupController(
     /** Whether the music carries on by itself when the queue runs out. */
     var autoplayOn: Boolean
         get() = prefs.getBoolean(KEY_AUTOPLAY, true)
-        set(value) = prefs.edit().putBoolean(KEY_AUTOPLAY, value).apply()
+        set(value) {
+            prefs.edit().putBoolean(KEY_AUTOPLAY, value).apply()
+            // Turned on when the queue had already run out: it carries on now, not at the end of the next queue
+            if (value && session == null && local.snapshot.value.finished) local.snapshot.value.queue.lastOrNull()?.let { autoplay(it) }
+        }
 
     fun setVideoMode(on: Boolean) {
         videoMode = on
@@ -571,11 +716,22 @@ class GroupController(
         newClient.onMessage = {
             if (it is ServerMessage.Error) _errors.tryEmit(it)
             if (it is ServerMessage.AutoplayFill) fillRoom(it)
+            if (it is ServerMessage.State) {
+                if (owedFill != null && fillJob?.isActive != true) deliverOwedFill(it.state)
+                // The room ran out of songs and carries on by itself: every device needs to be awake to load what it adds
+                if (it.state.phase == "idle" && it.state.autoplay == true && it.state.queue.isNotEmpty() && !awake.held &&
+                    !exo.isPlaying && sleep.state.value != Sleep.SongEnd
+                ) {
+                    awake.hold("the room ran out of songs")
+                }
+            }
             if (it is ServerMessage.MediaTicket) ticketWaiters[it.id]?.complete(it)
             // An error of the pictures is the answer to the one request that waits for it
             if (it is ServerMessage.Error && it.code.startsWith("media_")) ticketWaiters.values.firstOrNull()?.complete(it)
             onChat(code.uppercase(), it)
             newSession.onMessage(it)
+            // The song loads paused: the hold is taken after the session has stopped the player
+            if (it is ServerMessage.Prepare && !exo.isPlaying) awake.hold("a song of the room to load")
             // After the session has the state: the offer depends on whether the room's chat is sealed
             if (it is ServerMessage.State && it.protocol >= TASTE_PROTOCOL) shareTaste()
         }
@@ -721,6 +877,10 @@ class GroupController(
         deliveredUpTo = 0
         scope.cancel()
         scope = newScope()
+        fillJob = null
+        fillEpoch = null
+        owedFill = null
+        awake.release("the room was left")
         local.attach() // the personal queue gets the player back, paused where it was
         publish()
     }
@@ -1066,6 +1226,8 @@ class GroupController(
 
     fun release() {
         stopFollowing(deliberate = false) // keep the saved room so a restart soon after rejoins it
+        awake.release("the service stops")
+        forgetOwedAutoplay("the service stops")
         local.save()
         ownScope.cancel()
         scope.cancel()
@@ -1109,6 +1271,9 @@ class GroupController(
 
         /** Songs added each time the queue runs out and the music carries on by itself. */
         const val AUTOPLAY_COUNT = 5
+
+        /** How long after the last try of autoplay in vain a network coming back earns it one more round. */
+        const val AUTOPLAY_OWED_MS = 5 * 60_000L
 
         /** Songs that follow one that was played on its own. */
         const val RADIO_COUNT = 20

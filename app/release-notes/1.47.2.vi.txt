@@ -1,0 +1,6 @@
+Tự phát không còn dừng ở cuối hàng đợi
+- Hết hàng đợi thì nhạc tiếp tục chắc hơn: tìm bài tương tự bị trống hoặc mạng chập chờn thì thử lại, và thử thêm một lần khi mạng về.
+- Trên Android, máy được giữ thức trong quãng giữa hai bài, nên không ngủ mất ở khoảng trống đó khi tắt màn hình.
+- Trong phòng, máy được hỏi bài chỉ trả lời một lần, giữ bài đã tìm được lúc mất mạng rồi gửi khi nối lại, và phòng hỏi lại khi có máy mới vào.
+- Nghe riêng trong phòng: tới cuối thì nhạc đi tiếp với bài phòng thêm vào sau đó.
+- Hàng đợi phòng đầy vẫn nhận được bài tự phát, một bài không ai tải được không còn tự làm tự phát dừng, và bật Tự phát sau khi hết hàng đợi thì lấy bài ngay.

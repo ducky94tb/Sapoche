@@ -943,6 +943,87 @@ class GroupSessionTest {
         assertFalse(h.player.playing)
     }
 
+    private val item3 = QueueItem("q3", "kJQP7kiw5Fk", "Song 3", "Artist", null, 190_000, "dev-a")
+
+    /** The room's state with [queue], on [index]; [autoplay] is the room's switch. */
+    private fun roomState(queue: List<QueueItem>, index: Int, phase: String, epoch: Long, autoplay: Boolean? = true) = ServerMessage.State(
+        serverNow = 0, you = "dev-a", members = emptyList(),
+        state = RoomState(queue, index, phase, 0, 0, epoch, autoplay = autoplay),
+    )
+
+    /** Alone, on the last of the room's two songs, which has ended: this device stopped at the end of the queue. */
+    private fun TestScope.soloAtTheEnd(): Harness {
+        val h = playingFirstOfTwo()
+        h.session.goSolo()
+        step(500)
+        h.session.soloNext()
+        step(500)
+        h.player.onEnded?.invoke()
+        step(500)
+        assertFalse(h.player.playing)
+        return h
+    }
+
+    @Test
+    fun `alone at the end of the queue, songs the room adds afterwards play on`() = runTest {
+        val h = soloAtTheEnd()
+        h.session.onMessage(roomState(listOf(item, item2, item3), 1, "idle", 3))
+        step(500)
+        assertEquals(item3, h.player.loaded)
+        assertTrue(h.player.playing)
+        assertEquals("q3", h.session.snapshot.value.soloItemId)
+    }
+
+    @Test
+    fun `alone at the end, when the room has cleared the songs autoplay put before, it follows the song the room is on`() = runTest {
+        val h = soloAtTheEnd()
+        h.session.onMessage(roomState(listOf(item3), 0, "idle", 3))
+        step(500)
+        assertFalse(h.player.playing, "an idle room has nothing to follow yet")
+        h.session.onMessage(roomState(listOf(item3), 0, "preparing", 4))
+        step(500)
+        assertEquals(item3, h.player.loaded)
+        assertTrue(h.player.playing)
+    }
+
+    @Test
+    fun `alone at the end, the wait is over after ten minutes`() = runTest {
+        val h = soloAtTheEnd()
+        step(10 * 60_000L + 1)
+        h.session.onMessage(roomState(listOf(item, item2, item3), 1, "idle", 3))
+        step(500)
+        assertFalse(h.player.playing)
+        // And it does not come back to life later
+        h.session.onMessage(roomState(listOf(item, item2, item3), 1, "idle", 4))
+        step(500)
+        assertFalse(h.player.playing)
+    }
+
+    @Test
+    fun `alone at the end, anything the person does ends the wait`() = runTest {
+        val h = soloAtTheEnd()
+        h.session.soloPause()
+        step(100)
+        h.session.onMessage(roomState(listOf(item, item2, item3), 1, "idle", 3))
+        step(500)
+        assertFalse(h.player.playing)
+    }
+
+    @Test
+    fun `alone at the end, the room's autoplay turned off means no wait`() = runTest {
+        val h = playingFirstOfTwo()
+        h.session.onMessage(roomState(listOf(item, item2), 0, "playing", 1, autoplay = false))
+        h.session.goSolo()
+        step(500)
+        h.session.soloNext()
+        step(500)
+        h.player.onEnded?.invoke()
+        step(500)
+        h.session.onMessage(roomState(listOf(item, item2, item3), 1, "idle", 3, autoplay = false))
+        step(500)
+        assertFalse(h.player.playing)
+    }
+
     @Test
     fun `after a restart, listening alone comes back paused on the song it was on`() = runTest {
         val h = harness()

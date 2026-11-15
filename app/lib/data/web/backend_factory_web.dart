@@ -68,6 +68,8 @@ Future<Backend> createBackend() async {
   web.document.addEventListener('visibilitychange', ((web.Event _) {
     if (web.document.visibilityState == 'hidden') backend.flush().ignore();
   }).toJS);
+  // A page that is online again looks once more for the songs autoplay could not find
+  web.window.addEventListener('online', ((web.Event _) => backend.networkBack()).toJS);
   return backend;
 }
 

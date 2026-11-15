@@ -119,6 +119,9 @@ final class GroupController {
     /// Up to [Int] songs to carry on with after [String] (a video id), leaving out the ids given.
     private let moreLike: (_ seeds: [String], Set<String>, Int) async throws -> [TrackRef]
     private let tasteOffer: () async throws -> [TrackRef]
+    /// Runs the work it is given in a way that lets it finish when the app goes to the background (on iPhone, in a
+    /// background task), so the song after the last is not left unfetched. Plain runs the work, where there is no need.
+    private let awake: (@escaping () async -> Void) async -> Void
     /// The secrets of the rooms with end-to-end encrypted chat.
     let secrets: RoomSecretStore
     private let sockets: SocketFactory?
@@ -157,6 +160,23 @@ final class GroupController {
 
     private var autoplayJob: Job?
     private var radioJob: Job?
+
+    /// The job that looks for songs for the room, and the epoch of the question it answers; see `fillRoom`.
+    private var fillJob: Job?
+    private var fillEpoch: Int64?
+
+    /// Songs found for the room that could not be sent because the connection was down; sent when it is back and the
+    /// room is still waiting for them.
+    private var owedFill: OwedFill?
+
+    private struct OwedFill {
+        let epoch: Int64
+        let songs: [TrackRef]
+        let title: String
+    }
+
+    /// Holds the app awake in the background while the room, run out of songs, waits for the next to start.
+    private var idleHold: Job?
     private var idle: IdleWatch?
     private var recorder: ListenRecorder?
 
@@ -322,7 +342,8 @@ final class GroupController {
          time: TimeSource? = nil, sockets: SocketFactory? = nil,
          moreLike: @escaping ([String], Set<String>, Int) async throws -> [TrackRef] = { _, _, _ in [] },
          tasteOffer: @escaping () async throws -> [TrackRef] = { [] },
-         secrets: RoomSecretStore = MemorySecrets()) {
+         secrets: RoomSecretStore = MemorySecrets(),
+         awake: @escaping (@escaping () async -> Void) async -> Void = { await $0() }) {
         self.engine = engine
         self.secrets = secrets
         self.prefs = prefs
@@ -332,6 +353,7 @@ final class GroupController {
         self.sockets = sockets
         self.moreLike = moreLike
         self.tasteOffer = tasteOffer
+        self.awake = awake
         trimMs = prefs.int64(Self.keyTrimMs) ?? 0
         videoMode = prefs.bool(Self.keyVideo, default: false)
         view = StateFlow(View())
@@ -416,60 +438,171 @@ final class GroupController {
     /// Whether the music carries on by itself when the queue runs out.
     var autoplayOn: Bool {
         get { prefs.bool(Self.keyAutoplay, default: true) }
-        set { prefs.set(newValue, for: Self.keyAutoplay) }
+        set {
+            prefs.set(newValue, for: Self.keyAutoplay)
+            // Turned on when the queue had already run out: it carries on now, not at the end of the next queue
+            if newValue, session == nil, local.snapshot.value.finished, let last = local.snapshot.value.queue.last { autoplay(after: last) }
+        }
     }
 
     /// The personal queue ran out. Unless the person turned it off, it carries on with songs like the last one, so the
     /// music does not just stop. Nothing happens without a network, in a room, or when they asked for something else in
     /// the meantime.
-    private func autoplay(after last: QueueItem) {
+    private func autoplay(after last: QueueItem, retryOfDebt: Bool = false) {
+        owedAutoplay = nil
         if !autoplayOn || session != nil || autoplayJob?.isActive == true || sleep.state.value == .songEnd { return }
         // A song from a file on this phone has no radio: the last song from YouTube in the queue stands in for it
         let like = LocalMusic.isLocal(last.videoId) ? local.snapshot.value.queue.last { !LocalMusic.isLocal($0.videoId) } : last
         guard let like else { return }
         autoplayJob = ownScope.launch { [weak self] in
             guard let self else { return }
-            do {
-                let queued = Set(self.local.snapshot.value.queue.map(\.videoId))
-                let more = try await self.moreLike([like.videoId], queued, Self.autoplayCount)
-                if more.isEmpty || self.session != nil || !self.local.snapshot.value.finished { return }
-                EventLog.d("local", "autoplay adds \(more.count) songs like '\(like.title)'")
-                // Carrying on only adds: what has been played makes room when the new songs would not fit
-                self.local.dropPlayed(self.local.snapshot.value.queue.count + more.count - LocalSession.maxQueue)
-                self.sources.mark(more.map(\.videoId), source: ListenSource.auto)
-                self.local.add(more, next: false)
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                EventLog.d("local", "autoplay found nothing: \(error.localizedDescription)")
+            // Still wanted: the person did not turn it off, join a room or ask for something else while the songs are looked for
+            let wanted = { [weak self] () -> Bool in
+                guard let self else { return false }
+                return self.autoplayOn && self.session == nil && self.local.snapshot.value.finished && self.sleep.state.value != .songEnd
+            }
+            await self.awake { [weak self] in
+                guard let self else { return }
+                do {
+                    let more = try await Queues.retrying(
+                        time: self.time,
+                        stillWanted: wanted,
+                        missed: { n, error in EventLog.d("local", "autoplay try #\(n) found nothing\(error.map { ": \($0.localizedDescription)" } ?? "")") }
+                    ) {
+                        let queued = Set(self.local.snapshot.value.queue.map(\.videoId))
+                        return try await self.moreLike([like.videoId], queued, Self.autoplayCount)
+                    }
+                    if more.isEmpty || !wanted() {
+                        // Nothing found though still wanted: one more round when the network comes back, if that is soon
+                        if more.isEmpty, wanted(), !retryOfDebt {
+                            self.owedAutoplay = (like, self.time.nowMs())
+                            EventLog.d("local", "autoplay owes one more try when the network is back, for \(Self.autoplayOwedMs / 60_000) minutes")
+                        }
+                        return
+                    }
+                    EventLog.d("local", "autoplay adds \(more.count) songs like '\(like.title)'")
+                    // Carrying on only adds: what has been played makes room when the new songs would not fit
+                    self.local.dropPlayed(self.local.snapshot.value.queue.count + more.count - LocalSession.maxQueue)
+                    self.sources.mark(more.map(\.videoId), source: ListenSource.auto)
+                    self.local.add(more, next: false)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    EventLog.d("local", "autoplay found nothing: \(error.localizedDescription)")
+                }
             }
         }
     }
 
-    /// The room's queue ran out and the server asked this device for songs like the last one, as [autoplay] does for the
-    /// personal queue. Nothing is sent when the room has moved on by the time they arrive, or when none were found.
+    /// All the tries of `autoplay` found nothing and the music is at a stop: the song it looked for songs like, and when
+    /// it gave up. When the network changes or comes back within `autoplayOwedMs`, one more round is made; later the music
+    /// starting by itself would only be a surprise.
+    private var owedAutoplay: (like: QueueItem, since: Int64)?
+
+    private func retryOwedAutoplay() {
+        guard let owed = owedAutoplay else { return }
+        owedAutoplay = nil
+        if time.nowMs() - owed.since > Self.autoplayOwedMs {
+            EventLog.d("local", "autoplay owes nothing any more: it is too late now")
+            return
+        }
+        EventLog.d("local", "autoplay owes nothing any more: the network is back")
+        autoplay(after: owed.like, retryOfDebt: true)
+    }
+
+    /// The room's queue ran out and the server asked this device for songs like the last one, as `autoplay` does for the
+    /// personal queue. The search is tried again when it finds nothing, and the same question twice (the server puts it
+    /// again when a device comes in) does not start a second search. Nothing is sent when the room has moved on by the
+    /// time the songs arrive; songs found while the connection was down are sent when it is back (see `deliverOwedFill`).
     private func fillRoom(epoch: Int64, videoId: String, title: String, tastes: [MemberTaste]) {
-        scope.launch { [weak self] in
+        if fillJob?.isActive == true {
+            if fillEpoch == epoch {
+                EventLog.d("sync", "autoplay is asked again for epoch \(epoch), it is already looking")
+                return
+            }
+            fillJob?.cancel()
+        }
+        if owedFill?.epoch == epoch, deliverOwedFill(session?.snapshot.value.state) { return }
+        owedFill = nil
+        fillEpoch = epoch
+        fillJob = scope.launch { [weak self] in
             guard let self else { return }
-            do {
-                // The songs of the queue, and a song of each member who offered some, going round with each time the room runs out
-                let seeds = Queues.blend(Queues.seeds(self.queue(), ask: videoId), offers: self.openOffers(tastes), epoch: epoch)
-                let more = try await self.moreLike(seeds, Set(self.queue().map(\.videoId)), Self.autoplayCount)
-                if more.isEmpty {
-                    EventLog.d("sync", "autoplay found nothing for the room, the room asks another device")
+            let wanted = { [weak self] () -> Bool in
+                guard let self else { return false }
+                return Self.roomWaits(for: epoch, self.session?.snapshot.value.state)
+            }
+            await self.awake { [weak self] in
+                guard let self else { return }
+                do {
+                    // The songs of the queue, and a song of each member who offered some, going round with each time the room runs out
+                    let seeds = Queues.blend(Queues.seeds(self.queue(), ask: videoId), offers: self.openOffers(tastes), epoch: epoch)
+                    let more = try await Queues.retrying(
+                        time: self.time,
+                        stillWanted: wanted,
+                        missed: { n, error in EventLog.d("sync", "autoplay try #\(n) found nothing for the room\(error.map { ": \($0.localizedDescription)" } ?? "")") }
+                    ) {
+                        try await self.moreLike(seeds, Set(self.queue().map(\.videoId)), Self.autoplayCount)
+                    }
+                    if more.isEmpty {
+                        EventLog.d("sync", wanted() ? "autoplay found nothing for the room, the room asks another device" : "autoplay found nothing and the room had moved on")
+                        return
+                    }
+                    if !wanted() {
+                        EventLog.d("sync", "autoplay found \(more.count) songs but the room had moved on")
+                        return
+                    }
+                    EventLog.d("sync", "autoplay found \(more.count) songs like '\(title)' and \(seeds.count - 1) more for the room")
+                    if !self.sendFill(more) {
+                        self.owedFill = OwedFill(epoch: epoch, songs: more, title: title)
+                        EventLog.d("sync", "fill owed: the room cannot be reached, the songs are kept until it can")
+                    }
+                } catch is CancellationError {
                     return
+                } catch {
+                    EventLog.d("sync", "autoplay found nothing for the room: \(error.localizedDescription)")
                 }
-                if self.session?.snapshot.value.state?.epoch != epoch {
-                    EventLog.d("sync", "autoplay found \(more.count) songs but the room had moved on")
-                    return
+            }
+        }
+    }
+
+    /// Marked as autoplay's, so the room keeps them apart from the songs its members chose. Whether it could be sent.
+    private func sendFill(_ songs: [TrackRef]) -> Bool { send(Wire.queueAddMany(songs, auto: true)) }
+
+    /// The room is idle at [epoch] and still asks for songs: the answer to its question can still be used.
+    private static func roomWaits(for epoch: Int64, _ state: RoomState?) -> Bool {
+        guard let state else { return false }
+        return state.epoch == epoch && state.phase == "idle" && state.autoplay != false
+    }
+
+    /// A [state] of the room came: songs `owedFill` kept are sent if the room still waits for them. Whether anything was sent.
+    @discardableResult
+    private func deliverOwedFill(_ state: RoomState?) -> Bool {
+        guard let owed = owedFill else { return false }
+        owedFill = nil // sent or not, an answer is given once
+        if !Self.roomWaits(for: owed.epoch, state) {
+            EventLog.d("sync", "fill owed: the room had moved on, the songs are dropped")
+            return false
+        }
+        let sent = sendFill(owed.songs)
+        EventLog.d("sync", "fill owed: \(owed.songs.count) songs like '\(owed.title)' \(sent ? "sent now" : "could not be sent")")
+        return sent
+    }
+
+    /// The room sent its [state]: pays what is owed, and keeps the app awake in the background while a room that ran out
+    /// of songs and carries on by itself waits for the next to start.
+    private func roomStateCame(_ state: RoomState) {
+        if owedFill != nil, fillJob?.isActive != true { deliverOwedFill(state) }
+        if state.phase == "playing" {
+            idleHold?.cancel()
+        } else if state.phase == "idle", state.autoplay == true, !state.queue.isEmpty, idleHold?.isActive != true,
+                  !engine.wantsSound, sleep.state.value != .songEnd {
+            idleHold = scope.launch { [weak self] in
+                guard let self else { return }
+                await self.awake { [weak self] in
+                    guard let self else { return }
+                    EventLog.d("awake", "holding the app awake for the room that ran out of songs, at most \(Self.idleHoldMs / 1000) s")
+                    _ = await self.time.wait(ms: Self.idleHoldMs)
                 }
-                EventLog.d("sync", "autoplay adds \(more.count) songs like '\(title)' and \(seeds.count - 1) more to the room")
-                // Marked as autoplay's, so the room keeps them apart from the songs its members chose
-                self.send(Wire.queueAddMany(more, auto: true))
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                EventLog.d("sync", "autoplay found nothing for the room: \(error.localizedDescription)")
             }
         }
     }
@@ -644,6 +777,7 @@ final class GroupController {
         newClient.onMessage = { [weak self] message in
             if case let .error(code, text) = message { self?.errors.emit(ControllerError(code: code, message: text)) }
             if case let .autoplayFill(epoch, videoId, title, tastes) = message { self?.fillRoom(epoch: epoch, videoId: videoId, title: title, tastes: tastes) }
+            if case let .state(_, _, state, _, _) = message { self?.roomStateCame(state) }
             if case let .mediaTicket(id, tickets) = message, let id {
                 self?.answerTickets(id, ["tickets": tickets.map { ["m": $0.m, "url": $0.url, "token": $0.token] }])
             }
@@ -717,6 +851,7 @@ final class GroupController {
 
     /// The network came back or changed: connect again at once instead of waiting out the backoff.
     func networkChanged(changed: Bool) {
+        retryOwedAutoplay()
         guard let client else { return }
         if changed || client.connection.value != .connected {
             EventLog.d("sync", "network available, reconnecting now")
@@ -776,6 +911,10 @@ final class GroupController {
         deliveredUpTo = 0
         scope.cancel()
         scope = Scope()
+        fillJob = nil
+        fillEpoch = nil
+        owedFill = nil
+        idleHold = nil
         local.attach() // the personal queue gets the player back, paused where it was
         publish()
         updateIdle()
@@ -1153,6 +1292,12 @@ final class GroupController {
 
     /// Songs added each time the queue runs out and the music carries on by itself.
     private static let autoplayCount = 5
+
+    /// The longest the app is held awake in the background for a room that ran out of songs.
+    private static let idleHoldMs: Int64 = 25_000
+
+    /// How long after the last try of autoplay in vain a network coming back earns it one more round.
+    private static let autoplayOwedMs: Int64 = 5 * 60_000
 
     /// Songs that follow one that was played on its own.
     private static let radioCount = 20

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../models.dart';
 
 /// What a room's queue says about what to play next. Dart counterpart of `Queues.kt` (the part that fresh songs are
@@ -41,5 +43,38 @@ abstract final class Queues {
       if (pick != null) result.add(pick);
     }
     return result;
+  }
+
+  /// How long autoplay waits before each further try when the one before found no songs; the first try is at once.
+  static const autoplayRetryMs = [3000, 10000, 30000];
+
+  /// Looks for songs with [attempt] until it finds some: at once, then after each wait of [delaysMs]. A try that throws
+  /// counts as one that found nothing (a brief loss of the network, YouTube slow), and [missed] hears of each, with the
+  /// number of the try (from 1) and the error if there was one. The waits end quietly, with no songs, when [stillWanted]
+  /// is no longer true before a try: the person asked for something else, or the room moved on. [pause] is how it waits
+  /// (tests give theirs).
+  static Future<List<T>> retrying<T>({
+    required bool Function() stillWanted,
+    required Future<List<T>> Function() attempt,
+    void Function(int number, Object? error)? missed,
+    List<int> delaysMs = autoplayRetryMs,
+    Future<void> Function(Duration) pause = Future.delayed,
+  }) async {
+    var number = 0;
+    while (stillWanted()) {
+      number++;
+      Object? failure;
+      var found = <T>[];
+      try {
+        found = await attempt();
+      } on Object catch (e) {
+        failure = e;
+      }
+      if (found.isNotEmpty) return found;
+      missed?.call(number, failure);
+      if (number > delaysMs.length) break;
+      await pause(Duration(milliseconds: delaysMs[number - 1]));
+    }
+    return <T>[];
   }
 }
