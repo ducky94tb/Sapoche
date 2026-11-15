@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../data/app_settings.dart';
+import '../data/comments.dart';
 import '../data/library_controller.dart';
 import '../data/music_controller.dart';
 import '../data/photo_picker.dart';
@@ -20,6 +21,7 @@ class AppModel {
     required this.library,
     required this.searches,
     required this.music,
+    required this.comments,
     required this.update,
     required this.stickers,
     this.photoPicker = pickPhoto,
@@ -45,6 +47,9 @@ class AppModel {
 
   /// What the full player shows about a song: lyrics, related songs, the artist.
   final MusicController music;
+
+  /// What people wrote under the song on YouTube, read when the full player's panel for it is opened.
+  final CommentsController comments;
 
   /// Newer versions of this app.
   final UpdateController update;

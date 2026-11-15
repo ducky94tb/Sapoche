@@ -13,6 +13,7 @@ import '../theme/palette.dart';
 import '../theme/theme.dart';
 import 'chat_sheet.dart';
 import 'members_sheet.dart';
+import 'player/comments_view.dart';
 import 'player/lyrics_view.dart';
 import 'player/up_next_view.dart';
 import 'player/video_controls.dart';
@@ -113,7 +114,7 @@ double _scaleOf(MediaQueryData media) =>
 const _bottomGap = 28.0;
 
 /// What the middle of the full player shows: the cover, or one of the panels that take its place.
-enum _Panel { cover, lyrics, upNext }
+enum _Panel { cover, lyrics, upNext, comments }
 
 class _Body extends StatefulWidget {
   const _Body({required this.controller, required this.current});
@@ -302,8 +303,8 @@ class _BodyState extends State<_Body> {
   /// place above and below.
   Widget _roomy(BoxConstraints box) {
     final video = _c.snapshot.video;
-    // The queue is what shows beside the picture until the lyrics are asked for
-    final panel = _panel == _Panel.lyrics ? _Panel.lyrics : _Panel.upNext;
+    // The queue is what shows beside the picture until the lyrics or the comments are asked for
+    final panel = _panel == _Panel.lyrics || _panel == _Panel.comments ? _panel : _Panel.upNext;
     const margin = 32.0;
     const gap = 32.0;
     // The song under the picture: its title and the strip of the room
@@ -387,6 +388,10 @@ class _BodyState extends State<_Body> {
                         Expanded(
                           child: switch (panel) {
                             _Panel.lyrics => LyricsView(
+                              controller: _c,
+                              track: widget.current,
+                            ),
+                            _Panel.comments => CommentsView(
                               controller: _c,
                               track: widget.current,
                             ),
@@ -629,6 +634,11 @@ class _WideSide extends StatelessWidget {
                       key: ValueKey(panel),
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: LyricsView(controller: controller, track: current),
+                    ),
+                    _Panel.comments => Padding(
+                      key: ValueKey(panel),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: CommentsView(controller: controller, track: current),
                     ),
                     _Panel.upNext => UpNextView(
                       key: ValueKey(panel),
@@ -919,6 +929,10 @@ class _PanelStage extends StatelessWidget {
                 child: LyricsView(controller: controller, track: current),
               ),
             ),
+            _Panel.comments => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: _margin),
+              child: CommentsView(controller: controller, track: current),
+            ),
             // The queue has 20 of its own at each side, and the song above it 32: the difference is made up here
             _ => Padding(
               padding: const EdgeInsets.symmetric(horizontal: _margin - 20),
@@ -1113,7 +1127,7 @@ class _MoreButton extends StatelessWidget {
 /// bright one in the dark theme); the main text colour, a little softened, reads like the rest of the player.
 Color _toolTint(Palette p) => p.text.withValues(alpha: 0.8);
 
-/// Lyrics, the queue, the sleep timer and where the sound goes: the things to reach for while listening.
+/// Lyrics, the queue, the comments, the sleep timer and where the sound goes: the things to reach for while listening.
 class _Toolbar extends StatelessWidget {
   const _Toolbar({
     required this.controller,
@@ -1125,34 +1139,50 @@ class _Toolbar extends StatelessWidget {
   final _Panel panel;
   final ValueChanged<_Panel> onPanel;
 
+  /// Room the lit sleep timer needs to say the hour it stops at, beside the other buttons; narrower, it is a lit icon.
+  static const _pillWidth = 112.0;
+
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final scale = _scaleOf(MediaQuery.of(context));
-    Widget button(IconData icon, String label, _Panel target) {
-      final on = panel == target;
-      return IconButton(
-        onPressed: () => onPanel(target),
-        tooltip: label,
-        isSelected: on,
-        icon: Icon(icon, size: 26 * scale),
-        style: IconButton.styleFrom(
-          foregroundColor: on ? p.onPrimary : _toolTint(p),
-          backgroundColor: on ? p.primary : Colors.transparent,
-          fixedSize: Size(52 * scale, 44 * scale),
-        ),
-      );
-    }
+    // A browser plays through whatever the computer is set to: there is no list of outputs to open
+    final count = kIsWeb ? 4 : 5;
+    return LayoutBuilder(
+      builder: (context, box) {
+        // Five buttons of 52 are 260 wide: more than a phone of 320 dp leaves between the margins of the player
+        final slot = min(52.0 * scale, box.maxWidth / count);
+        Widget button(IconData icon, String label, _Panel target) {
+          final on = panel == target;
+          return IconButton(
+            onPressed: () => onPanel(target),
+            tooltip: label,
+            isSelected: on,
+            icon: Icon(icon, size: 26 * scale),
+            style: IconButton.styleFrom(
+              foregroundColor: on ? p.onPrimary : _toolTint(p),
+              backgroundColor: on ? p.primary : Colors.transparent,
+              fixedSize: Size(slot, 44 * scale),
+            ),
+          );
+        }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        button(Icons.lyrics_outlined, S.lyrics, _Panel.lyrics),
-        button(Icons.queue_music_rounded, S.upNext, _Panel.upNext),
-        Flexible(child: _SleepButton(controller: controller)),
-        // A browser plays through whatever the computer is set to: there is no list of outputs to open
-        if (!kIsWeb) _OutputButton(controller: controller),
-      ],
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            button(Icons.lyrics_outlined, S.lyrics, _Panel.lyrics),
+            button(Icons.queue_music_rounded, S.upNext, _Panel.upNext),
+            // Not the bubble of the room's chat, which is a different thing
+            button(Icons.comment_outlined, S.youtubeComments, _Panel.comments),
+            _SleepButton(
+              controller: controller,
+              width: slot,
+              pill: box.maxWidth - (count - 1) * slot >= _pillWidth,
+            ),
+            if (!kIsWeb) _OutputButton(controller: controller, width: slot),
+          ],
+        );
+      },
     );
   }
 }
@@ -1160,9 +1190,10 @@ class _Toolbar extends StatelessWidget {
 /// Opens the system's list to play somewhere else than on the phone: headphones, a speaker. Its icon says where the
 /// sound goes, and it is lit up while that is not the phone itself.
 class _OutputButton extends StatelessWidget {
-  const _OutputButton({required this.controller});
+  const _OutputButton({required this.controller, this.width = 52});
 
   final RoomController controller;
+  final double width;
 
   static IconData _icon(String kind) => switch (kind) {
     'headphones' => Icons.headphones_rounded,
@@ -1185,45 +1216,52 @@ class _OutputButton extends StatelessWidget {
       style: IconButton.styleFrom(
         foregroundColor: away ? p.onPrimary : _toolTint(p),
         backgroundColor: away ? p.primary : Colors.transparent,
-        fixedSize: const Size(52, 44),
+        fixedSize: Size(width, 44),
       ),
     );
   }
 }
 
-/// Opens the sleep timer; lit up, with the hour it stops at, while one is set.
+/// Opens the sleep timer; lit up, with the hour it stops at, while one is set (where there is room for the hour).
 class _SleepButton extends StatelessWidget {
-  const _SleepButton({required this.controller});
+  const _SleepButton({required this.controller, required this.width, required this.pill});
 
   final RoomController controller;
+  final double width;
+
+  /// Whether there is room to say the hour; without it a timer that is set is only lit.
+  final bool pill;
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final sleep = controller.sleep;
-    if (!sleep.on) {
-      return IconButton(
-        onPressed: () => showSleepSheet(context, controller),
-        tooltip: S.sleepTimer,
-        icon: const Icon(Icons.bedtime_outlined, size: 26),
-        style: IconButton.styleFrom(
-          foregroundColor: _toolTint(p),
-          fixedSize: const Size(52, 44),
+    if (sleep.on && pill) {
+      return Flexible(
+        child: TextButton.icon(
+          onPressed: () => showSleepSheet(context, controller),
+          icon: const Icon(Icons.bedtime_outlined, size: 20),
+          label: Text(
+            sleepLabel(context, sleep),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          style: TextButton.styleFrom(
+            foregroundColor: p.onPrimary,
+            backgroundColor: p.primary,
+            shape: const StadiumBorder(),
+          ),
         ),
       );
     }
-    return TextButton.icon(
+    return IconButton(
       onPressed: () => showSleepSheet(context, controller),
-      icon: const Icon(Icons.bedtime_outlined, size: 20),
-      label: Text(
-        sleepLabel(context, sleep),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      style: TextButton.styleFrom(
-        foregroundColor: p.onPrimary,
-        backgroundColor: p.primary,
-        shape: const StadiumBorder(),
+      tooltip: sleep.on ? sleepLabel(context, sleep) : S.sleepTimer,
+      icon: const Icon(Icons.bedtime_outlined, size: 26),
+      style: IconButton.styleFrom(
+        foregroundColor: sleep.on ? p.onPrimary : _toolTint(p),
+        backgroundColor: sleep.on ? p.primary : Colors.transparent,
+        fixedSize: Size(width, 44),
       ),
     );
   }

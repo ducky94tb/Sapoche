@@ -95,6 +95,17 @@ class MusicController {
     }
   }
 
+  /// How many liked [track], said as the player says counts ("4.2M likes"), when YouTube Music says. It does for a music
+  /// video and not for the audio release of a song; null for those, and when there is no network.
+  Future<String?> likesOf(Track track) async {
+    try {
+      final song = (await radio(track.videoId)).songOf(track.videoId);
+      return splitViews(song?.stats).likes;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<RelatedPage> related(String videoId) =>
       _cached(_related, videoId, () => _backend.musicRelated(videoId));
 

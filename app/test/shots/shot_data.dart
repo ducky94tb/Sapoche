@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:sapoche/data/models.dart';
 import 'package:sapoche/data/music_models.dart';
 
@@ -57,6 +60,29 @@ const clip = MusicTrack(
 );
 
 const tracks = [longVi, noLength, noAlbum, hello, clip];
+
+/// The first song as the radio of YouTube Music has it when it is a video: with its likes.
+const longViVideo = MusicTrack(
+  videoId: 'long00000vi',
+  title: 'Chúng Ta Của Hiện Tại (Phiên Bản Đặc Biệt Kèm Lời Bài Hát)',
+  artist: 'Sơn Tùng M-TP',
+  durMs: 305000,
+  artistId: 'UCsontung',
+  stats: '205M views · 4.2M likes',
+);
+
+String _comments(String name) => File('test/fixtures/comments/$name').readAsStringSync();
+
+/// What YouTube answers when the player asks for the comments of the song: its page, then the first page of them (the
+/// pictures are of the first only, so any token is answered with it). The people in them are made up.
+Future<String> shotComments(String body) async =>
+    (jsonDecode(body) as Map).containsKey('videoId') ? _comments('watch_next.json') : _comments('page_top.json');
+
+/// What YouTube answers of a song whose comments are turned off.
+Future<String> shotCommentsOff(String body) async => _comments('watch_next_off.json');
+
+/// What the player gets when YouTube cannot be reached.
+Future<String> shotCommentsFail(String body) async => throw const SocketException('offline');
 
 const albumPage = CollectionPage(
   id: 'MPREb_hientai',

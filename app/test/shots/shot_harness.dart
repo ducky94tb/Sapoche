@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sapoche/data/comments.dart';
 import 'package:sapoche/strings.dart';
 
 import '../fake_backend.dart';
 import '../pump_app.dart';
+import 'shot_data.dart';
 
 /// One window the picture set is drawn in: the five sizes of the plan, `docs/plans/2026-11-12-ui-fixed-yardstick.md` K0.
 class ShotSize {
@@ -53,6 +55,7 @@ class ShotScreen {
     this.prepare,
     this.listen = false,
     this.only,
+    this.comments,
   });
 
   final String id;
@@ -62,6 +65,9 @@ class ShotScreen {
 
   /// When the screen only exists on some windows, e.g. only the wide ones.
   final bool Function(ShotCombo combo)? only;
+
+  /// What YouTube answers when the screen asks for comments; the comments of [shotComments] when not set.
+  final CommentsTransport? comments;
 }
 
 /// The combos to draw: `SHOTS_MATRIX=base` (the default: five sizes, light and dark, English), `full` (all of the plan:
@@ -118,6 +124,7 @@ Future<FakeBackend> pumpShot(WidgetTester tester, ShotScreen screen, ShotCombo c
     prefs: {if (combo.vi) 'language': 'vi'},
     listen: screen.listen,
     prepare: screen.prepare,
+    commentsTransport: screen.comments ?? shotComments,
   );
   final size = combo.size;
   tester.view

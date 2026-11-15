@@ -178,6 +178,8 @@ class _SongInfo extends StatelessWidget {
                         ? song?.stats
                         : formatCount(counted.data!.count),
                   ),
+                  // Only a music video has them (YouTube Music says nothing of a song's)
+                  row(S.infoLikes, splitViews(song?.stats).likes),
                   row(
                     S.infoKind,
                     song == null

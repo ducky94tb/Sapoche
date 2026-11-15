@@ -407,6 +407,7 @@ async function authSection() {
   check("the details of a video (its views) are an endpoint of it", (await ask("player", { body: "not json" })).status === 400);
   check("a body that is not JSON is refused", (await ask("search", { body: "not json" })).status === 400);
   check("the completions of a search are an endpoint of it", (await ask("music/get_search_suggestions", { body: "not json" })).status === 400);
+  check("the comments of a video are an endpoint of it", (await ask("comments", { body: "not json" })).status === 400);
   check("a body that is too large is refused", (await ask("search", { body: JSON.stringify({ query: "x".repeat(9000) }) })).status === 413);
 }
 

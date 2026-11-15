@@ -1352,6 +1352,33 @@ abstract final class S {
   static String get unitBillion => _t('B', ' Tỷ');
   static String viewCount(String n) => _t('$n views', '$n lượt xem');
   static String playCount(String n) => _t('$n plays', '$n lượt phát');
+  static String likeCount(String n) => _t('$n likes', '$n lượt thích');
+  static String get infoLikes => _t('Likes', 'Lượt thích');
+
+  // YouTube comments in the full player (read only)
+  static String get comments => _t('Comments', 'Bình luận');
+  static String get youtubeComments =>
+      _t('YouTube comments', 'Bình luận YouTube');
+  static String get commentsTop => _t('Top', 'Hàng đầu');
+  static String get commentsNewest => _t('Newest', 'Mới nhất');
+  static String get commentsOff =>
+      _t('Comments are turned off for this song', 'Bài này đã tắt bình luận');
+  static String get commentsNone =>
+      _t('No comments yet', 'Chưa có bình luận nào');
+  static String get commentsFailed =>
+      _t('Couldn’t load the comments', 'Không tải được bình luận');
+  static String get commentsPinned => _t('Pinned', 'Đã ghim');
+  static String get commentsCreator => _t('Creator', 'Chủ kênh');
+  static String get commentsReadMore => _t('Read more', 'Xem thêm');
+  static String get commentsReadLess => _t('Show less', 'Thu gọn');
+  static String get commentsOpenOnYoutube =>
+      _t('Comment on YouTube', 'Bình luận trên YouTube');
+  static String commentReplies(String n) =>
+      _t(n == '1' ? '1 reply' : '$n replies', '$n phản hồi');
+  static String get commentsHideReplies =>
+      _t('Hide replies', 'Ẩn phản hồi');
+  static String get commentsMoreReplies =>
+      _t('Show more replies', 'Xem thêm phản hồi');
   static String get kindSong => _t('Song', 'Bài hát');
   static String get kindVideo => _t('Video', 'Video');
   static String get goToAlbum => _t('Go to album', 'Đến trang album');

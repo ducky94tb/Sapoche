@@ -2,14 +2,20 @@
  * YouTube Music for browsers. A page cannot ask `music.youtube.com` itself (no CORS), and the app on a phone does not
  * need this: it asks directly. So the web app asks here, and the Worker asks YouTube Music in its name.
  *
- * It is not an open proxy: it needs the room key like every other route, takes only the five endpoints the app reads,
- * only POST, only a small JSON body, and always asks the one host with a fixed address.
+ * It is not an open proxy: it needs the room key like every other route, takes only the endpoints the app reads (six),
+ * only POST, only a small JSON body, and always asks one of two hosts with a fixed address.
  */
 
-/** The endpoints of `youtubei/v1` that `MusicClient` uses. */
-export const YOUTUBE_ROUTE = /^\/yt\/(browse|search|next|player|music\/get_search_suggestions)$/;
+/** The endpoints of `youtubei/v1` that `MusicClient` uses, and `comments`, which is the `next` of the website. */
+export const YOUTUBE_ROUTE = /^\/yt\/(browse|search|next|player|comments|music\/get_search_suggestions)$/;
 
 const HOST = "https://music.youtube.com/youtubei/v1";
+
+/**
+ * YouTube Music does not carry the comments of a song; the website does. Its answer to `next` is the same endpoint
+ * under another host, so it has a name of its own here and one address.
+ */
+const COMMENTS = { url: "https://www.youtube.com/youtubei/v1/next", origin: "https://www.youtube.com" };
 
 /** The same browser name the apps give, so that YouTube sees one kind of caller. */
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0";
@@ -33,9 +39,13 @@ export async function serveYoutube(request: Request, endpoint: string): Promise<
 
   let reply: Response;
   try {
-    reply = await fetch(`${HOST}/${endpoint}?prettyPrint=false`, {
+    const target =
+      endpoint === "comments"
+        ? COMMENTS
+        : { url: `${HOST}/${endpoint}`, origin: "https://music.youtube.com" };
+    reply = await fetch(`${target.url}?prettyPrint=false`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Origin: "https://music.youtube.com", "User-Agent": USER_AGENT },
+      headers: { "Content-Type": "application/json", Origin: target.origin, "User-Agent": USER_AGENT },
       body,
     });
   } catch {

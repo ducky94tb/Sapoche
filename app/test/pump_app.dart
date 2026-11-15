@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sapoche/app.dart';
 import 'package:sapoche/data/backend.dart';
+import 'package:sapoche/data/comments.dart';
 import 'package:sapoche/data/models.dart';
 import 'package:sapoche/data/app_settings.dart';
 import 'package:sapoche/data/library_controller.dart';
@@ -60,6 +61,9 @@ Future<(FakeBackend, RoomController)> pumpApp(
   /// Whether the phone can show the picture in a small window.
   bool pipSupported = true,
 
+  /// What YouTube answers when the player asks for comments; by default nothing does.
+  CommentsTransport? commentsTransport,
+
   /// Sets up what the native side knows before the app is built: the home page asks for some of it as it is drawn.
   void Function(FakeBackend backend)? prepare,
 }) async {
@@ -93,6 +97,7 @@ Future<(FakeBackend, RoomController)> pumpApp(
         library: library,
         searches: searches,
         music: MusicController(backend),
+        comments: CommentsController(CommentsClient(commentsTransport ?? (_) async => throw StateError('no comments'), offload: false)),
         update: UpdateController(backend),
         stickers:
             stickers ??

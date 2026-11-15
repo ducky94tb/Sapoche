@@ -1,0 +1,31 @@
+{
+ "contents": {
+  "twoColumnWatchNextResults": {
+   "results": {
+    "results": {
+     "contents": [
+      {
+       "itemSectionRenderer": {
+        "contents": [
+         {
+          "messageRenderer": {
+           "text": {
+            "runs": [
+             {
+              "text": "Comments are turned off. "
+             }
+            ]
+           }
+          }
+         }
+        ],
+        "sectionIdentifier": "comment-item-section",
+        "targetId": "comments-section"
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

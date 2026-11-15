@@ -1,3 +1,5 @@
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/material.dart';
 
 import 'app.dart';
@@ -5,6 +7,7 @@ import 'data/app_settings.dart';
 import 'data/backend.dart';
 import 'data/backend_factory.dart';
 import 'data/calm.dart';
+import 'data/comments.dart';
 import 'data/library_controller.dart';
 import 'data/music_controller.dart';
 import 'data/recent_rooms.dart';
@@ -57,6 +60,12 @@ Future<void> main() async {
         library: library,
         searches: searches,
         music: MusicController(backend),
+        comments: CommentsController(
+          CommentsClient(
+            createCommentsTransport(backend),
+            region: () => PlatformDispatcher.instance.locale.countryCode ?? 'US',
+          ),
+        ),
         update: UpdateController(backend),
         stickers: stickers,
         clipboardHasPhotos: backend.clipboardHasPhotos,

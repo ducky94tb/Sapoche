@@ -167,6 +167,24 @@ final shotScreens = <ShotScreen>[
     await t.tap(find.byTooltip(S.lyrics));
     await _settle(t);
   }),
+  ShotScreen('player-comments', listen: true, prepare: (b) => b.radioResult = const SongRadio(tracks: [longViVideo]), (t, b) async {
+    await _playing(t, b);
+    await _openPlayer(t);
+    await t.tap(find.byTooltip(S.youtubeComments));
+    await _settle(t);
+  }),
+  ShotScreen('player-comments-off', listen: true, comments: shotCommentsOff, (t, b) async {
+    await _playing(t, b);
+    await _openPlayer(t);
+    await t.tap(find.byTooltip(S.youtubeComments));
+    await _settle(t);
+  }),
+  ShotScreen('player-comments-failed', listen: true, comments: shotCommentsFail, (t, b) async {
+    await _playing(t, b);
+    await _openPlayer(t);
+    await t.tap(find.byTooltip(S.youtubeComments));
+    await _settle(t);
+  }),
   ShotScreen('player-queue', listen: true, (t, b) async {
     await _playing(t, b);
     await _openPlayer(t);

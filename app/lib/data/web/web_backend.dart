@@ -1241,6 +1241,9 @@ class WebBackend extends BackendDefaults {
     return utf8.decode(reply.bodyBytes);
   }
 
+  /// Asks YouTube for the comments of a video through the room server, for the same reason: a page cannot.
+  Future<String> askComments(String body) => _askYoutube('comments', body);
+
   /// Asks LRCLIB itself: it is open to any page, and takes no key, so the room server is not needed. No header is
   /// added, as a browser would then ask it for permission first.
   Future<String?> _askLrclib(String url) async {

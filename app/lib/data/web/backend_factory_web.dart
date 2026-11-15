@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web/web.dart' as web;
 
 import '../backend.dart';
+import '../comments.dart';
 import 'library_disk_web.dart';
 import 'library_store.dart';
 import 'media_controls_web.dart';
@@ -69,6 +70,9 @@ Future<Backend> createBackend() async {
   }).toJS);
   return backend;
 }
+
+/// A page cannot ask YouTube for comments itself (no CORS): the room server does, as it does for YouTube Music.
+CommentsTransport createCommentsTransport(Backend backend) => (backend as WebBackend).askComments;
 
 /// The share sheet where the browser has one (phones), else the clipboard.
 Future<void> _share(String text) async {
