@@ -49,7 +49,8 @@ object UiJson {
             // plays, and why the picture is shorter than asked: metered, network, video, or null
             .put("videoHeights", JSONArray(picture.heights))
             .put("videoHeightNow", picture.now)
-            .put("videoHeightMax", picture.max)
+            // Always this phone's own, from the first state: a limit that is there only after the player says is a line that comes and goes
+            .put("videoHeightMax", PictureDecoders.maxHeight)
             .put("videoLimit", picture.limit ?: JSONObject.NULL)
             .put("playbackSpeed", playbackSpeed.toDouble())
             .put("solo", snap.solo)

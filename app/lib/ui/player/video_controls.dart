@@ -713,6 +713,42 @@ String _qualityNote(RoomSnapshot snapshot) {
   };
 }
 
+/// The line under the heights. It has the room of the longest thing it can say, so that the sheet does not grow and shrink at
+/// every change of what limits the picture: the others are laid out, unseen, beside the one that shows.
+class _QualityNote extends StatelessWidget {
+  const _QualityNote({required this.snapshot, required this.style});
+
+  final RoomSnapshot snapshot;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = snapshot.videoHeightNow > 0 ? snapshot.videoHeightNow : 1080;
+    final last = snapshot.videoHeights.isEmpty ? 1080 : snapshot.videoHeights.last;
+    final all = [
+      kIsWeb ? S.videoApplyNowWeb : S.videoApplyNow,
+      S.videoLimitMetered,
+      S.videoLimitVideo(last),
+      S.videoLimitNetwork(now),
+      S.videoLimitReload,
+    ];
+    return Stack(
+      alignment: Alignment.topLeft,
+      children: [
+        for (final text in all)
+          Visibility(
+            visible: false,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: Text(text, style: style),
+          ),
+        Text(_qualityNote(snapshot), key: const ValueKey('quality-note'), style: style),
+      ],
+    );
+  }
+}
+
 /// The heights to choose from, as chips: those this device plays of what the playing song has, the chosen one marked,
 /// and the one playing when it is another (a limit holds the picture below what was asked).
 class _QualityChips extends StatelessWidget {
@@ -725,13 +761,12 @@ class _QualityChips extends StatelessWidget {
   Widget build(BuildContext context) {
     final all = videoQualities(snapshot);
     final has = snapshot.videoHeights;
-    final options = has.isEmpty
-        ? all
-        : [
-            for (final h in all)
-              if (has.contains(h)) h,
-          ];
-    if (options.isEmpty) return const SizedBox.shrink();
+    final fitting = [
+      for (final h in all)
+        if (has.contains(h)) h,
+    ];
+    // Nothing known of the song's heights, or none of them is one of the list: all of the list, never an empty place
+    final options = fitting.isEmpty ? all : fitting;
     // What is asked is the most: the tallest the song has within it is the one that is chosen
     final chosen = options.lastWhere(
       (h) => h <= snapshot.videoHeight,
@@ -748,7 +783,7 @@ class _QualityChips extends StatelessWidget {
             key: ValueKey('quality-$h'),
             label: Text(qualityName(h)),
             avatar: h > 1080 && snapshot.videoLimit == 'metered'
-                ? Icon(Icons.wifi_rounded, size: 16, color: p.textSecondary)
+                ? Icon(Icons.wifi_rounded, size: 18, color: p.textSecondary)
                 : now == h && now != chosen
                 ? Icon(Icons.play_arrow_rounded, size: 18, semanticLabel: S.videoPlayingNow)
                 : null,
@@ -787,11 +822,7 @@ class _VideoSettings extends StatelessWidget {
                 heading(S.videoQuality),
                 _QualityChips(snapshot: snapshot, onPick: controller.setVideoQuality),
                 const SizedBox(height: 6),
-                Text(
-                  _qualityNote(snapshot),
-                  key: const ValueKey('quality-note'),
-                  style: theme.bodySmall?.copyWith(color: p.textSecondary),
-                ),
+                _QualityNote(snapshot: snapshot, style: theme.bodySmall?.copyWith(color: p.textSecondary)),
                 heading(S.playbackSpeed),
                 if (snapshot.inRoom)
                   Text(

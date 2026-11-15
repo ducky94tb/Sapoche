@@ -609,7 +609,7 @@ void main() {
           ),
         );
         await openSettings(tester);
-        expect(find.text(expected()), findsOneWidget);
+        expect(tester.widget<Text>(find.byKey(const ValueKey('quality-note'))).data, expected());
       });
     }
 
@@ -668,6 +668,41 @@ void main() {
         expect(find.byKey(const ValueKey('quality-note')), findsOneWidget);
       });
     }
+
+    videoTest('heights of the song that are none of the list still leave the list to choose from', (tester) async {
+      await openVideo(
+        tester,
+        snapshot: sampleRoom(video: true, videoHeights: [136, 224, 338, 450], videoHeightNow: 450),
+      );
+      await openSettings(tester);
+      for (final h in [360, 480, 720, 1080]) {
+        expect(find.byKey(ValueKey('quality-$h')), findsOneWidget);
+      }
+    });
+
+    videoTest('the sheet keeps its size when what limits the picture changes', (tester) async {
+      RoomSnapshot limited(String? limit) => sampleRoom(
+        video: true,
+        videoHeightMax: 2160,
+        videoHeights: [360, 480, 720, 1080, 1440, 2160],
+        videoHeight: 2160,
+        videoHeightNow: 1440,
+        videoLimit: limit,
+      );
+      final backend = await openVideo(tester, screen: const Size(360, 800), snapshot: limited(null));
+      await openSettings(tester);
+      // The place of the line under the heights, whatever the line says
+      Rect sheet() => tester.getRect(
+        find.ancestor(of: find.byKey(const ValueKey('quality-note')), matching: find.byType(Stack)).first,
+      );
+      final before = sheet();
+      for (final limit in ['metered', 'network', 'video', 'reload', null]) {
+        backend.emit(StateEvent(limited(limit)));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(sheet(), before, reason: 'the line under the heights said $limit');
+      }
+    });
 
     videoTest('mobile data is told once for each song', (tester) async {
       final backend = await openVideo(tester);

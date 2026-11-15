@@ -426,9 +426,11 @@ actor YouTubeResolver: StreamResolver {
             guard let mime = format.at("mimeType").string, mime.hasPrefix("video/mp4"), let url = format.at("url").string,
                   let height = format.at("height").int, height > 0 else { return nil }
             let codec = mime.components(separatedBy: "codecs=\"").last?.components(separatedBy: "\"").first ?? ""
-            return VideoSource(url: url, height: height, codec: codec, bitrateKbps: (format.at("bitrate").int ?? 0) / 1000, itag: format.at("itag").int ?? -1,
+            let width = format.at("width").int ?? 0
+            // Named as YouTube names it: a wide film frame of 1920×1012 is 1080p
+            return VideoSource(url: url, height: VideoLevels.nominalHeight(width: width, height: height), codec: codec, bitrateKbps: (format.at("bitrate").int ?? 0) / 1000, itag: format.at("itag").int ?? -1,
                                contentLength: format.at("contentLength").int64 ?? -1, index: DashRanges.of(format),
-                               width: format.at("width").int ?? 0, fps: format.at("fps").int ?? 0)
+                               width: width, fps: format.at("fps").int ?? 0)
         }
         return Resolved(track: track, best: best, all: sources, videos: videos)
     }

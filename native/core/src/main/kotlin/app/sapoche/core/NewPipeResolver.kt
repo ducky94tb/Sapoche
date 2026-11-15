@@ -145,7 +145,7 @@ class NewPipeResolver(
 
     private fun VideoStream.toSource() = VideoSource(
         url = content,
-        height = height,
+        height = VideoLevels.nominalHeight(width, height), // as YouTube names it: a wide film frame of 1920×1012 is 1080p
         format = format?.name ?: "?",
         codec = codec ?: "",
         bitrateKbps = bitrate / 1000,

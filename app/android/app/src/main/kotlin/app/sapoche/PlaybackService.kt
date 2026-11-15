@@ -26,6 +26,7 @@ import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.dash.DashMediaSource
 import app.sapoche.core.PictureInfo
+import app.sapoche.core.VideoLevels
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -646,11 +647,17 @@ class PlaybackService : MediaLibraryService() {
 
     /** Tells the screen the heights the picture has and which plays (see [PictureInfo]); on the main thread. */
     private fun publishPicture() {
-        val heights = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+        val found = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
             .flatMap { group -> (0 until group.length).filter { group.isTrackSupported(it) }.map { group.getTrackFormat(it).height } }
             .filter { it > 0 }.distinct().sorted()
+        val song = player.currentMediaItem?.mediaId
+        // The tracks are gone for a moment at each change of height: the heights the song has stay what they were, or the screen's list of them flickers
+        val heights = if (found.isEmpty() && song != null && song == pictureSong) SapocheApp.picture.value.heights else found
+        pictureSong = song
+        // The format the decoder has is the stream's own (1280×676), the heights listed are as YouTube names them (720)
+        val playing = player.videoFormat?.let { VideoLevels.nominalHeight(it.width, it.height) } ?: 0
         val info = PictureInfo.of(
-            heights, player.videoFormat?.height ?: 0, SapocheApp.videoMaxHeight, PictureDecoders.maxHeight,
+            heights, playing, SapocheApp.videoMaxHeight, PictureDecoders.maxHeight,
             SapocheApp.metered, SapocheApp.pictureBudgetKbps(),
         )
         if (info != SapocheApp.picture.value) {
@@ -658,6 +665,9 @@ class PlaybackService : MediaLibraryService() {
             SapocheApp.picture.value = info
         }
     }
+
+    /** The song the heights in [SapocheApp.picture] are of. */
+    private var pictureSong: String? = null
 
     private inner class PlayerEvents : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {

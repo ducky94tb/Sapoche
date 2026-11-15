@@ -443,7 +443,8 @@ final class Bridge {
     /// What the screen is told of the heights of the picture (see [PictureInfo]).
     private func pictureInfo(_ player: PlayerInfo) -> PictureInfo {
         PictureInfo.of(
-            heights: player.videoLevels, now: player.videoLevels.isEmpty ? 0 : player.videoHeight, asked: videoHeight,
+            heights: player.videoLevels,
+            now: player.videoLevels.isEmpty ? 0 : VideoLevels.nominalHeight(width: player.videoWidth, height: player.videoHeight), asked: videoHeight,
             metered: NetworkState.shared.metered,
             budgetKbps: VideoPicker.budgetKbps(bandwidthKbps: NetworkState.shared.bandwidthKbps, weak: NetworkState.shared.weak)
         )

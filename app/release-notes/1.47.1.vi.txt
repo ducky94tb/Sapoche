@@ -1,0 +1,3 @@
+Sửa lỗi phần chọn chất lượng hình
+- Video quay khung phim rộng (như nhiều MV) nay hiện đủ các mức chất lượng; trước đây không hiện mức nào.
+- Tờ chọn chất lượng hình không còn co lại rồi giãn ra mỗi lần đổi chất lượng, và khối Video trong Cài đặt không còn nhảy khi mở.

@@ -48,3 +48,26 @@ final class PictureInfoTests: XCTestCase {
         XCTAssertNil(none.at("videoLimit").string)
     }
 }
+
+/// The same cases as `VideoLevelsTest` of Kotlin.
+final class VideoLevelsTests: XCTestCase {
+    func testAFilmFrameIsNamedByItsWidth() {
+        // The streams of https://music.youtube.com/watch?v=FN7ALfpGxiI, a 2.35:1 video: none has a standard height
+        let real = [(3840, 2026), (2560, 1350), (1920, 1012), (1280, 676), (854, 450), (640, 338), (426, 224), (256, 136)]
+        XCTAssertEqual(real.map { VideoLevels.nominalHeight(width: $0.0, height: $0.1) }, [2160, 1440, 1080, 720, 480, 360, 240, 144])
+    }
+
+    func testStandardSquareFourToThreeAndUprightPictures() {
+        XCTAssertEqual(VideoLevels.nominalHeight(width: 1920, height: 1080), 1080)
+        XCTAssertEqual(VideoLevels.nominalHeight(width: 1440, height: 1080), 1080)
+        XCTAssertEqual(VideoLevels.nominalHeight(width: 1080, height: 1080), 1080)
+        XCTAssertEqual(VideoLevels.nominalHeight(width: 1080, height: 1920), 1080)
+        XCTAssertEqual(VideoLevels.nominalHeight(width: 0, height: 1012), 1080)
+    }
+
+    func testTheStreamsOfAFilmFrameVideoComeOutWithStandardHeights() throws {
+        let answer = try XCTUnwrap(JSON.parse(#"{"playabilityStatus":{"status":"OK"},"videoDetails":{"lengthSeconds":"278"},"streamingData":{"adaptiveFormats":[{"itag":140,"url":"https://example.invalid/a","mimeType":"audio/mp4; codecs=\"mp4a.40.2\"","bitrate":130000},{"itag":137,"url":"https://example.invalid/v","mimeType":"video/mp4; codecs=\"avc1.640028\"","width":1920,"height":1012,"bitrate":4000000}]}}"#))
+        let resolved = try YouTubeResolver.resolved(answer, videoId: "FN7ALfpGxiI")
+        XCTAssertEqual(resolved.videos.map(\.height), [1080])
+    }
+}

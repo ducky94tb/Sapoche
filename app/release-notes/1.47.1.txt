@@ -1,0 +1,3 @@
+Fixes for the picture quality choices
+- Videos shot in a wide film frame (such as many music videos) now offer their quality choices; before, none were shown.
+- The picture quality sheet no longer shrinks and grows each time you change the quality, and the video block in Settings no longer jumps when it opens.

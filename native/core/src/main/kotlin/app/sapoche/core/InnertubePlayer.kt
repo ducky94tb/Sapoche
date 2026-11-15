@@ -182,17 +182,19 @@ class InnertubePlayer(
         private fun videoSource(format: JsonElement): VideoSource? {
             val mime = format.at("mimeType").string() ?: return null
             val url = format.at("url").string() ?: return null
-            val height = format.at("height").string()?.toIntOrNull() ?: return null
-            if (!mime.startsWith("video/") || height <= 0) return null
+            val realHeight = format.at("height").string()?.toIntOrNull() ?: return null
+            if (!mime.startsWith("video/") || realHeight <= 0) return null
+            val width = format.at("width").string()?.toIntOrNull() ?: 0
             return VideoSource(
                 url = url,
-                height = height,
+                // Named as YouTube names it: a wide film frame of 1920×1012 is 1080p
+                height = VideoLevels.nominalHeight(width, realHeight),
                 format = if (mime.startsWith("video/webm")) "WEBM" else "MPEG_4",
                 codec = CODECS.find(mime)?.groupValues?.get(1) ?: "",
                 bitrateKbps = (format.at("bitrate").string()?.toIntOrNull() ?: 0) / 1000,
                 contentLength = format.at("contentLength").string()?.toLongOrNull() ?: -1,
                 itag = format.at("itag").string()?.toIntOrNull() ?: -1,
-                width = format.at("width").string()?.toIntOrNull() ?: 0,
+                width = width,
                 fps = format.at("fps").string()?.toIntOrNull() ?: 0,
                 initRange = range(format.at("initRange")),
                 indexRange = range(format.at("indexRange")),
