@@ -197,13 +197,14 @@ class _TrackTileState extends State<TrackTile> {
                     child: _AlbumCell(track: track),
                   ),
                 if (columns) ...[
-                  SizedBox(
-                    width: TrackColumns.lengthWidth,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: length,
+                  if (TrackColumns.lengthOf(context))
+                    SizedBox(
+                      width: TrackColumns.lengthWidth,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: length,
+                      ),
                     ),
-                  ),
                   if (trailing != null) ...[
                     const SizedBox(width: 8),
                     trailing,
@@ -227,18 +228,23 @@ class _TrackTileState extends State<TrackTile> {
                 horizontal: 20,
                 vertical: dense ? 0 : 7,
               ),
-              child: ConstrainedBox(
-                // A row of an album is never lower than a thing to touch, whatever its text
-                constraints: BoxConstraints(
-                  minHeight: dense ? 52 : 0,
-                  maxWidth: columns
-                      ? TrackColumns.maxContent(album: album)
-                      : double.infinity,
-                ),
-                child: columns
-                    ? Align(alignment: Alignment.centerLeft, child: row)
-                    : row,
-              ),
+              child: columns
+                  // The Align loosens the width a list gives (a ListView's is tight), or the cap would hold for nothing
+                  ? Align(
+                      alignment: Alignment.centerLeft,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: dense ? 52 : 0,
+                          maxWidth: TrackColumns.maxContent(album: album),
+                        ),
+                        child: row,
+                      ),
+                    )
+                  // A row of an album is never lower than a thing to touch, whatever its text
+                  : ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: dense ? 52 : 0),
+                      child: row,
+                    ),
             );
           },
         ),

@@ -168,7 +168,7 @@ class _ContentState extends State<_Content> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _Hero(page: _page, available: split.cover, inset: 0),
+                      _Hero(page: _page, available: split.cover, inset: 0, compact: split.phone),
                       _playRow(inline: true),
                       ..._about(context, inset: 0),
                     ],
@@ -310,7 +310,7 @@ class _ContentState extends State<_Content> {
 
 /// The picture of the artist across the page, with the name and what is known of their reach on it.
 class _Hero extends StatelessWidget {
-  const _Hero({required this.page, required this.available, this.inset = 20});
+  const _Hero({required this.page, required this.available, this.inset = 20, this.compact = false});
 
   final ArtistPage page;
 
@@ -320,12 +320,16 @@ class _Hero extends StatelessWidget {
   /// The space kept clear on each side of the picture.
   final double inset;
 
+  /// A phone on its side: the picture is too small to carry the name on it, so the name stands beside it.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final theme = Theme.of(context).textTheme;
     // A square on a phone; a wide banner on a big screen, where a square would be taller than the window
     final width = available - 2 * inset;
+    if (compact) return _compact(context);
     final size = width;
     final height = width > 640 ? width * 0.36 : width;
     return Padding(
@@ -402,6 +406,52 @@ class _Hero extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// The picture at its size, and beside it the name and the reach, as there is no room on the picture for them.
+  Widget _compact(BuildContext context) {
+    final p = context.palette;
+    final theme = Theme.of(context).textTheme;
+    final size = available - 2 * inset;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(inset, 4, inset, 0),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox.square(
+              dimension: size,
+              child: page.thumb == null
+                  ? ColoredBox(
+                      color: p.primaryContainer,
+                      child: Icon(Icons.person_rounded, size: size * 0.4, color: p.primary),
+                    )
+                  : Artwork(url: page.thumb, size: size, radius: 0, sharp: true),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  page.name.replaceAll('-', '\u2011'),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.titleLarge,
+                ),
+                if (page.subscribers != null)
+                  Text(
+                    S.subscribers(page.subscribers!.replaceAll(' subscribers', '')),
+                    style: theme.bodyMedium?.copyWith(color: p.textSecondary),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

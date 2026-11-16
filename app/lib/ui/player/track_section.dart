@@ -5,6 +5,7 @@ import '../../data/music_models.dart';
 import '../../theme/theme.dart';
 import '../widgets/queue_actions.dart';
 import '../widgets/play_actions.dart';
+import '../widgets/track_columns.dart';
 import '../widgets/track_menu.dart';
 import '../widgets/cached_cover.dart';
 import '../widgets/track_tile.dart';
@@ -27,21 +28,24 @@ class TrackSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (tracks.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (title.isNotEmpty) SectionHeading(title, action: headerAction),
-        for (final track in tracks)
-          TrackTile(
-            track: track,
-            onTap: () => playNow(context, track),
-            trailing: TrackMenu(
+    // The heading keeps to the width of the rows in a wide window, so that its button is above their "…" and not a screen away
+    return ListWidth(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (title.isNotEmpty) SectionHeading(title, action: headerAction),
+          for (final track in tracks)
+            TrackTile(
               track: track,
-              onAdd: () => queueTrack(context, track),
-              onPlayNext: () => queueTrack(context, track, playNext: true),
+              onTap: () => playNow(context, track),
+              trailing: TrackMenu(
+                track: track,
+                onAdd: () => queueTrack(context, track),
+                onPlayNext: () => queueTrack(context, track, playNext: true),
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }

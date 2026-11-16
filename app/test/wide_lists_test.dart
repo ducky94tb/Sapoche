@@ -55,9 +55,10 @@ void main() {
     );
     const without = MusicTrack(videoId: 'without0000', title: 'Without', artist: 'Ben', durMs: 180000, isSong: true);
 
-    Future<void> search(WidgetTester tester, double width, List<MusicTrack> songs) async {
+    Future<void> search(WidgetTester tester, double width, List<MusicTrack> songs, {MusicTrack? top}) async {
       final (backend, _) = await pumpApp(tester);
       backend.searchPageResult = SearchResults(
+        top: top == null ? null : SearchItem(kind: 'video', id: top.videoId, title: top.title, track: top),
         items: [for (final t in songs) SearchItem(kind: 'song', id: t.videoId, title: t.title, track: t)],
       );
       await resize(tester, width, 800);
@@ -82,6 +83,22 @@ void main() {
     testWidgets('has no album column when no song has an album', (tester) async {
       await search(tester, 1280, [without]);
       expect(find.text(S.infoAlbum), findsNothing);
+    });
+
+    testWidgets('songs with no length and no album have no head, and the top result has no length either', (tester) async {
+      const bare = MusicTrack(videoId: 'bare0000000', title: 'Bare', artist: 'Cy', durMs: 0, isSong: true);
+      const video = MusicTrack(videoId: 'video000000', title: 'The Video', artist: 'Di', durMs: 258000);
+      await search(tester, 1400, [bare], top: video);
+      expect(find.byType(TrackColumnsHeader), findsOneWidget);
+      expect(find.text(S.sortTitle), findsNothing);
+      expect(find.byTooltip(S.infoLength), findsNothing);
+      expect(find.text('4:18'), findsNothing);
+      // Both rows end where a line ends, not at the edge of the window
+      for (final row in find.byType(TrackTile).evaluate()) {
+        final rect = tester.getRect(find.byWidget(row.widget));
+        final menu = tester.getRect(find.descendant(of: find.byWidget(row.widget), matching: find.byType(IconButton)).last);
+        expect(menu.right - rect.left, lessThanOrEqualTo(TrackColumns.maxContent(album: false) + 40));
+      }
     });
 
     testWidgets('a phone has no columns, and no head for them', (tester) async {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/models.dart';
 import '../../data/music_models.dart';
 import '../../strings.dart';
 import '../../theme/theme.dart';
@@ -8,14 +9,22 @@ import '../home_shell.dart';
 /// What a list of songs says to its rows about itself, so that in a wide window they can stand in columns, as in
 /// Spotify's: the song, its album, its length. A list opens one with [TrackColumnsScope]; a row outside any has no album.
 class TrackColumns extends InheritedWidget {
-  const TrackColumns({super.key, required this.album, required super.child});
+  const TrackColumns({super.key, required this.album, this.length = true, required super.child});
 
   /// Whether the list has an album to say for some of its songs. With none, the column would be a gap, and is left out.
   final bool album;
 
+  /// The same for the length: a list whose songs have none (what a search finds) has no column for it, and the one row
+  /// that has (the top result) does not stand out with it.
+  final bool length;
+
   static bool albumOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<TrackColumns>()?.album ??
       false;
+
+  /// A row outside any list that says otherwise has its length.
+  static bool lengthOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<TrackColumns>()?.length ?? true;
 
   /// The window is wide and the row long enough for columns: the sidebar layout, and a row of [minRow] dp or more.
   static bool fits(BuildContext context, double rowWidth) =>
@@ -36,10 +45,10 @@ class TrackColumns extends InheritedWidget {
 
   /// The same for a list of songs of which [album] says whether some have an album.
   @override
-  bool updateShouldNotify(TrackColumns old) => album != old.album;
+  bool updateShouldNotify(TrackColumns old) => album != old.album || length != old.length;
 }
 
-/// Opens a list of songs: [tracks] says whether the album column is wanted, by whether any song has one.
+/// Opens a list of songs: [tracks] says whether the album and the length columns are wanted, by whether any song has one.
 class TrackColumnsScope extends StatelessWidget {
   const TrackColumnsScope({
     super.key,
@@ -53,6 +62,7 @@ class TrackColumnsScope extends StatelessWidget {
   @override
   Widget build(BuildContext context) => TrackColumns(
     album: tracks.any((t) => t is MusicTrack && (t.album ?? '').isNotEmpty),
+    length: tracks.any((t) => t is Track && t.durMs > 0),
     child: child,
   );
 }
@@ -73,6 +83,9 @@ class TrackColumnsHeader extends StatelessWidget {
           return const SizedBox.shrink();
         }
         final album = TrackColumns.albumOf(context);
+        final length = TrackColumns.lengthOf(context);
+        // With no album and no length to head, "Title" alone over the rows would say nothing
+        if (!album && !length) return const SizedBox.shrink();
         final style = Theme.of(context).textTheme.labelMedium
             ?.copyWith(color: p.textTertiary, letterSpacing: 0.4);
         return Padding(
@@ -94,20 +107,21 @@ class TrackColumnsHeader extends StatelessWidget {
                       flex: TrackColumns.albumFlex,
                       child: Text(S.infoAlbum, style: style, maxLines: 1),
                     ),
-                  SizedBox(
-                    width: TrackColumns.lengthWidth,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Tooltip(
-                        message: S.infoLength,
-                        child: Icon(
-                          Icons.schedule_rounded,
-                          size: 15,
-                          color: p.textTertiary,
+                  if (length)
+                    SizedBox(
+                      width: TrackColumns.lengthWidth,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Tooltip(
+                          message: S.infoLength,
+                          child: Icon(
+                            Icons.schedule_rounded,
+                            size: 15,
+                            color: p.textTertiary,
+                          ),
                         ),
                       ),
                     ),
-                  ),
                   // Where the "…" button of a row is
                   const SizedBox(width: 56),
                 ],

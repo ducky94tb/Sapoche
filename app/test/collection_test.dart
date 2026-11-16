@@ -498,6 +498,30 @@ void main() {
       expect(tester.getSize(find.byType(ClipRRect).first).height, lessThan(200));
     });
 
+    testWidgets('on a phone on its side the name stands beside the small picture, not on it', (tester) async {
+      final (backend, context) = await start(tester);
+      tester.view.physicalSize = const Size(1688, 780);
+      await tester.pump();
+      backend.artistResult = page;
+      openArtist(context, 'UCzen');
+      await tester.pumpAndSettle();
+      final picture = tester.getRect(find.byType(ClipRRect).first);
+      expect(tester.getRect(find.text(page.name).first).left, greaterThanOrEqualTo(picture.right));
+      expect(tester.getRect(find.text('1.2M subscribers')).left, greaterThanOrEqualTo(picture.right));
+    });
+
+    testWidgets('in a wide window "See all" is over the "…" of the songs, not at the far edge of the page', (tester) async {
+      final (backend, context) = await start(tester);
+      tester.view.physicalSize = const Size(2560, 1600);
+      await tester.pump();
+      backend.artistResult = page;
+      openArtist(context, 'UCzen');
+      await tester.pumpAndSettle();
+      final seeAll = tester.getRect(find.text('See all'));
+      final menu = tester.getRect(find.byIcon(Icons.more_horiz_rounded).first);
+      expect(seeAll.right, closeTo(menu.right, 16));
+    });
+
     testWidgets('a profile has no play and shuffle without songs', (
       tester,
     ) async {

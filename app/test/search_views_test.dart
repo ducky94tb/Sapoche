@@ -10,13 +10,13 @@ import 'pump_app.dart';
 void main() {
   tearDown(() => S.current = 'en');
 
-  Future<void> search(WidgetTester tester, FakeBackend backend, {double width = 360}) async {
+  Future<void> search(WidgetTester tester, FakeBackend backend, {double width = 360, String singer = 'Son Tung M-TP the singer with a very long name'}) async {
     // A narrow phone, the width the count must still fit on (the font of a test is twice as wide as a real one)
     tester.view
       ..devicePixelRatio = 1
       ..physicalSize = Size(width, 800);
     addTearDown(tester.view.reset);
-    backend.searchPageResult = const SearchResults(
+    backend.searchPageResult = SearchResults(
       items: [
         SearchItem(
           kind: 'video',
@@ -25,7 +25,7 @@ void main() {
           track: MusicTrack(
             videoId: 'vvvvvvvvvvv',
             title: 'Lac Troi',
-            artist: 'Son Tung M-TP the singer with a very long name',
+            artist: singer,
             durMs: 1000,
             stats: '270M views · 2M likes',
           ),
@@ -95,7 +95,7 @@ void main() {
     final (backend, _) = await pumpApp(tester);
     backend.emit(StateEvent(sampleRoom(songs: 0, phase: 'idle')));
     await tester.pump(const Duration(milliseconds: 500));
-    await search(tester, backend, width: 1500);
+    await search(tester, backend, width: 1500, singer: 'Son Tung M-TP');
     for (final count in ['270M views', '155M plays', '1.2M views']) {
       expect(find.textContaining(count), findsOneWidget, reason: count);
     }
@@ -106,7 +106,7 @@ void main() {
     S.current = 'vi';
     backend.emit(StateEvent(sampleRoom(songs: 0, phase: 'idle')));
     await tester.pump(const Duration(milliseconds: 500));
-    await search(tester, backend, width: 1500);
+    await search(tester, backend, width: 1500, singer: 'Son Tung M-TP');
     expect(find.textContaining('270 Tr lượt xem'), findsOneWidget);
     expect(find.textContaining('155 Tr lượt phát'), findsOneWidget);
   });
