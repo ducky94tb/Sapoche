@@ -136,6 +136,7 @@ class _RoomPageState extends State<RoomPage> {
             snapshot.inRoom
                 ? _HidesMiniPlayer(
                     child: ListWidth(
+                      roomy: true,
                       child: _NowCard(
                         controller: controller,
                         entry: current,
@@ -145,16 +146,19 @@ class _RoomPageState extends State<RoomPage> {
                   )
                 : ListenableBuilder(
                     listenable: controller.playState,
-                    builder: (context, _) => TrackTile(
-                      track: current,
-                      subtitle: _byline(current),
-                      badge: _badge(snapshot, current),
-                      highlight: true,
-                      leadingOverlay: Equalizer(
-                        active: controller.isPlaying,
-                        color: Colors.white,
+                    builder: (context, _) => ListWidth(
+                      roomy: true,
+                      child: TrackTile(
+                        track: current,
+                        subtitle: _byline(current),
+                        badge: _badge(snapshot, current),
+                        highlight: true,
+                        leadingOverlay: Equalizer(
+                          active: controller.isPlaying,
+                          color: Colors.white,
+                        ),
+                        onTap: () => controller.jump(current),
                       ),
-                      onTap: () => controller.jump(current),
                     ),
                   ),
           ),
@@ -207,11 +211,14 @@ class _RoomPageState extends State<RoomPage> {
                 index: i,
                 child: Appear(
                   animate: !_known.contains(entry.id),
-                  child: TrackTile(
-                    track: entry,
-                    subtitle: _byline(entry),
-                    badge: _badge(snapshot, entry),
-                    onTap: () => controller.jump(entry),
+                  child: ListWidth(
+                    roomy: true,
+                    child: TrackTile(
+                      track: entry,
+                      subtitle: _byline(entry),
+                      badge: _badge(snapshot, entry),
+                      onTap: () => controller.jump(entry),
+                    ),
                   ),
                 ),
               ),
@@ -237,13 +244,16 @@ class _RoomPageState extends State<RoomPage> {
             return _swipeToRemove(
               controller,
               entry,
-              TrackTile(
-                track: entry,
-                subtitle: _byline(entry),
-                badge: _badge(snapshot, entry),
-                dimmed: true,
-                // Tap to hear it again
-                onTap: () => controller.jump(entry),
+              ListWidth(
+                roomy: true,
+                child: TrackTile(
+                  track: entry,
+                  subtitle: _byline(entry),
+                  badge: _badge(snapshot, entry),
+                  dimmed: true,
+                  // Tap to hear it again
+                  onTap: () => controller.jump(entry),
+                ),
               ),
             );
           },
@@ -959,6 +969,7 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
       child: ListWidth(
+        roomy: true,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 20, 12, 6),
           child: Row(

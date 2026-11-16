@@ -9,7 +9,13 @@ import '../home_shell.dart';
 /// What a list of songs says to its rows about itself, so that in a wide window they can stand in columns, as in
 /// Spotify's: the song, its album, its length. A list opens one with [TrackColumnsScope]; a row outside any has no album.
 class TrackColumns extends InheritedWidget {
-  const TrackColumns({super.key, required this.album, this.length = true, required super.child});
+  const TrackColumns({
+    super.key,
+    required this.album,
+    this.length = true,
+    this.contentMax,
+    required super.child,
+  });
 
   /// Whether the list has an album to say for some of its songs. With none, the column would be a gap, and is left out.
   final bool album;
@@ -17,6 +23,7 @@ class TrackColumns extends InheritedWidget {
   /// The same for the length: a list whose songs have none (what a search finds) has no column for it, and the one row
   /// that has (the top result) does not stand out with it.
   final bool length;
+  final double? contentMax;
 
   static bool albumOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<TrackColumns>()?.album ??
@@ -36,6 +43,10 @@ class TrackColumns extends InheritedWidget {
   /// song's line reads best near, and a longer one only puts the name and the length far from each other.
   static double maxContent({required bool album}) => album ? 1180 : 760;
 
+  static double maxContentOf(BuildContext context, {required bool album}) =>
+      context.dependOnInheritedWidgetOfExactType<TrackColumns>()?.contentMax ??
+      maxContent(album: album);
+
   /// Share of the room the title and the album have, once the length and the buttons are taken off.
   static const titleFlex = 5;
   static const albumFlex = 3;
@@ -45,7 +56,8 @@ class TrackColumns extends InheritedWidget {
 
   /// The same for a list of songs of which [album] says whether some have an album.
   @override
-  bool updateShouldNotify(TrackColumns old) => album != old.album || length != old.length;
+  bool updateShouldNotify(TrackColumns old) =>
+      album != old.album || length != old.length || contentMax != old.contentMax;
 }
 
 /// Opens a list of songs: [tracks] says whether the album and the length columns are wanted, by whether any song has one.
@@ -94,7 +106,7 @@ class TrackColumnsHeader extends StatelessWidget {
             alignment: Alignment.topLeft,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: TrackColumns.maxContent(album: album) - _titleAt + 20,
+                maxWidth: TrackColumns.maxContentOf(context, album: album) - _titleAt + 20,
               ),
               child: Row(
                 children: [
@@ -137,9 +149,10 @@ class TrackColumnsHeader extends StatelessWidget {
 /// Keeps what goes with a list of songs (the card of the song playing, the heading with its buttons) to the width of the
 /// rows under it in a wide window, so that the buttons are not a screen away from what they are for.
 class ListWidth extends StatelessWidget {
-  const ListWidth({super.key, required this.child});
+  const ListWidth({super.key, required this.child, this.roomy = false});
 
   final Widget child;
+  final bool roomy;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -150,9 +163,15 @@ class ListWidth extends StatelessWidget {
         // The padding of the rows at each side comes with the content
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: TrackColumns.maxContent(album: false) + 40,
+            maxWidth: TrackColumns.maxContentOf(context, album: roomy) + 40,
           ),
-          child: child,
+          child: roomy
+              ? TrackColumns(
+                  album: false,
+                  contentMax: TrackColumns.maxContent(album: true),
+                  child: child,
+                )
+              : child,
         ),
       );
     },

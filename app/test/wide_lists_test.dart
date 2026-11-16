@@ -115,8 +115,9 @@ void main() {
       await tester.pumpAndSettle();
       final row = tester.getRect(find.byType(TrackTile).first);
       final heart = tester.getRect(find.byIcon(Icons.favorite_border_rounded).first);
-      // The length and the heart are within the width of a line, 760 dp and its padding, from the row's left edge
-      expect(heart.right - row.left, lessThanOrEqualTo(TrackColumns.maxContent(album: false) + 40));
+      // The Listen row is wide enough to align with the wide search rows.
+      expect(heart.right - row.left, greaterThan(TrackColumns.maxContent(album: false) + 40));
+      expect(heart.right - row.left, lessThanOrEqualTo(TrackColumns.maxContent(album: true) + 40));
     });
   });
 

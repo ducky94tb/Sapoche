@@ -1,0 +1,3 @@
+Listen looks balanced on large screens
+- Queue items on the Listen page now use the same comfortable width as search results on desktop and large tablets.
+- Smaller phone and compact layouts keep their existing spacing.

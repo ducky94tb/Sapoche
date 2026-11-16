@@ -235,7 +235,7 @@ class _TrackTileState extends State<TrackTile> {
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
                           minHeight: dense ? 52 : 0,
-                          maxWidth: TrackColumns.maxContent(album: album),
+                          maxWidth: TrackColumns.maxContentOf(context, album: album),
                         ),
                         child: row,
                       ),
