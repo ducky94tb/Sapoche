@@ -397,6 +397,20 @@ abstract class Backend {
   Future<void> setCacheLimit(int mb);
   Future<void> setAutoDownload(bool on);
 
+  /// Whether the songs of kept playlists may come by themselves on mobile data too (never when roaming, on Android).
+  Future<void> setOfflineCellular(bool on);
+
+  /// Keeps the songs of the playlist on the phone, the ones added later as well, or with [on] false stops. Stopping takes
+  /// off the list the songs that only waited to come and that nothing else keeps; with [remove], the ones on the phone too.
+  Future<void> setPlaylistOffline(int id, bool on, {bool remove = false});
+
+  /// The same for a folder: every playlist in it, and the ones put in it later, are kept.
+  Future<void> setFolderOffline(int id, bool on, {bool remove = false});
+
+  /// How many songs on the phone stopping the playlist or the folder with removing would take away: those that no other
+  /// kept playlist or folder keeps, nor the liked songs when they are downloaded by themselves.
+  Future<int> offlineRemovable({int? playlistId, int? folderId});
+
   /// Songs to offer, from what was kept; works without a network.
   Future<List<Track>> forYou();
 
@@ -1038,6 +1052,21 @@ class NativeBackend implements Backend {
 
   @override
   Future<void> setAutoDownload(bool on) => _call('setAutoDownload', {'on': on});
+
+  @override
+  Future<void> setOfflineCellular(bool on) => _call('setOfflineCellular', {'on': on});
+
+  @override
+  Future<void> setPlaylistOffline(int id, bool on, {bool remove = false}) =>
+      _call('playlistOffline', {'id': id, 'on': on, 'remove': remove});
+
+  @override
+  Future<void> setFolderOffline(int id, bool on, {bool remove = false}) =>
+      _call('folderOffline', {'id': id, 'on': on, 'remove': remove});
+
+  @override
+  Future<int> offlineRemovable({int? playlistId, int? folderId}) async =>
+      await _call<int>('offlineRemovable', {'playlistId': playlistId, 'folderId': folderId}) ?? 0;
 
   @override
   Future<List<Track>> forYou() async => [

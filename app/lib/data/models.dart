@@ -133,6 +133,7 @@ class StorageInfo {
     this.downloadBytes = 0,
     this.downloadCount = 0,
     this.autoDownload = false,
+    this.offlineCellular = false,
   });
 
   /// Songs played before, kept so that they play again without data.
@@ -146,12 +147,16 @@ class StorageInfo {
   /// Liked songs are downloaded by themselves on Wi-Fi while charging.
   final bool autoDownload;
 
+  /// The songs of kept playlists may come by themselves on mobile data too, not only on Wi-Fi.
+  final bool offlineCellular;
+
   factory StorageInfo.fromMap(Map<Object?, Object?> map) => StorageInfo(
     playBytes: (map['playBytes'] as num?)?.toInt() ?? 0,
     playLimitMb: (map['playLimitMb'] as num?)?.toInt() ?? 256,
     downloadBytes: (map['downloadBytes'] as num?)?.toInt() ?? 0,
     downloadCount: (map['downloadCount'] as num?)?.toInt() ?? 0,
     autoDownload: map['autoDownload'] as bool? ?? false,
+    offlineCellular: map['offlineCellular'] as bool? ?? false,
   );
 }
 
@@ -223,11 +228,16 @@ class SavedPlaylist {
     this.count = 0,
     this.thumbs = const [],
     this.folderId,
+    this.offline = false,
+    this.updatedAt = 0,
   });
 
   final int id;
   final String name;
   final int count;
+
+  /// When it last changed (milliseconds since 1970); a song put in or taken out moves it.
+  final int updatedAt;
 
   /// Pictures of the first songs, up to four, each once: what the cover of the playlist is made of.
   final List<String> thumbs;
@@ -235,25 +245,34 @@ class SavedPlaylist {
   /// The [PlaylistFolder] it is kept in, or null when it is in none.
   final int? folderId;
 
+  /// Its songs are kept on the phone, the ones added later as well (by its own switch; see also [PlaylistFolder.offline]).
+  final bool offline;
+
   factory SavedPlaylist.fromMap(Map<Object?, Object?> map) => SavedPlaylist(
     id: (map['id'] as num).toInt(),
     name: map['name'] as String,
     count: (map['count'] as num?)?.toInt() ?? 0,
     thumbs: [...?(map['thumbs'] as List?)?.cast<String>()],
     folderId: (map['folderId'] as num?)?.toInt(),
+    offline: map['offline'] as bool? ?? false,
+    updatedAt: (map['updatedAt'] as num?)?.toInt() ?? 0,
   );
 }
 
 /// A folder of playlists, as Spotify has them: a playlist is in one at most, and playing the folder plays them all.
 class PlaylistFolder {
-  const PlaylistFolder({required this.id, required this.name});
+  const PlaylistFolder({required this.id, required this.name, this.offline = false});
 
   final int id;
   final String name;
 
+  /// The songs of every playlist in it are kept on the phone, those of playlists put in it later as well.
+  final bool offline;
+
   factory PlaylistFolder.fromMap(Map<Object?, Object?> map) => PlaylistFolder(
     id: (map['id'] as num).toInt(),
     name: map['name'] as String,
+    offline: map['offline'] as bool? ?? false,
   );
 }
 

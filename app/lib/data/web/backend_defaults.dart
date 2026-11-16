@@ -120,6 +120,19 @@ abstract class BackendDefaults implements Backend {
   @override
   Future<void> setAutoDownload(bool on) async {}
 
+  // A browser does not download, so it keeps no playlist on the device (the switches are hidden)
+  @override
+  Future<void> setOfflineCellular(bool on) async {}
+
+  @override
+  Future<void> setPlaylistOffline(int id, bool on, {bool remove = false}) async {}
+
+  @override
+  Future<void> setFolderOffline(int id, bool on, {bool remove = false}) async {}
+
+  @override
+  Future<int> offlineRemovable({int? playlistId, int? folderId}) async => 0;
+
   @override
   Future<void> setAutoplay(bool on) async {}
 

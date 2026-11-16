@@ -304,6 +304,7 @@ final class LibraryStoreTests: XCTestCase {
             try old.run("CREATE TABLE skips(id INTEGER PRIMARY KEY AUTOINCREMENT, video_id TEXT NOT NULL REFERENCES tracks(video_id), skipped_at INTEGER NOT NULL)")
             try old.run("CREATE TABLE playlists(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
             try old.run("CREATE TABLE playlist_items(playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, video_id TEXT NOT NULL REFERENCES tracks(video_id), position INTEGER NOT NULL, PRIMARY KEY(playlist_id, video_id))")
+            try old.run("CREATE TABLE downloads(video_id TEXT PRIMARY KEY REFERENCES tracks(video_id), state TEXT NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, tries INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL)")
             try old.run("INSERT INTO tracks VALUES('a', 'Old song', 'Old artist', NULL, 1000)")
             try old.run("INSERT INTO playlists(name, created_at, updated_at) VALUES('Old list', 1, 2)")
             try old.run("INSERT INTO playlist_items VALUES(1, 'a', 0)")
@@ -351,6 +352,7 @@ final class LibraryStoreTests: XCTestCase {
             try old.run("CREATE TABLE likes(video_id TEXT PRIMARY KEY REFERENCES tracks(video_id), liked_at INTEGER NOT NULL)")
             try old.run("CREATE TABLE playlists(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
             try old.run("CREATE TABLE playlist_items(playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, video_id TEXT NOT NULL REFERENCES tracks(video_id), position INTEGER NOT NULL, PRIMARY KEY(playlist_id, video_id))")
+            try old.run("CREATE TABLE folders(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
             try old.run("CREATE TABLE downloads(video_id TEXT PRIMARY KEY REFERENCES tracks(video_id), state TEXT NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, tries INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL)")
             try old.run("CREATE TABLE local_files(video_id TEXT PRIMARY KEY REFERENCES tracks(video_id), source_key TEXT NOT NULL UNIQUE, uri TEXT NOT NULL, album TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, added_at INTEGER NOT NULL, missing INTEGER NOT NULL DEFAULT 0)")
             try old.run("INSERT INTO tracks VALUES('old', 'Old song', 'Old artist', NULL, 1000)")
@@ -375,6 +377,9 @@ final class LibraryStoreTests: XCTestCase {
         do {
             let old = try SQLite(path: path)
             try old.run("CREATE TABLE tracks(video_id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL, thumb TEXT, dur_ms INTEGER NOT NULL)")
+            // The tables the next steps change, as every database of version 8 has them
+            try old.run("CREATE TABLE playlists(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
+            try old.run("CREATE TABLE folders(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
             try old.run("INSERT INTO tracks VALUES('old', 'Old song', 'Old artist', NULL, 1000)")
             old.version = 8
         }
@@ -656,6 +661,144 @@ final class LibraryStoreTests: XCTestCase {
         for _ in 0..<3 { _ = try await store.failDownload("c") }
         let wanted = try await store.likedToDownload()
         XCTAssertEqual(wanted.map(\.videoId), ["b"], "done and failed ones are not asked again")
+    }
+
+    // ------------------------------------------------------------------ kept playlists
+
+    func testADatabaseFromVersionNineGainsOfflineMarksAllOffAndKeepsItsPlaylists() async throws {
+        let path = NSTemporaryDirectory() + "library-\(UUID().uuidString).db"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        do {
+            let old = try SQLite(path: path)
+            try old.run("CREATE TABLE tracks(video_id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL, thumb TEXT, dur_ms INTEGER NOT NULL)")
+            try old.run("CREATE TABLE folders(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
+            try old.run("CREATE TABLE playlists(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, folder_id INTEGER REFERENCES folders(id))")
+            try old.run("CREATE TABLE playlist_items(playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, video_id TEXT NOT NULL REFERENCES tracks(video_id), position INTEGER NOT NULL, PRIMARY KEY(playlist_id, video_id))")
+            try old.run("INSERT INTO tracks VALUES('a', 'Old song', 'Old artist', NULL, 1000)")
+            try old.run("INSERT INTO folders(name, created_at, updated_at) VALUES('Old folder', 1, 2)")
+            try old.run("INSERT INTO playlists(name, created_at, updated_at, folder_id) VALUES('Old list', 1, 2, 1)")
+            try old.run("INSERT INTO playlist_items VALUES(1, 'a', 0)")
+            old.version = 9
+        }
+        let upgraded = try LibraryStore(path: path)
+        let lists = try await upgraded.playlists()
+        XCTAssertEqual(lists.map(\.name), ["Old list"])
+        XCTAssertEqual(lists.map(\.offline), [false], "no playlist is kept until the person switches it on")
+        let got1 = try await upgraded.folders().map(\.offline)
+        XCTAssertEqual(got1, [false])
+        let got2 = try await upgraded.hasOffline()
+        XCTAssertFalse(got2)
+        let got3 = try await upgraded.playlistTracks(1).map(\.videoId)
+        XCTAssertEqual(got3, ["a"])
+    }
+
+    func testKeptPlaylistsAndFoldersSayWhichSongsAreStillToDownload() async throws {
+        let mine = try await store.createPlaylist("Mine", [song("a"), song("b"), song("local:x")])
+        let inFolder = try await store.createPlaylist("In the folder", [song("c")])
+        _ = try await store.createPlaylist("Not kept", [song("d")])
+        let folder = try await store.createFolder("Trips")
+        try await store.setPlaylistFolder(inFolder, folder)
+        try await store.requestDownloads([song("b")])
+        try await store.finishDownload("b", bytes: 1)
+        let got4 = try await store.hasOffline()
+        XCTAssertFalse(got4)
+
+        _ = try await store.setPlaylistOffline(mine, true)
+        _ = try await store.setFolderOffline(folder, true)
+        let got5 = try await store.hasOffline()
+        XCTAssertTrue(got5)
+        let got6 = try await store.playlists().first { $0.id == mine }?.offline
+        XCTAssertEqual(got6, true)
+        let got7 = try await store.playlists().first { $0.id == inFolder }?.offline
+        XCTAssertEqual(got7, false, "kept by its folder, not by its own mark")
+        let wanted = try await store.offlineToDownload()
+        XCTAssertEqual(wanted.map(\.videoId), ["a", "c"], "not the one on the phone, not a file, not a playlist that is not kept")
+
+        // A liked song waits beside them: a run for kept playlists only does not take it
+        try await store.setLiked(song("e"), true)
+        try await store.requestDownloads([song("e")] + wanted, waiting: true)
+        let got8 = try await store.nextDownload(LibraryStore.waiting, keptOnly: true)
+        XCTAssertEqual(got8, "a")
+        let got9 = try await store.nextDownload(LibraryStore.waiting, skip: ["a", "c"], keptOnly: true)
+        XCTAssertEqual(got9, nil)
+        let got10 = try await store.pendingDownloads(LibraryStore.waiting, keptOnly: true)
+        XCTAssertEqual(got10, 2)
+        let got11 = try await store.pendingDownloads(LibraryStore.waiting)
+        XCTAssertEqual(got11, 3)
+        let got12 = try await store.offlineToDownload().count
+        XCTAssertEqual(got12, 0)
+    }
+
+    func testSwitchingOffDropsWhatOnlyWaitedAndRemovingSparesWhatSomethingElseKeeps() async throws {
+        let road = try await store.createPlaylist("Road", [song("a"), song("b"), song("c"), song("d")])
+        let other = try await store.createPlaylist("Other", [song("b")])
+        _ = try await store.setPlaylistOffline(road, true)
+        _ = try await store.setPlaylistOffline(other, true)
+        try await store.setLiked(song("c"), true)
+        try await store.requestDownloads([song("a"), song("b"), song("c")])
+        for id in ["a", "b", "c"] { try await store.finishDownload(id, bytes: 1) }
+        try await store.requestDownloads([song("d")], waiting: true)
+
+        let got13 = try await store.offlineRemovable(playlistId: road, folderId: nil, keepLiked: true)
+        XCTAssertEqual(got13, 1, "b is in another kept playlist, c is liked")
+        let got14 = try await store.offlineRemovable(playlistId: road, folderId: nil, keepLiked: false)
+        XCTAssertEqual(got14, 2)
+
+        // Keeping the songs: only the one that waited to come by itself goes
+        let kept = try await store.setPlaylistOffline(road, false, remove: false, keepLiked: true)
+        XCTAssertEqual(kept, ["d"])
+        let got15 = try await store.downloads().map(\.track.videoId).sorted()
+        XCTAssertEqual(got15, ["a", "b", "c"])
+
+        _ = try await store.setPlaylistOffline(road, true)
+        let removed = try await store.setPlaylistOffline(road, false, remove: true, keepLiked: true)
+        XCTAssertEqual(removed, ["a"], "as many as the question said")
+        let got16 = try await store.downloads().map(\.track.videoId).sorted()
+        XCTAssertEqual(got16, ["b", "c"])
+        let got17 = try await ids(road)
+        XCTAssertEqual(got17, ["a", "b", "c", "d"], "the playlist keeps its songs")
+    }
+
+    func testClearingAllDownloadsSwitchesEveryKeptPlaylistAndFolderOff() async throws {
+        let road = try await store.createPlaylist("Road", [song("a"), song("b")])
+        let folder = try await store.createFolder("Trips")
+        let inFolder = try await store.createPlaylist("In", [song("c")])
+        try await store.setPlaylistFolder(inFolder, folder)
+        _ = try await store.setPlaylistOffline(road, true)
+        _ = try await store.setFolderOffline(folder, true)
+        try await store.requestDownloads([song("a")])
+        try await store.finishDownload("a", bytes: 1)
+        try await store.requestDownloads([song("b"), song("c")], waiting: true)
+        try await store.clearDownloads()
+        let hasOffline = try await store.hasOffline()
+        XCTAssertFalse(hasOffline, "nothing keeps itself whole any more")
+        let lists = try await store.playlists().map(\.offline)
+        XCTAssertEqual(lists, [false, false])
+        let folders = try await store.folders().map(\.offline)
+        XCTAssertEqual(folders, [false])
+        let wanted = try await store.offlineToDownload()
+        XCTAssertEqual(wanted.count, 0, "so nothing is fetched again the next time the app opens")
+        let kept = try await store.playlistTracks(road).map(\.videoId)
+        XCTAssertEqual(kept, ["a", "b"], "the playlists keep their songs")
+    }
+
+    func testAPlaylistKeptByItsFolderStaysKeptWithoutItsOwnMark() async throws {
+        let road = try await store.createPlaylist("Road", [song("a")])
+        let folder = try await store.createFolder("Trips")
+        try await store.setPlaylistFolder(road, folder)
+        _ = try await store.setFolderOffline(folder, true)
+        try await store.requestDownloads([song("a")])
+        try await store.finishDownload("a", bytes: 1)
+        let got18 = try await store.offlineRemovable(playlistId: road, folderId: nil, keepLiked: false)
+        XCTAssertEqual(got18, 0)
+        let got19 = try await store.setPlaylistOffline(road, false, remove: true)
+        XCTAssertEqual(got19, [])
+        let got20 = try await store.offlineRemovable(playlistId: nil, folderId: folder, keepLiked: false)
+        XCTAssertEqual(got20, 1)
+        let got21 = try await store.setFolderOffline(folder, false, remove: true)
+        XCTAssertEqual(got21, ["a"])
+        let got22 = try await store.folders().first?.offline
+        XCTAssertEqual(got22, false)
     }
 }
 

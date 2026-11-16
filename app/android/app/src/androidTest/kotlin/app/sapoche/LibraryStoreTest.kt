@@ -285,6 +285,9 @@ class LibraryStoreTest {
         context.deleteDatabase(file)
         context.openOrCreateDatabase(file, android.content.Context.MODE_PRIVATE, null).use { db ->
             db.execSQL("CREATE TABLE tracks(video_id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL, thumb TEXT, dur_ms INTEGER NOT NULL)")
+            // The tables the next steps change, as every database of version 8 has them
+            db.execSQL("CREATE TABLE playlists(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
+            db.execSQL("CREATE TABLE folders(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
             db.execSQL("INSERT INTO tracks VALUES('old', 'Old song', 'Old artist', NULL, 1000)")
             db.version = 8
         }
@@ -444,8 +447,9 @@ class LibraryStoreTest {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val file = "upgrade-test7.db"
         context.deleteDatabase(file)
-        // A version 7 database has every table but the source columns and the taste marks
-        LibraryStore(context, file).close()
+        // A version 7 database has every table but the source columns and the taste marks (the store opens its file only when
+        // something asks for the database, so it is asked for here: a store that is closed unopened makes no file)
+        LibraryStore(context, file).apply { writableDatabase }.close()
         context.openOrCreateDatabase(file, android.content.Context.MODE_PRIVATE, null).use { db ->
             db.execSQL("ALTER TABLE history RENAME TO history_new")
             db.execSQL("CREATE TABLE history(id INTEGER PRIMARY KEY AUTOINCREMENT, video_id TEXT NOT NULL REFERENCES tracks(video_id), played_at INTEGER NOT NULL)")
@@ -454,6 +458,10 @@ class LibraryStoreTest {
             db.execSQL("CREATE TABLE skips(id INTEGER PRIMARY KEY AUTOINCREMENT, video_id TEXT NOT NULL REFERENCES tracks(video_id), skipped_at INTEGER NOT NULL)")
             db.execSQL("DROP TABLE skips_new")
             db.execSQL("DROP TABLE taste_marks")
+            // ...nor the columns of the versions after it (loudness, kept playlists)
+            db.execSQL("ALTER TABLE tracks DROP COLUMN loudness_cdb")
+            db.execSQL("ALTER TABLE playlists DROP COLUMN offline")
+            db.execSQL("ALTER TABLE folders DROP COLUMN offline")
             db.execSQL("INSERT INTO tracks VALUES('old', 'Old song', 'Old artist', NULL, 1000)")
             db.execSQL("INSERT INTO history(video_id, played_at) VALUES('old', 5)")
             db.execSQL("INSERT INTO skips(video_id, skipped_at) VALUES('old', 6)")
@@ -656,6 +664,124 @@ class LibraryStoreTest {
         store.failDownload("c")
         store.failDownload("c")
         assertEquals("done and failed ones are not asked again", listOf("b"), store.likedToDownload().map { it.videoId })
+    }
+
+    // ------------------------------------------------------------------ kept playlists
+
+    @Test
+    fun aDatabaseFromVersionNineGainsOfflineMarksAllOffAndKeepsItsPlaylists() = runTest {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val file = "upgrade-nine-test.db"
+        context.deleteDatabase(file)
+        context.openOrCreateDatabase(file, android.content.Context.MODE_PRIVATE, null).use { db ->
+            db.execSQL("CREATE TABLE tracks(video_id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL, thumb TEXT, dur_ms INTEGER NOT NULL)")
+            db.execSQL("CREATE TABLE folders(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
+            db.execSQL("CREATE TABLE playlists(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, folder_id INTEGER REFERENCES folders(id))")
+            db.execSQL("CREATE TABLE playlist_items(playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, video_id TEXT NOT NULL REFERENCES tracks(video_id), position INTEGER NOT NULL, PRIMARY KEY(playlist_id, video_id))")
+            db.execSQL("INSERT INTO tracks VALUES('a', 'Old song', 'Old artist', NULL, 1000)")
+            db.execSQL("INSERT INTO folders(name, created_at, updated_at) VALUES('Old folder', 1, 2)")
+            db.execSQL("INSERT INTO playlists(name, created_at, updated_at, folder_id) VALUES('Old list', 1, 2, 1)")
+            db.execSQL("INSERT INTO playlist_items VALUES(1, 'a', 0)")
+            db.version = 9
+        }
+        val upgraded = LibraryStore(context, file)
+        try {
+            assertEquals(listOf("Old list"), upgraded.playlists().map { it.name })
+            assertEquals("no playlist is kept until the person switches it on", listOf(false), upgraded.playlists().map { it.offline })
+            assertEquals(listOf(false), upgraded.folders().map { it.offline })
+            assertFalse(upgraded.hasOffline())
+            assertEquals(listOf("a"), upgraded.playlistTracks(1).map { it.videoId })
+        } finally {
+            upgraded.close()
+            context.deleteDatabase(file)
+        }
+    }
+
+    @Test
+    fun keptPlaylistsAndFoldersSayWhichSongsAreStillToDownload() = runTest {
+        val mine = store.createPlaylist("Mine", listOf(song("a"), song("b"), song("${LocalMusic.PREFIX}x")))
+        val inFolder = store.createPlaylist("In the folder", listOf(song("c")))
+        store.createPlaylist("Not kept", listOf(song("d")))
+        val folder = store.createFolder("Trips")
+        store.setPlaylistFolder(inFolder, folder)
+        store.requestDownloads(listOf(song("b")))
+        store.finishDownload("b", 1)
+        assertFalse(store.hasOffline())
+
+        store.setPlaylistOffline(mine, true)
+        store.setFolderOffline(folder, true)
+        assertTrue(store.hasOffline())
+        assertEquals(true, store.playlists().first { it.id == mine }.offline)
+        assertEquals("kept by its folder, not by its own mark", false, store.playlists().first { it.id == inFolder }.offline)
+        val wanted = store.offlineToDownload()
+        assertEquals("not the one on the phone, not a file, not a playlist that is not kept", listOf("a", "c"), wanted.map { it.videoId })
+
+        // A liked song waits beside them: a run for kept playlists only does not take it
+        store.setLiked(song("e"), true)
+        store.requestDownloads(listOf(song("e")) + wanted, waiting = true)
+        assertEquals("a", store.nextDownload(LibraryStore.WAITING, keptOnly = true))
+        assertNull(store.nextDownload(LibraryStore.WAITING, setOf("a", "c"), keptOnly = true))
+        assertEquals(2, store.pendingDownloads(LibraryStore.WAITING, keptOnly = true))
+        assertEquals(3, store.pendingDownloads(LibraryStore.WAITING))
+        assertEquals(0, store.offlineToDownload().size)
+    }
+
+    @Test
+    fun switchingOffDropsWhatOnlyWaitedAndRemovingSparesWhatSomethingElseKeeps() = runTest {
+        val road = store.createPlaylist("Road", listOf(song("a"), song("b"), song("c"), song("d")))
+        val other = store.createPlaylist("Other", listOf(song("b")))
+        store.setPlaylistOffline(road, true)
+        store.setPlaylistOffline(other, true)
+        store.setLiked(song("c"), true)
+        store.requestDownloads(listOf(song("a"), song("b"), song("c")))
+        for (id in listOf("a", "b", "c")) store.finishDownload(id, 1)
+        store.requestDownloads(listOf(song("d")), waiting = true)
+
+        assertEquals("b is in another kept playlist, c is liked", 1, store.offlineRemovable(road, null, keepLiked = true))
+        assertEquals(2, store.offlineRemovable(road, null, keepLiked = false))
+
+        // Keeping the songs: only the one that waited to come by itself goes
+        assertEquals(listOf("d"), store.setPlaylistOffline(road, false, remove = false, keepLiked = true))
+        assertEquals(listOf("a", "b", "c"), store.downloads().map { it.track.videoId }.sorted())
+
+        store.setPlaylistOffline(road, true)
+        assertEquals("as many as the question said", listOf("a"), store.setPlaylistOffline(road, false, remove = true, keepLiked = true))
+        assertEquals(listOf("b", "c"), store.downloads().map { it.track.videoId }.sorted())
+        assertEquals("the playlist keeps its songs", listOf("a", "b", "c", "d"), ids(road))
+    }
+
+    @Test
+    fun clearingAllDownloadsSwitchesEveryKeptPlaylistAndFolderOff() = runTest {
+        val road = store.createPlaylist("Road", listOf(song("a"), song("b")))
+        val folder = store.createFolder("Trips")
+        val inFolder = store.createPlaylist("In", listOf(song("c")))
+        store.setPlaylistFolder(inFolder, folder)
+        store.setPlaylistOffline(road, true)
+        store.setFolderOffline(folder, true)
+        store.requestDownloads(listOf(song("a")))
+        store.finishDownload("a", 1)
+        store.requestDownloads(listOf(song("b"), song("c")), waiting = true)
+        store.clearDownloads()
+        assertFalse("nothing keeps itself whole any more", store.hasOffline())
+        assertEquals(listOf(false, false), store.playlists().map { it.offline })
+        assertEquals(listOf(false), store.folders().map { it.offline })
+        assertEquals("so nothing is fetched again the next time the app opens", 0, store.offlineToDownload().size)
+        assertEquals("the playlists keep their songs", listOf("a", "b"), ids(road))
+    }
+
+    @Test
+    fun aPlaylistKeptByItsFolderStaysKeptWithoutItsOwnMark() = runTest {
+        val road = store.createPlaylist("Road", listOf(song("a")))
+        val folder = store.createFolder("Trips")
+        store.setPlaylistFolder(road, folder)
+        store.setFolderOffline(folder, true)
+        store.requestDownloads(listOf(song("a")))
+        store.finishDownload("a", 1)
+        assertEquals(0, store.offlineRemovable(road, null, keepLiked = false))
+        assertEquals(emptyList<String>(), store.setPlaylistOffline(road, false, remove = true))
+        assertEquals(1, store.offlineRemovable(null, folder, keepLiked = false))
+        assertEquals(listOf("a"), store.setFolderOffline(folder, false, remove = true))
+        assertEquals(false, store.folders().single().offline)
     }
 
     @Test

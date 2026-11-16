@@ -1264,6 +1264,19 @@ class _StorageGroupState extends State<_StorageGroup> {
             },
           ),
         ),
+        // Only for playlists and folders switched on: liked songs keep to Wi-Fi, and a download asked for asks
+        Material(
+          type: MaterialType.transparency,
+          child: SwitchListTile(
+            title: Text(S.offlineCellular),
+            subtitle: Text(S.offlineCellularHelp),
+            value: _info.offlineCellular,
+            onChanged: (on) async {
+              await library.setOfflineCellular(on);
+              _load();
+            },
+          ),
+        ),
         // Whether the list of the music on this phone is offered; on its own it is read only when opened
         ListenableBuilder(
           listenable: library,

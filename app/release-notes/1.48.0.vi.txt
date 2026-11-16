@@ -1,0 +1,7 @@
+Giữ trọn một playlist hay thư mục trên điện thoại
+- Mỗi playlist và thư mục có thêm nút tải cạnh nút Phát. Bật lên thì mọi bài được tải, bài thêm vào sau tự tải khi có Wi-Fi. Mặc định tắt, bật mới có; thư mục giữ luôn mọi playlist trong nó.
+- Nút cho biết đã tải tới đâu: vòng tròn khi đang tải, nút đặc màu khi đã đủ bài. Playlist và thư mục đang được giữ có dấu nhỏ ở Thư viện.
+- Cài đặt > Bộ nhớ có công tắc mới "Tự tải qua dữ liệu di động", mặc định tắt. Bật thì playlist được giữ cũng nhận bài mới qua dữ liệu di động (Android không tải khi đang chuyển vùng).
+- Tắt một playlist thì app hỏi xoá hay giữ lại các bài đã tải; bài mà playlist khác đang giữ thì ở lại. "Xóa tất cả" ở trang Đã tải nay tắt luôn mọi playlist đang giữ, nên không có gì tải lại.
+- Android tiếp tục tải cả khi đã đóng app. iPhone tải khi app đang mở hoặc vừa rời ra.
+- Sửa lỗi: bài bị bỏ khỏi danh sách giữa lúc đang tải không còn để lại tệp thừa, và bấm tắt là dừng thật phần chưa tải.

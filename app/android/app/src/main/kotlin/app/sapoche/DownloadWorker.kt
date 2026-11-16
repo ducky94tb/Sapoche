@@ -20,27 +20,49 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Downloads the songs on the list as a job, so that it goes on with the network while the app is in the
- * background, which a bare coroutine does not. There are two kinds: songs the person asked for go on any
- * network, liked songs go by themselves only on Wi-Fi with the phone charging.
+ * background, which a bare coroutine does not. There are three kinds: songs the person asked for go on any
+ * network, liked songs go by themselves only on Wi-Fi with the phone charging, and the songs of kept playlists
+ * go by themselves on Wi-Fi, or on mobile data too when the person allowed it ([KEY_CELLULAR]).
  */
 class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         val waiting = inputData.getBoolean(KEY_WAITING, false)
+        val kept = inputData.getBoolean(KEY_KEPT, false)
+        // Songs saved by themselves: not while the phone is warm, they can wait for it to cool
+        if ((waiting || kept) && SapocheApp.heat.calm.value) {
+            EventLog.d("download", "put off: the phone is warm or saving power")
+            return Result.retry()
+        }
         if (waiting) {
-            // Liked songs saved by themselves: not while the phone is warm, they can wait for it to cool
-            if (SapocheApp.heat.calm.value) {
-                EventLog.d("download", "put off: the phone is warm or saving power")
-                return Result.retry()
-            }
             if (!applicationContext.getSharedPreferences("sapoche", Context.MODE_PRIVATE).getBoolean(KEY_AUTO, false)) {
                 return Result.success()
             }
             SapocheApp.library.requestDownloads(SapocheApp.library.likedToDownload(), waiting = true)
         }
-        val result = if (waiting) SapocheApp.downloader.drain(true) else drainShowingProgress()
+        val result = when {
+            kept -> drainKept()
+            waiting -> SapocheApp.downloader.drain(true)
+            else -> drainShowingProgress()
+        }
         EventLog.d("download", "job done: ${result.done} songs${if (result.retryLater) ", some to try again" else ""}")
         return if (result.retryLater) Result.retry() else Result.success()
+    }
+
+    /**
+     * The songs of kept playlists not on the phone yet, then again for those added while the run went on: only songs of
+     * kept playlists are taken, so a liked song never goes on mobile data or without a charger by this way.
+     */
+    private suspend fun drainKept(): Downloader.Result {
+        var done = 0
+        while (true) {
+            val more = SapocheApp.library.offlineToDownload()
+            if (more.isEmpty() && done > 0) return Downloader.Result(done, false)
+            SapocheApp.library.requestDownloads(more, waiting = true)
+            val result = SapocheApp.downloader.drain(true, keptOnly = true)
+            done += result.done
+            if (result.retryLater || SapocheApp.library.offlineToDownload().isEmpty()) return Downloader.Result(done, result.retryLater)
+        }
     }
 
     /**
@@ -82,7 +104,12 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
     companion object {
         const val KEY_AUTO = "auto_download"
+
+        /** The songs of kept playlists may come on mobile data as well (not when roaming). */
+        const val KEY_CELLULAR = "offline_cellular"
         private const val KEY_WAITING = "waiting"
+        private const val KEY_KEPT = "kept"
+        private const val KEPT_WORK = "download-offline"
 
         private const val QUEUED_WORK = "download-queued"
 
@@ -124,11 +151,28 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             )
         }
 
+        /**
+         * Starts the job for the songs of kept playlists: on Wi-Fi, or on any network but a roaming one when the person
+         * allowed mobile data. One waiting job is enough, it looks at the playlists when it runs; [again] replaces it, for
+         * when that choice changed (a run on mobile data that is no longer allowed stops).
+         */
+        fun enqueueKept(context: Context, again: Boolean = false) {
+            val cellular = context.getSharedPreferences("sapoche", Context.MODE_PRIVATE).getBoolean(KEY_CELLULAR, false)
+            val request = OneTimeWorkRequestBuilder<DownloadWorker>()
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(if (cellular) NetworkType.NOT_ROAMING else NetworkType.UNMETERED).build())
+                .setInputData(workDataOf(KEY_KEPT to true))
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
+                .build()
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork(KEPT_WORK, if (again) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
+        }
+
         /** Stops the job for asked-for songs, and the retries it has waiting. */
         fun cancelQueued(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(QUEUED_WORK)
         }
 
+        /** Stops the job for liked songs; the one for kept playlists goes on. */
         fun cancelWaiting(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork("download-waiting")
         }

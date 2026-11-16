@@ -55,10 +55,19 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
      * A playlist as listed: its cover is made of the pictures of its first songs, [COVER_PARTS] at most, each once.
      * It may be kept in a [Folder].
      */
-    data class Playlist(val id: Long, val name: String, val count: Int, val thumbs: List<String>, val updatedAt: Long, val folderId: Long? = null)
+    data class Playlist(
+        val id: Long,
+        val name: String,
+        val count: Int,
+        val thumbs: List<String>,
+        val updatedAt: Long,
+        val folderId: Long? = null,
+        /** Its songs are kept on this phone, and so are the ones added later; see [setPlaylistOffline]. */
+        val offline: Boolean = false,
+    )
 
     /** A folder of playlists, as Spotify has them: a playlist is in one at most, and playing the folder plays them all. */
-    data class Folder(val id: Long, val name: String, val updatedAt: Long)
+    data class Folder(val id: Long, val name: String, val updatedAt: Long, val offline: Boolean = false)
 
     /** A playlist as kept in a backup: what it is called, when, its songs in order, and the folder it was in by name. */
     data class SavedPlaylist(val name: String, val createdAt: Long, val updatedAt: Long, val tracks: List<TrackRef>, val folder: String? = null)
@@ -101,6 +110,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
         createFolders(db)
         createSources(db)
         createLoudness(db)
+        createOffline(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -113,6 +123,13 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
         if (oldVersion < 7) createFolders(db)
         if (oldVersion < 8) createSources(db)
         if (oldVersion < 9) createLoudness(db)
+        if (oldVersion < 10) createOffline(db)
+    }
+
+    /** Playlists and folders whose songs are kept on this phone, the ones added later as well. None is to begin with. */
+    private fun createOffline(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE playlists ADD COLUMN offline INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE folders ADD COLUMN offline INTEGER NOT NULL DEFAULT 0")
     }
 
     /** How loud each song is against YouTube's reference level, in hundredths of a dB; null until a stream of it said so. */
@@ -338,7 +355,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     /** Playlists, the one changed last first. */
     suspend fun playlists(): List<Playlist> = withContext(io) {
         readableDatabase.rawQuery(
-            "SELECT p.id, p.name, p.updated_at, COUNT(i.video_id), p.folder_id " +
+            "SELECT p.id, p.name, p.updated_at, COUNT(i.video_id), p.folder_id, p.offline " +
                 "FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id = p.id " +
                 "GROUP BY p.id ORDER BY p.updated_at DESC, p.id DESC",
             null,
@@ -346,7 +363,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
             val list = ArrayList<Playlist>(c.count)
             while (c.moveToNext()) {
                 val folder = if (c.isNull(4)) null else c.getLong(4)
-                list += Playlist(c.getLong(0), c.getString(1), c.getInt(3), coverThumbs(c.getLong(0)), c.getLong(2), folder)
+                list += Playlist(c.getLong(0), c.getString(1), c.getInt(3), coverThumbs(c.getLong(0)), c.getLong(2), folder, c.getInt(5) == 1)
             }
             list
         }
@@ -356,9 +373,9 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
 
     /** Folders, the one changed last first. */
     suspend fun folders(): List<Folder> = withContext(io) {
-        readableDatabase.rawQuery("SELECT id, name, updated_at FROM folders ORDER BY updated_at DESC, id DESC", null).use { c ->
+        readableDatabase.rawQuery("SELECT id, name, updated_at, offline FROM folders ORDER BY updated_at DESC, id DESC", null).use { c ->
             val list = ArrayList<Folder>(c.count)
-            while (c.moveToNext()) list += Folder(c.getLong(0), c.getString(1), c.getLong(2))
+            while (c.moveToNext()) list += Folder(c.getLong(0), c.getString(1), c.getLong(2), c.getInt(3) == 1)
             list
         }
     }
@@ -396,6 +413,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
         writableDatabase.transaction {
             execSQL("UPDATE playlists SET folder_id = NULL WHERE folder_id = ?", arrayOf<Any?>(id))
             delete("folders", "id = ?", arrayOf(id.toString()))
+            dropUnkeptWaiting()
         }
         _changes.tryEmit(Unit)
     }
@@ -408,6 +426,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
             }
             execSQL("UPDATE playlists SET folder_id = ? WHERE id = ?", arrayOf<Any?>(folderId, id))
             for (folder in setOfNotNull(before, folderId)) execSQL("UPDATE folders SET updated_at = ? WHERE id = ?", arrayOf<Any?>(at, folder))
+            dropUnkeptWaiting()
         }
         _changes.tryEmit(Unit)
     }
@@ -461,6 +480,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
         val db = writableDatabase
         db.transaction {
             delete("playlists", "id = ?", arrayOf(id.toString()))
+            dropUnkeptWaiting()
             dropUnusedTracks()
         }
         _changes.tryEmit(Unit)
@@ -475,6 +495,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
 
     suspend fun removeFromPlaylist(id: Long, videoId: String, at: Long = System.currentTimeMillis()) = changePlaylist(id, at) {
         delete("playlist_items", "playlist_id = ? AND video_id = ?", arrayOf(id.toString(), videoId))
+        dropUnkeptWaiting()
         dropUnusedTracks()
     }
 
@@ -781,20 +802,23 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
         _changes.tryEmit(Unit)
     }
 
-    /** The oldest song still to download in [state], other than those in [skip]. */
-    suspend fun nextDownload(state: String, skip: Set<String> = emptySet()): String? = withContext(io) {
+    /** The oldest song still to download in [state], other than those in [skip]; with [keptOnly], only a song of a kept playlist. */
+    suspend fun nextDownload(state: String, skip: Set<String> = emptySet(), keptOnly: Boolean = false): String? = withContext(io) {
         readableDatabase.rawQuery(
-            "SELECT video_id FROM downloads WHERE state = ? ORDER BY rowid",
-            arrayOf(state),
+            "SELECT video_id FROM downloads WHERE state = ?${if (keptOnly) " AND video_id IN ($KEPT_SONGS)" else ""} ORDER BY rowid",
+            if (keptOnly) arrayOf(state, "-1", "-1") else arrayOf(state),
         ).use { c ->
             while (c.moveToNext()) c.getString(0).let { if (it !in skip) return@use it }
             null
         }
     }
 
-    /** How many songs are still to download in [state], other than those in [skip]. */
-    suspend fun pendingDownloads(state: String, skip: Set<String> = emptySet()): Int = withContext(io) {
-        readableDatabase.rawQuery("SELECT video_id FROM downloads WHERE state = ?", arrayOf(state)).use { c ->
+    /** How many songs are still to download in [state], other than those in [skip]; with [keptOnly], of kept playlists only. */
+    suspend fun pendingDownloads(state: String, skip: Set<String> = emptySet(), keptOnly: Boolean = false): Int = withContext(io) {
+        readableDatabase.rawQuery(
+            "SELECT video_id FROM downloads WHERE state = ?${if (keptOnly) " AND video_id IN ($KEPT_SONGS)" else ""}",
+            if (keptOnly) arrayOf(state, "-1", "-1") else arrayOf(state),
+        ).use { c ->
             var n = 0
             while (c.moveToNext()) if (c.getString(0) !in skip) n++
             n
@@ -808,6 +832,11 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
             "UPDATE downloads SET state = ?, bytes = ?, at = ?, tries = 0 WHERE video_id = ?",
             arrayOf<Any?>(DONE, bytes, at, videoId),
         )
+    }
+
+    /** The song is on the list of downloads, in any state. */
+    suspend fun isListed(videoId: String): Boolean = withContext(io) {
+        readableDatabase.rawQuery("SELECT 1 FROM downloads WHERE video_id = ?", arrayOf(videoId)).use { it.moveToFirst() }
     }
 
     /** One try failed. After [MAX_TRIES] the song is marked failed; true when that happened. */
@@ -862,10 +891,16 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
         _changes.tryEmit(Unit)
     }
 
+    /**
+     * Takes every song off the list (the caller removes the bytes). Every kept playlist and folder is switched off too: the
+     * person wants the room back, and a playlist that keeps itself whole would fetch it all again the next time the app opens.
+     */
     suspend fun clearDownloads() = withContext(io) {
         val db = writableDatabase
         db.transaction {
             delete("downloads", null, null)
+            execSQL("UPDATE playlists SET offline = 0")
+            execSQL("UPDATE folders SET offline = 0")
             dropUnusedTracks()
         }
         _changes.tryEmit(Unit)
@@ -898,6 +933,76 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
                 "JOIN tracks t ON t.video_id = l.video_id LEFT JOIN downloads d ON d.video_id = l.video_id " +
                 "WHERE d.video_id IS NULL AND l.video_id NOT LIKE '${LocalMusic.PREFIX}%' ORDER BY l.liked_at DESC",
             null,
+        ).use { c -> entries(c).map { it.track } }
+    }
+
+    // ------------------------------------------------------------------ kept playlists
+
+    /** Keeps the songs of the playlist on this phone ([on]), or stops; see [setOffline]. */
+    suspend fun setPlaylistOffline(id: Long, on: Boolean, remove: Boolean = false, keepLiked: Boolean = false): List<String> =
+        setOffline("playlists", id, on, remove, keepLiked)
+
+    /** Keeps the songs of every playlist in the folder, the ones put in it later as well ([on]), or stops; see [setOffline]. */
+    suspend fun setFolderOffline(id: Long, on: Boolean, remove: Boolean = false, keepLiked: Boolean = false): List<String> =
+        setOffline("folders", id, on, remove, keepLiked)
+
+    /**
+     * Sets the mark of a playlist or a folder. The order of the list stays: it is not counted as a change. Switched off, its
+     * songs that nothing else keeps (another kept playlist or folder, or the liked songs with [keepLiked]) and that are still to
+     * be fetched (waiting for Wi-Fi, or asked for when it was switched on and not fetched yet) are taken off the list, so that
+     * stopping really stops; with [remove], so are the ones on the phone and every other state.
+     * Returns the songs taken off, whose bytes the caller removes.
+     */
+    private suspend fun setOffline(table: String, id: Long, on: Boolean, remove: Boolean, keepLiked: Boolean): List<String> = withContext(io) {
+        val dropped = ArrayList<String>()
+        writableDatabase.transaction {
+            execSQL("UPDATE $table SET offline = ? WHERE id = ?", arrayOf<Any?>(if (on) 1 else 0, id))
+            if (on) return@transaction
+            val (where, args) = removable(table, id, keepLiked)
+            rawQuery(
+                "SELECT video_id FROM downloads WHERE $where${if (remove) "" else " AND state IN ('$WAITING', '$QUEUED')"}",
+                args,
+            ).use { while (it.moveToNext()) dropped += it.getString(0) }
+            for (videoId in dropped) delete("downloads", "video_id = ?", arrayOf(videoId))
+            dropUnusedTracks()
+        }
+        _changes.tryEmit(Unit)
+        dropped
+    }
+
+    /** How many songs on the phone switching off the playlist or the folder with removing would take away. */
+    suspend fun offlineRemovable(playlistId: Long?, folderId: Long?, keepLiked: Boolean): Int = withContext(io) {
+        val (where, args) = if (playlistId != null) removable("playlists", playlistId, keepLiked) else removable("folders", folderId ?: -1, keepLiked)
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM downloads WHERE state = '$DONE' AND $where", args).use { it.moveToFirst(); it.getInt(0) }
+    }
+
+    /** The songs of a playlist or a folder that nothing else keeps once it is switched off, as a condition on `downloads`. */
+    private fun removable(table: String, id: Long, keepLiked: Boolean): Pair<String, Array<String>> {
+        val mine = if (table == "playlists") {
+            "SELECT video_id FROM playlist_items WHERE playlist_id = ?"
+        } else {
+            "SELECT i.video_id FROM playlist_items i JOIN playlists p ON p.id = i.playlist_id WHERE p.folder_id = ?"
+        }
+        val where = "video_id IN ($mine) AND video_id NOT IN ($KEPT_SONGS)" + if (keepLiked) " AND video_id NOT IN (SELECT video_id FROM likes)" else ""
+        val playlist = if (table == "playlists") id else -1
+        val folder = if (table == "folders") id else -1
+        return where to arrayOf(id.toString(), playlist.toString(), folder.toString())
+    }
+
+    /** Whether any playlist is kept, by its own mark or its folder's: only then is there something to fetch for them. */
+    suspend fun hasOffline(): Boolean = withContext(io) {
+        readableDatabase.rawQuery(
+            "SELECT EXISTS(SELECT 1 FROM playlists p LEFT JOIN folders f ON f.id = p.folder_id WHERE p.offline = 1 OR f.offline = 1)",
+            null,
+        ).use { it.moveToFirst() && it.getInt(0) == 1 }
+    }
+
+    /** Songs of kept playlists that are not on the list yet, for downloading them by themselves. */
+    suspend fun offlineToDownload(): List<TrackRef> = withContext(io) {
+        readableDatabase.rawQuery(
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, 0, 0 FROM tracks t LEFT JOIN downloads d ON d.video_id = t.video_id " +
+                "WHERE d.video_id IS NULL AND t.video_id IN ($KEPT_SONGS) AND t.video_id NOT LIKE '${LocalMusic.PREFIX}%' ORDER BY t.rowid",
+            arrayOf("-1", "-1"),
         ).use { c -> entries(c).map { it.track } }
     }
 
@@ -1030,6 +1135,15 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
      * Forgets songs nothing points to any more. Every table that refers to a song must be listed here,
      * or its songs would be lost.
      */
+    /**
+     * A song that waited to be fetched by itself for a kept playlist that is not kept any more (deleted, left its folder, the
+     * song taken out) is not asked for by anything: it is taken off the list, or it would wait for good. A liked song is asked
+     * again by the run for liked songs, so it does no harm to let it go too.
+     */
+    private fun SQLiteDatabase.dropUnkeptWaiting() {
+        execSQL("DELETE FROM downloads WHERE state = ? AND video_id NOT IN ($KEPT_SONGS)", arrayOf<Any?>(WAITING, -1, -1))
+    }
+
     private fun SQLiteDatabase.dropUnusedTracks() {
         execSQL(
             "DELETE FROM tracks WHERE video_id NOT IN (SELECT video_id FROM likes) " +
@@ -1071,7 +1185,14 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     }
 
     companion object {
-        private const val VERSION = 9
+        private const val VERSION = 10
+
+        /**
+         * The songs of kept playlists, by their own mark or their folder's, leaving out one playlist and one folder (the
+         * two arguments; -1 for none) as if they were switched off.
+         */
+        private const val KEPT_SONGS = "SELECT i.video_id FROM playlist_items i JOIN playlists p ON p.id = i.playlist_id " +
+            "LEFT JOIN folders f ON f.id = p.folder_id WHERE (p.offline = 1 AND p.id != ?) OR (f.offline = 1 AND f.id != ?)"
         const val RECENT_LIMIT = 100
         const val HISTORY_KEEP = 2000
         const val MAX_PLAYLIST = 500

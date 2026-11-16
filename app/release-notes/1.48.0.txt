@@ -1,0 +1,7 @@
+Keep a whole playlist or folder on your phone
+- Every playlist and folder has a new download button beside Play. Switch it on and all its songs download; songs you add later download by themselves on Wi-Fi. It is off until you switch it on, and a folder keeps every playlist in it.
+- The button shows how far it has got: a ring while songs come, a filled button when they are all there. Playlists and folders that are kept have a small mark in the Library.
+- Settings > Storage has a new switch, "Download on mobile data", off by default. Switched on, kept playlists also get their new songs on mobile data (not while roaming on Android).
+- Switching a playlist off asks whether to remove its downloaded songs or keep them; songs another kept playlist still needs stay. "Delete all" on the Downloaded page now switches every kept playlist off too, so nothing comes back.
+- Android keeps fetching even when the app is closed. On iPhone the songs come while the app is open or has just been left.
+- Fixes: songs taken off a list while they download no longer leave a file behind, and stopping really stops what was still to come.

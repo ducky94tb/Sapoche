@@ -360,6 +360,30 @@ abstract final class S {
     'Tự lưu các bài đã thích khi có Wi-Fi và điện thoại đang sạc.',
   );
   static String get clearCache => _t('Clear', 'Xóa');
+  static String get offlineCellular =>
+      _t('Download on mobile data', 'Tự tải qua dữ liệu di động');
+  static String get offlineCellularHelp => _t(
+    'Playlists and folders you download also get their new songs on mobile data, not only on Wi-Fi. About 4 MB a song.',
+    'Playlist và thư mục đã bật tải về nhận cả bài mới qua dữ liệu di động, không chỉ Wi-Fi. Khoảng 4 MB mỗi bài.',
+  );
+
+  // Playlists and folders kept on the phone
+  static String keptByFolder(String folder) =>
+      _t('Downloaded with the folder $folder', 'Đang tải theo thư mục $folder');
+  static String get waitForWifi => _t('Wait for Wi-Fi', 'Đợi Wi-Fi');
+  static String get offlineWaitsForWifi =>
+      _t('The songs will download on Wi-Fi', 'Bài sẽ tự tải khi có Wi-Fi');
+  static String get stopOfflinePlaylist =>
+      _t('Stop downloading this playlist?', 'Thôi tự tải playlist này?');
+  static String get stopOfflineFolder =>
+      _t('Stop downloading this folder?', 'Thôi tự tải thư mục này?');
+  static String stopOfflineBody(int n) => _t(
+    n == 1
+        ? 'Songs added later will not download. Remove the 1 downloaded song from this phone too?'
+        : 'Songs added later will not download. Remove the $n downloaded songs from this phone too?',
+    'Bài thêm sau sẽ không tự tải nữa. Xóa luôn $n bài đã tải khỏi điện thoại?',
+  );
+  static String get keepSongs => _t('Keep songs', 'Giữ bài');
 
   // Suggestions
   static String get forYou => _t('For you', 'Dành cho bạn');

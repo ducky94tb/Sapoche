@@ -239,6 +239,7 @@ class SapocheBridge(
             SapocheApp.group.value?.resumeRoom()
             renewSuggestionsIfDue()
             if (autoDownload) DownloadWorker.enqueue(activity, waiting = true)
+            scope.launch { kickOffline() }
         }
         shown.value = value
         SapocheApp.setUiVisible(value)
@@ -255,6 +256,16 @@ class SapocheBridge(
     }
 
     private val autoDownload get() = prefs.getBoolean(DownloadWorker.KEY_AUTO, false)
+
+    /** Has the songs of kept playlists that are not on the phone yet fetched by themselves, when a playlist is kept at all. */
+    private suspend fun kickOffline() {
+        if (SapocheApp.library.hasOffline()) DownloadWorker.enqueueKept(activity)
+    }
+
+    /** Removes the bytes of songs taken off the list of downloads. */
+    private suspend fun removeDownloaded(videoIds: List<String>) = withContext(Dispatchers.IO) {
+        for (videoId in videoIds) SapocheApp.caches.downloads.removeResource(videoId)
+    }
 
     /** On mobile data (or not knowing): songs are not fetched without asking. */
     private fun isMetered() = activity.getSystemService(ConnectivityManager::class.java)?.isActiveNetworkMetered != false
@@ -666,6 +677,7 @@ class SapocheBridge(
                 "downloadBytes" to SapocheApp.caches.downloads.cacheSpace,
                 "downloadCount" to SapocheApp.library.downloads().count { it.state == LibraryStore.DONE },
                 "autoDownload" to autoDownload,
+                "offlineCellular" to prefs.getBoolean(DownloadWorker.KEY_CELLULAR, false),
             )
             "notifications" -> return SapocheApp.chatNotifier.info()
             "setNotifications" -> {
@@ -697,14 +709,37 @@ class SapocheBridge(
                 if (on) DownloadWorker.enqueue(activity, waiting = true) else DownloadWorker.cancelWaiting(activity)
                 return null
             }
+            "setOfflineCellular" -> {
+                prefs.edit().putBoolean(DownloadWorker.KEY_CELLULAR, call.argument<Boolean>("on") == true).apply()
+                if (SapocheApp.library.hasOffline()) DownloadWorker.enqueueKept(activity, again = true)
+                return null
+            }
+            "playlistOffline", "folderOffline" -> {
+                val on = call.argument<Boolean>("on") == true
+                val remove = call.argument<Boolean>("remove") == true
+                removeDownloaded(
+                    if (call.method == "playlistOffline") {
+                        SapocheApp.library.setPlaylistOffline(playlistId(call), on, remove, autoDownload)
+                    } else {
+                        SapocheApp.library.setFolderOffline(playlistId(call), on, remove, autoDownload)
+                    },
+                )
+                if (on) kickOffline()
+                return null
+            }
+            "offlineRemovable" -> return SapocheApp.library.offlineRemovable(
+                call.argument<Number>("playlistId")?.toLong(),
+                call.argument<Number>("folderId")?.toLong(),
+                autoDownload,
+            )
             "libraryClearHistory" -> {
                 SapocheApp.library.clearHistory()
                 return null
             }
             "playlists" -> return SapocheApp.library.playlists().map {
-                mapOf("id" to it.id, "name" to it.name, "count" to it.count, "thumbs" to it.thumbs, "updatedAt" to it.updatedAt, "folderId" to it.folderId)
+                mapOf("id" to it.id, "name" to it.name, "count" to it.count, "thumbs" to it.thumbs, "updatedAt" to it.updatedAt, "folderId" to it.folderId, "offline" to it.offline)
             }
-            "folders" -> return SapocheApp.library.folders().map { mapOf("id" to it.id, "name" to it.name, "updatedAt" to it.updatedAt) }
+            "folders" -> return SapocheApp.library.folders().map { mapOf("id" to it.id, "name" to it.name, "updatedAt" to it.updatedAt, "offline" to it.offline) }
             "folderCreate" -> return SapocheApp.library.createFolder(call.argument<String>("name").orEmpty())
             "folderRename" -> {
                 SapocheApp.library.renameFolder(playlistId(call), call.argument<String>("name").orEmpty())
@@ -716,6 +751,7 @@ class SapocheBridge(
             }
             "playlistFolder" -> {
                 SapocheApp.library.setPlaylistFolder(playlistId(call), call.argument<Number>("folderId")?.toLong())
+                kickOffline()
                 return null
             }
             "playlistTracks" -> return SapocheApp.library.playlistTracks(playlistId(call)).map { it.toMap() }
@@ -734,7 +770,7 @@ class SapocheBridge(
             "playlistAdd" -> return SapocheApp.library.addToPlaylist(
                 playlistId(call),
                 call.argument<List<Map<String, Any?>>>("tracks").orEmpty().map(::trackRef),
-            )
+            ).also { if (it > 0) kickOffline() }
             "playlistRemove" -> {
                 SapocheApp.library.removeFromPlaylist(playlistId(call), call.argument<String>("videoId").orEmpty())
                 return null
@@ -751,6 +787,7 @@ class SapocheBridge(
                     throw IllegalArgumentException(e.message)
                 } ?: return null
                 if (restored.liked > 0 && autoDownload) DownloadWorker.enqueue(activity, waiting = true)
+                kickOffline()
                 return restored.toMap()
             }
             "share" -> {

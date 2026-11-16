@@ -244,6 +244,8 @@ final class Bridge {
 
     private var settings: ServerConfig { ServerConfig.load(prefs) }
     private var autoDownload: Bool { prefs.bool(Self.keyAutoDownload, default: false) }
+    /// The songs of kept playlists may come on mobile data as well.
+    private var offlineCellular: Bool { prefs.bool(Self.keyOfflineCellular, default: false) }
     private var language: String { prefs.string("language") ?? "en" }
     private var videoHeight: Int { Int(prefs.int64("video_height") ?? 720) }
     private var audioQuality: AudioQuality { AudioQuality(level: Int(prefs.int64("audio_quality") ?? 3)) }
@@ -302,7 +304,8 @@ final class Bridge {
             // A phone that was in a pocket may have lost the connection without noticing
             controller.networkChanged(changed: false)
             renewSuggestionsIfDue()
-            if autoDownload { kickDownloads(waiting: true) }
+            // Liked songs and kept playlists: the run looks at what it may fetch now, and ends at once when nothing
+            kickDownloads(waiting: true)
         }
         visible = value
         controller.setUiVisible(value)
@@ -687,6 +690,7 @@ final class Bridge {
             return [
                 "playBytes": files.playBytes(), "playLimitMb": Int(prefs.int64(Self.keyCacheLimit) ?? Self.defaultCacheMb),
                 "downloadBytes": files.downloadBytes(), "downloadCount": done, "autoDownload": autoDownload,
+                "offlineCellular": offlineCellular,
             ] as [String: Any]
         case "notifications":
             return await noticeInfo()
@@ -714,15 +718,35 @@ final class Bridge {
             return nil
         case "setAutoDownload":
             prefs.set(bool("on"), for: Self.keyAutoDownload)
-            if bool("on") { kickDownloads(waiting: true) } else { draining[true]?.cancel() }
+            // A run that fetches liked songs stops; it starts again for kept playlists if there are any
+            if !bool("on") { await stopWaitingRun() }
+            kickDownloads(waiting: true)
             return nil
+        case "setOfflineCellular":
+            prefs.set(bool("on"), for: Self.keyOfflineCellular)
+            // A run on mobile data that is no longer allowed stops
+            if !bool("on") { await stopWaitingRun() }
+            kickDownloads(waiting: true)
+            return nil
+        case "playlistOffline", "folderOffline":
+            let on = bool("on")
+            let dropped = method == "playlistOffline"
+                ? try await store.setPlaylistOffline(int64("id"), on, remove: bool("remove"), keepLiked: autoDownload)
+                : try await store.setFolderOffline(int64("id"), on, remove: bool("remove"), keepLiked: autoDownload)
+            for videoId in dropped { files.removeDownload(videoId) }
+            if on { kickDownloads(waiting: true) }
+            return nil
+        case "offlineRemovable":
+            return try await store.offlineRemovable(playlistId: JSON(args["playlistId"]).int64, folderId: JSON(args["folderId"]).int64,
+                                                    keepLiked: autoDownload)
         case "playlists":
             return try await store.playlists().map {
-                ["id": $0.id, "name": $0.name, "count": $0.count, "thumbs": $0.thumbs, "updatedAt": $0.updatedAt, "folderId": $0.folderId.map { $0 as Any } ?? NSNull()] as [String: Any]
+                ["id": $0.id, "name": $0.name, "count": $0.count, "thumbs": $0.thumbs, "updatedAt": $0.updatedAt,
+                 "folderId": $0.folderId.map { $0 as Any } ?? NSNull(), "offline": $0.offline] as [String: Any]
             }
         case "folders":
             return try await store.folders().map {
-                ["id": $0.id, "name": $0.name, "updatedAt": $0.updatedAt] as [String: Any]
+                ["id": $0.id, "name": $0.name, "updatedAt": $0.updatedAt, "offline": $0.offline] as [String: Any]
             }
         case "folderCreate":
             return try await store.createFolder(string("name"))
@@ -734,6 +758,7 @@ final class Bridge {
             return nil
         case "playlistFolder":
             try await store.setPlaylistFolder(int64("id"), JSON(args["folderId"]).int64)
+            kickDownloads(waiting: true)
             return nil
         case "playlistTracks":
             return try await store.playlistTracks(int64("id")).map { $0.toMap() }
@@ -746,7 +771,9 @@ final class Bridge {
             try await store.deletePlaylist(int64("id"))
             return nil
         case "playlistAdd":
-            return try await store.addToPlaylist(int64("id"), tracks())
+            let added = try await store.addToPlaylist(int64("id"), tracks())
+            if added > 0 { kickDownloads(waiting: true) }
+            return added
         case "playlistRemove":
             try await store.removeFromPlaylist(int64("id"), string("videoId"))
             return nil
@@ -1059,17 +1086,25 @@ final class Bridge {
         draining[waiting] = scope.launch { [weak self] in
             var tries = 0
             while let self {
-                // Liked songs saved by themselves: not on mobile data, and not while the phone is warm, they can wait
+                // Songs saved by themselves: not while the phone is warm, they can wait. Liked songs not on mobile data, the
+                // songs of kept playlists on it only when the person allowed it; a run on mobile data takes only the latter
+                var keptOnly = false
                 if waiting {
-                    if self.platform.isMetered || self.platform.calm.value || !self.autoDownload { return }
-                    try await store.requestDownloads(try await store.likedToDownload(), waiting: true)
+                    let metered = self.platform.isMetered
+                    let liked = self.autoDownload && !metered
+                    var kept = false
+                    if !metered || self.offlineCellular { kept = try await store.hasOffline() }
+                    if self.platform.calm.value || !(liked || kept) { return }
+                    if liked { try await store.requestDownloads(try await store.likedToDownload(), waiting: true) }
+                    if kept { try await store.requestDownloads(try await store.offlineToDownload(), waiting: true) }
+                    keptOnly = !liked
                 }
                 var result = Downloader.Result(done: 0, retryLater: false)
                 self.quietRun = waiting
                 await platform.whileInBackground(timeUp: { [weak self] in
                     Task { @MainActor in self?.downloadsTimeUp() }
                 }) {
-                    result = (try? await downloader.drain(waiting: waiting)) ?? result
+                    result = (try? await downloader.drain(waiting: waiting, keptOnly: keptOnly)) ?? result
                 }
                 EventLog.d("download", "run done: \(result.done) songs\(result.retryLater ? ", some to try again" : "")")
                 // Stopped by the person: the run must not start again by itself
@@ -1085,6 +1120,14 @@ final class Bridge {
                 return
             }
         }
+    }
+
+    /// Ends the run of songs saved by themselves, for a change of what it may fetch; kicking it again starts it by the new rules.
+    private func stopWaitingRun() async {
+        drainAgain.remove(true)
+        guard let run = draining[true] else { return }
+        run.cancel()
+        await run.join()
     }
 
     private func downloadsTimeUp() {
@@ -1119,7 +1162,8 @@ final class Bridge {
             throw BridgeError(code: "failed", message: error.localizedDescription)
         }
         let restored = try await store.restore(backup)
-        if restored.liked > 0 && autoDownload { kickDownloads(waiting: true) }
+        // Liked songs, and songs added to kept playlists
+        kickDownloads(waiting: true)
         return ["liked": restored.liked, "playlists": restored.playlists, "listens": restored.listens]
     }
 
@@ -1130,6 +1174,7 @@ final class Bridge {
     }
 
     private static let keyAutoDownload = "auto_download"
+    private static let keyOfflineCellular = "offline_cellular"
     private static let keyLocalEnabled = "local_enabled"
     private static let keyCacheLimit = "cache_limit_mb"
     private static let keyRoomName = "room_name"

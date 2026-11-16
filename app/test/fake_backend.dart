@@ -335,6 +335,8 @@ class FakeBackend implements Backend {
   Future<void> clearDownloads() async {
     await _record('clearDownloads');
     downloadList.clear();
+    offlinePlaylists.clear();
+    offlineFolders.clear();
   }
 
   @override
@@ -408,6 +410,32 @@ class FakeBackend implements Backend {
 
   @override
   Future<void> setAutoDownload(bool on) => _record('autoDownload $on');
+
+  @override
+  Future<void> setOfflineCellular(bool on) => _record('offlineCellular $on');
+
+  /// The playlists and folders kept on the phone, and what [offlineRemovable] answers.
+  final offlinePlaylists = <int>{};
+  final offlineFolders = <int>{};
+  int removable = 0;
+
+  @override
+  Future<void> setPlaylistOffline(int id, bool on, {bool remove = false}) async {
+    await _record('playlistOffline $id $on${remove ? ' remove' : ''}');
+    on ? offlinePlaylists.add(id) : offlinePlaylists.remove(id);
+  }
+
+  @override
+  Future<void> setFolderOffline(int id, bool on, {bool remove = false}) async {
+    await _record('folderOffline $id $on${remove ? ' remove' : ''}');
+    on ? offlineFolders.add(id) : offlineFolders.remove(id);
+  }
+
+  @override
+  Future<int> offlineRemovable({int? playlistId, int? folderId}) async {
+    await _record('offlineRemovable ${playlistId ?? 'folder $folderId'}');
+    return removable;
+  }
 
   List<Track> forYouSongs = [];
   List<Track> refreshedSongs = [];
@@ -761,6 +789,7 @@ class FakeBackend implements Backend {
               if (track.thumb != null) track.thumb!,
           }.take(4).toList(),
           folderId: playlistFolders[id],
+          offline: offlinePlaylists.contains(id),
         ),
     ];
   }
@@ -770,7 +799,7 @@ class FakeBackend implements Backend {
     await _record('folders');
     return [
       for (final id in folderNames.keys.toList().reversed)
-        PlaylistFolder(id: id, name: folderNames[id]!),
+        PlaylistFolder(id: id, name: folderNames[id]!, offline: offlineFolders.contains(id)),
     ];
   }
 

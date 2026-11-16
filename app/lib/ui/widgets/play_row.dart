@@ -35,7 +35,7 @@ class RoundBackButton extends StatelessWidget {
 }
 
 /// Play, shuffle and what else can be done with the page, in the manner of Apple Music: a round shuffle button, a
-/// wide Play, and [more] (a round button of the caller's, like a menu) when there is one.
+/// wide Play, then [download] and [more] (round buttons of the caller's, like a menu) when there are.
 class PlayRow extends StatelessWidget {
   const PlayRow({
     super.key,
@@ -43,6 +43,7 @@ class PlayRow extends StatelessWidget {
     required this.onShuffle,
     this.working = PlayWorking.none,
     this.more,
+    this.download,
     this.inline = false,
   });
 
@@ -54,6 +55,9 @@ class PlayRow extends StatelessWidget {
   final VoidCallback onShuffle;
   final PlayWorking working;
   final Widget? more;
+
+  /// Keeps the page's songs on the phone (an `OfflineButton`).
+  final Widget? download;
 
   static const _spinner = SizedBox.square(
     dimension: 20,
@@ -69,7 +73,8 @@ class PlayRow extends StatelessWidget {
         backgroundColor: p.text,
         foregroundColor: p.base,
         shape: const StadiumBorder(),
-        padding: inline ? const EdgeInsets.symmetric(horizontal: 32) : null,
+        // Beside a cover with four buttons, the narrower Play keeps them in the column at large text
+        padding: inline ? EdgeInsets.symmetric(horizontal: download == null ? 32 : 20) : null,
       ),
       icon: working == PlayWorking.play
           ? _spinner
@@ -93,6 +98,7 @@ class PlayRow extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           if (inline) play else Expanded(child: play),
+          if (download != null) ...[const SizedBox(width: 12), download!],
           if (more != null) ...[const SizedBox(width: 12), more!],
         ],
       ),

@@ -276,7 +276,7 @@ class LibraryController extends ChangeNotifier {
       if (!_same(
         _folders,
         folders,
-        (a, b) => a.id == b.id && a.name == b.name,
+        (a, b) => a.id == b.id && a.name == b.name && a.offline == b.offline,
       )) {
         _folders = folders;
         changed = true;
@@ -387,6 +387,7 @@ class LibraryController extends ChangeNotifier {
       a.name == b.name &&
       a.count == b.count &&
       a.folderId == b.folderId &&
+      a.offline == b.offline &&
       listEquals(a.thumbs, b.thumbs);
 
   static bool _sameSeedList(SeedList a, SeedList b) =>
@@ -592,6 +593,32 @@ class LibraryController extends ChangeNotifier {
   Future<void> setCacheLimit(int mb) => _run(() => _backend.setCacheLimit(mb));
   Future<void> setAutoDownload(bool on) =>
       _run(() => _backend.setAutoDownload(on));
+  Future<void> setOfflineCellular(bool on) =>
+      _run(() => _backend.setOfflineCellular(on));
+
+  /// Keeps the songs of a playlist on the phone, the ones added later as well, or stops (see [Backend.setPlaylistOffline]).
+  Future<void> setPlaylistOffline(int id, bool on, {bool remove = false}) =>
+      _change(() => _backend.setPlaylistOffline(id, on, remove: remove));
+
+  /// The same for a folder and every playlist in it.
+  Future<void> setFolderOffline(int id, bool on, {bool remove = false}) =>
+      _change(() => _backend.setFolderOffline(id, on, remove: remove));
+
+  /// How many songs on the phone stopping a playlist or a folder with removing would take away; 0 when it cannot be read.
+  Future<int> offlineRemovable({int? playlistId, int? folderId}) async {
+    try {
+      return await _backend.offlineRemovable(playlistId: playlistId, folderId: folderId);
+    } on Object {
+      return 0;
+    }
+  }
+
+  /// The folder whose switch keeps [playlist] on the phone, or null when none does.
+  PlaylistFolder? keepingFolder(SavedPlaylist playlist) =>
+      _folders.where((f) => f.id == playlist.folderId && f.offline).firstOrNull;
+
+  /// The playlist's songs are kept on the phone, by its own switch or its folder's.
+  bool isKept(SavedPlaylist playlist) => playlist.offline || keepingFolder(playlist) != null;
 
   /// Saves the library to a file the person picks. Null when they backed out or it failed, which is said in [messages].
   Future<BackupCounts?> exportBackup() => _file(_backend.exportBackup);

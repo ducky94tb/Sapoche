@@ -5,12 +5,18 @@ import '../../strings.dart';
 import '../scope.dart';
 
 /// Asks for [tracks] to be downloaded. On mobile data the person is asked first, since a playlist can be
-/// a lot of it. Says what happened in a snackbar.
-Future<void> startDownload(BuildContext context, List<Track> tracks) async {
+/// a lot of it, unless [allowMetered]. Says what happened in a snackbar. With [kept] the songs are those of a playlist
+/// kept on the phone: saying no to mobile data leaves them to come by themselves on Wi-Fi, and the dialog says so.
+Future<void> startDownload(
+  BuildContext context,
+  List<Track> tracks, {
+  bool allowMetered = false,
+  bool kept = false,
+}) async {
   if (tracks.isEmpty) return;
   final library = AppScope.of(context).library;
   final messenger = ScaffoldMessenger.of(context);
-  var started = await library.download(tracks);
+  var started = await library.download(tracks, allowMetered: allowMetered);
   if (!started) {
     if (!context.mounted) return;
     final agreed = await showDialog<bool>(
@@ -21,7 +27,7 @@ Future<void> startDownload(BuildContext context, List<Track> tracks) async {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(S.cancel),
+            child: Text(kept ? S.waitForWifi : S.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
@@ -30,7 +36,14 @@ Future<void> startDownload(BuildContext context, List<Track> tracks) async {
         ],
       ),
     );
-    if (agreed != true) return;
+    if (agreed != true) {
+      if (kept) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(S.offlineWaitsForWifi)));
+      }
+      return;
+    }
     started = await library.download(tracks, allowMetered: true);
   }
   if (!started) return;

@@ -159,6 +159,8 @@ final class FetchGate: @unchecked Sendable {
     var isHeld: Bool { lock.lock(); defer { lock.unlock() }; return held }
     var waiters: Int { lock.lock(); defer { lock.unlock() }; return waiting }
     func hold() { lock.lock(); held = true; lock.unlock() }
+    /// Transfers that start from now on go through; one already held waits until it is cancelled.
+    func release() { lock.lock(); held = false; lock.unlock() }
     /// While broken, a transfer fails as one to a server that cannot be reached does.
     var isBroken: Bool { lock.lock(); defer { lock.unlock() }; return broken }
     func breakTransfers(_ on: Bool) { lock.lock(); broken = on; lock.unlock() }
@@ -172,7 +174,8 @@ struct FakeFetcher: FileFetcher {
         if let gate, gate.isBroken { throw URLError(.cannotConnectToHost) }
         if let gate, gate.isHeld {
             gate.entered()
-            try await Task.sleep(nanoseconds: 60_000_000_000)
+            // Waits until the gate is released (the transfer then finishes), or the task is cancelled
+            while gate.isHeld { try await Task.sleep(nanoseconds: 5_000_000) }
         }
         try Data(repeating: 7, count: 10).write(to: file)
         return 10
@@ -216,7 +219,7 @@ final class BridgeTests: XCTestCase {
         let media = MediaLibrary(files: files, streams: streams, fetcher: FakeFetcher(gate: gate))
         let music = MusicFeed(music: MusicClient { _, _ in JSON.parse("{}")! }, lyricsClient: LyricsClient { _ in nil }, lyricsStore: LyricsStore(dir: dir.appendingPathComponent("l")))
         let suggestions = SuggestionFeed(store: store, resolver: resolver, music: music)
-        let downloader = Downloader(store: store, fetch: { try await media.download($0) }, pause: { _ in },
+        let downloader = Downloader(store: store, fetch: { try await media.download($0) }, pause: { _ in }, discard: { files.removeDownload($0) },
                                     onProgress: { [weak self] batch in Task { @MainActor in self?.bridge?.downloadsChanged(batch) } })
         let prefs = prefs!
         controller = GroupController(engine: engine, prefs: prefs, queueFile: QueueFile(url: dir.appendingPathComponent("queue.json")),
@@ -678,6 +681,106 @@ final class BridgeTests: XCTestCase {
         await settle()
         let list = try await result("downloads", as: [[String: Any]].self)
         XCTAssertEqual(list.first?["state"] as? String, "done")
+    }
+
+    func testASongAddedToAKeptPlaylistComesByItself() async throws {
+        let id = try await result("playlistCreate", ["name": "Road", "tracks": [song(1)]], as: Int64.self)
+        _ = try await call("playlistOffline", ["id": id, "on": true])
+        await settle()
+        var list = try await result("downloads", as: [[String: Any]].self)
+        XCTAssertEqual(list.map { $0["state"] as? String }, ["done"], "switched on, what it has comes")
+        let lists = try await result("playlists", as: [[String: Any]].self)
+        XCTAssertEqual(lists.first?["offline"] as? Bool, true)
+
+        _ = try await call("playlistAdd", ["id": id, "tracks": [song(2)]])
+        await settle()
+        list = try await result("downloads", as: [[String: Any]].self)
+        XCTAssertEqual(list.compactMap { $0["videoId"] as? String }.sorted(), ["video000001", "video000002"])
+        XCTAssertEqual(list.map { $0["state"] as? String }, ["done", "done"])
+    }
+
+    func testOnMobileDataAKeptPlaylistWaitsUnlessThePersonAllowedIt() async throws {
+        platform.isMetered = true
+        let id = try await result("playlistCreate", ["name": "Road", "tracks": [song(1)]], as: Int64.self)
+        _ = try await call("playlistOffline", ["id": id, "on": true])
+        await settle()
+        var list = try await result("downloads", as: [Any].self)
+        XCTAssertEqual(list.count, 0, "nothing comes by itself on mobile data")
+
+        _ = try await call("setOfflineCellular", ["on": true])
+        await settle()
+        let storage = try await result("storage", as: [String: Any].self)
+        XCTAssertEqual(storage["offlineCellular"] as? Bool, true)
+        list = try await result("downloads", as: [Any].self)
+        XCTAssertEqual(list.count, 1, "allowed, it comes on mobile data")
+
+        // A liked song still waits for Wi-Fi
+        prefs.set(true, for: "auto_download")
+        _ = try await call("libraryLike", ["on": true].merging(song(5)) { $1 })
+        await settle()
+        let ids = try await result("downloads", as: [[String: Any]].self).map { $0["videoId"] as? String }
+        XCTAssertEqual(ids, ["video000001"])
+    }
+
+    func testStoppingLikedSongsDoesNotStopKeptPlaylists() async throws {
+        prefs.set(true, for: "auto_download")
+        let id = try await result("playlistCreate", ["name": "Road", "tracks": [song(1)]], as: Int64.self)
+        gate.hold()
+        _ = try await call("playlistOffline", ["id": id, "on": true])
+        await settle()
+        XCTAssertEqual(gate.waiters, 1, "the song is on its way")
+        gate.release()
+        _ = try await call("setAutoDownload", ["on": false])
+        await settle()
+        let list = try await result("downloads", as: [[String: Any]].self)
+        XCTAssertEqual(list.map { $0["state"] as? String }, ["done"], "the run starts again for the kept playlist")
+    }
+
+    func testSwitchingOffWithRemovingTakesTheFilesAway() async throws {
+        let id = try await result("playlistCreate", ["name": "Road", "tracks": [song(1)]], as: Int64.self)
+        _ = try await call("playlistOffline", ["id": id, "on": true])
+        await settle()
+        let removable = try await result("offlineRemovable", ["playlistId": id], as: Int.self)
+        XCTAssertEqual(removable, 1)
+        _ = try await call("playlistOffline", ["id": id, "on": false, "remove": true])
+        let list = try await result("downloads", as: [Any].self)
+        XCTAssertEqual(list.count, 0)
+        let storage = try await result("storage", as: [String: Any].self)
+        XCTAssertEqual(JSON(storage["downloadBytes"]).int64, 0, "the file is gone too")
+    }
+
+    func testSwitchingOffWhileASongIsOnItsWayLeavesNeitherARowNorAFile() async throws {
+        for remove in [true, false] {
+            let id = try await result("playlistCreate", ["name": "Road \(remove)", "tracks": [song(1)]], as: Int64.self)
+            let before = gate.waiters
+            gate.hold()
+            _ = try await call("playlistOffline", ["id": id, "on": true])
+            await settle()
+            XCTAssertEqual(gate.waiters, before + 1, "the song is on its way")
+            _ = try await call("playlistOffline", ["id": id, "on": false, "remove": remove])
+            gate.release()
+            try await Task.sleep(nanoseconds: 200_000_000) // the held transfer polls the gate in real time
+            await settle()
+            let list = try await result("downloads", as: [Any].self)
+            XCTAssertEqual(list.count, 0, "remove \(remove): nothing asks for the song any more")
+            let storage = try await result("storage", as: [String: Any].self)
+            XCTAssertEqual(JSON(storage["downloadBytes"]).int64, 0, "remove \(remove): the file is not left behind with no row")
+        }
+    }
+
+    func testDeletingAKeptPlaylistWhileASongIsOnItsWayLeavesNeitherARowNorAFile() async throws {
+        let id = try await result("playlistCreate", ["name": "Road", "tracks": [song(1)]], as: Int64.self)
+        gate.hold()
+        _ = try await call("playlistOffline", ["id": id, "on": true])
+        await settle()
+        _ = try await call("playlistDelete", ["id": id])
+        gate.release()
+        try await Task.sleep(nanoseconds: 200_000_000) // the held transfer polls the gate in real time
+        await settle()
+        let list = try await result("downloads", as: [Any].self)
+        XCTAssertEqual(list.count, 0)
+        let storage = try await result("storage", as: [String: Any].self)
+        XCTAssertEqual(JSON(storage["downloadBytes"]).int64, 0)
     }
 
     func testMobileDataIsAskedAboutBeforeDownloading() async throws {

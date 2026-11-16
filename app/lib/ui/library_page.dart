@@ -17,6 +17,7 @@ import 'widgets/downloads_header.dart';
 import 'widgets/folder_cover.dart';
 import 'widgets/folder_sheets.dart';
 import 'widgets/menu_lines.dart';
+import 'widgets/offline_button.dart';
 import 'widgets/library_lost_notice.dart';
 import 'widgets/page_width.dart';
 import 'widgets/play_actions.dart';
@@ -418,6 +419,7 @@ class _Overview extends StatelessWidget {
               ),
               title: folder.name,
               subtitle: _folderSummary(library.playlistsIn(folder.id)),
+              kept: folder.offline,
               onTap: () => onOpen(_Folder(folder.id)),
             ),
           for (final playlist in library.loosePlaylists)
@@ -425,6 +427,7 @@ class _Overview extends StatelessWidget {
               leading: PlaylistCover(thumbs: playlist.thumbs, size: 54),
               title: playlist.name,
               subtitle: S.songCount(playlist.count),
+              kept: playlist.offline,
               onTap: () => onOpen(_Playlist(playlist.id)),
             ),
           // Nothing under the heading would read as a page that did not load
@@ -546,12 +549,16 @@ class _CollectionRow extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.trailing,
+    this.kept = false,
   });
 
   final Widget leading;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+
+  /// A playlist or folder kept on the phone: a mark before the subtitle, as a downloaded song has.
+  final bool kept;
 
   /// In place of the arrow that says the row opens something.
   final Widget? trailing;
@@ -579,9 +586,25 @@ class _CollectionRow extends StatelessWidget {
                     style: theme.titleMedium,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: theme.bodyMedium?.copyWith(color: p.textSecondary),
+                  Row(
+                    children: [
+                      if (kept)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(
+                            Icons.download_done_rounded,
+                            size: 15,
+                            color: p.primary,
+                            semanticLabel: S.downloadedSongs,
+                          ),
+                        ),
+                      Flexible(
+                        child: Text(
+                          subtitle,
+                          style: theme.bodyMedium?.copyWith(color: p.textSecondary),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -640,9 +663,9 @@ class _PlaylistPage extends StatelessWidget {
       emptyBody: S.emptyPlaylistBody,
       onRemove: (track) => library.removeFromPlaylist(id, track),
       onMove: (track, to) => library.movePlaylistItem(id, track, to),
+      // A browser downloads nothing
+      download: playlist == null || kIsWeb ? null : OfflineButton.playlist(playlist),
       menu: [
-        if (tracks.isNotEmpty && !kIsWeb)
-          _MenuAction(Icons.download_rounded, S.downloadAll, () => startDownload(context, tracks)),
         if (playlist != null)
           _MenuAction(Icons.drive_file_move_outlined, S.moveToFolder,
             () => showMoveToFolder(context, playlist),
@@ -794,6 +817,8 @@ class _FolderPage extends StatelessWidget {
                             playPlaylists(context, playlists, shuffle: false),
                         onShuffle: () =>
                             playPlaylists(context, playlists, shuffle: true),
+                        // A browser downloads nothing
+                        download: folder == null || kIsWeb ? null : OfflineButton.folder(folder),
                         more: _MoreButton(menu),
                       )
                     else
@@ -854,6 +879,7 @@ class _FolderPage extends StatelessWidget {
                           ),
                           title: playlist.name,
                           subtitle: S.songCount(playlist.count),
+                          kept: library.isKept(playlist),
                           onTap: () =>
                               _openScreen(context, _Playlist(playlist.id)),
                           trailing: _MoreButton([
@@ -1245,6 +1271,7 @@ class _TrackList extends StatelessWidget {
     this.onRemove,
     this.onMove,
     this.compactHead = false,
+    this.download,
   });
 
   final String title;
@@ -1272,6 +1299,9 @@ class _TrackList extends StatelessWidget {
   final Widget? filterBar;
   final ValueChanged<Track>? onRemove;
   final void Function(Track track, int toIndex)? onMove;
+
+  /// Beside Play: keeps the songs on the phone.
+  final Widget? download;
 
   @override
   Widget build(BuildContext context) {
@@ -1406,6 +1436,7 @@ class _TrackList extends StatelessWidget {
                             inline: wide,
                             onPlay: () => playAll(shuffle: false),
                             onShuffle: () => playAll(shuffle: true),
+                            download: download,
                             more: menu.isEmpty
                                 ? null
                                 : _MoreButton(
@@ -1625,6 +1656,7 @@ class _TrackList extends StatelessWidget {
                                                   playAll(shuffle: false),
                                               onShuffle: () =>
                                                   playAll(shuffle: true),
+                                              download: download,
                                               more: menu.isEmpty
                                                   ? null
                                                   : _MoreButton(

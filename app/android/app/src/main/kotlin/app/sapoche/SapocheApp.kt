@@ -18,6 +18,7 @@ import app.sapoche.core.UpdateClient
 import app.sapoche.core.VideoPicker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,7 +49,9 @@ class SapocheApp : Application() {
         caches = MediaCaches(this, limitMb * 1024L * 1024L)
         loudness = LoudnessBook(library, CoroutineScope(SupervisorJob() + Dispatchers.IO))
         mediaData = MediaData(caches, streams, { pictureCeiling() }, { VideoPicker.budgetKbps(recentBestKbps, weakNetwork) }, { AudioQuality.effective(audioQuality, weakNetwork, bandwidthKbps) }, deviceMusic, loudness) { EventLog.d("cache", it) }
-        downloader = Downloader(library, mediaData::download, { EventLog.d("download", it) }, ::hasInternet)
+        downloader = Downloader(library, mediaData::download, { EventLog.d("download", it) }, ::hasInternet) { id ->
+            withContext(Dispatchers.IO) { caches.downloads.removeResource(id) }
+        }
         val music = MusicClient(region = ::phoneRegion)
         musicFeed = MusicFeed(music, LyricsClient(), LyricsStore(File(cacheDir, "lyrics")))
         suggestions = SuggestionFeed(library, resolver, musicFeed) { EventLog.d("suggest", it) }

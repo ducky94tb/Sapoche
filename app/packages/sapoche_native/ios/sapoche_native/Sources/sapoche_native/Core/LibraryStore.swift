@@ -58,6 +58,8 @@ actor LibraryStore {
         let thumbs: [String]
         let updatedAt: Int64
         var folderId: Int64?
+        /// Its songs are kept on this phone, and so are the ones added later; see `setPlaylistOffline`.
+        var offline = false
     }
 
     /// A folder of playlists, as Spotify has them: a playlist is in one at most, and playing the folder plays them all.
@@ -65,6 +67,7 @@ actor LibraryStore {
         let id: Int64
         let name: String
         let updatedAt: Int64
+        var offline = false
     }
 
     /// A music file on this phone as listed: the song, and what the file adds to it. A [missing] file was there once and is not now.
@@ -115,7 +118,14 @@ actor LibraryStore {
     static let failed = "failed"
     static let unavailable = "unavailable"
     static let maxTries = 3
-    private static let version = 9
+    private static let version = 10
+
+    /// The songs of kept playlists, by their own mark or their folder's, leaving out one playlist and one folder (the two
+    /// arguments; -1 for none) as if they were switched off.
+    private static let keptSongs = """
+        SELECT i.video_id FROM playlist_items i JOIN playlists p ON p.id = i.playlist_id
+        LEFT JOIN folders f ON f.id = p.folder_id WHERE (p.offline = 1 AND p.id != ?) OR (f.offline = 1 AND f.id != ?)
+        """
 
     private let db: SQLite
     private let onChange: @Sendable () -> Void
@@ -183,6 +193,11 @@ actor LibraryStore {
             if found < 9 {
                 // How loud each song is against YouTube's reference level, in hundredths of a dB; null until a stream of it said so
                 try db.run("ALTER TABLE tracks ADD COLUMN loudness_cdb INTEGER")
+            }
+            if found < 10 {
+                // Playlists and folders whose songs are kept on this phone, the ones added later as well. None is to begin with
+                try db.run("ALTER TABLE playlists ADD COLUMN offline INTEGER NOT NULL DEFAULT 0")
+                try db.run("ALTER TABLE folders ADD COLUMN offline INTEGER NOT NULL DEFAULT 0")
             }
         }
         db.version = version
@@ -308,12 +323,12 @@ actor LibraryStore {
     /// Playlists, the one changed last first.
     func playlists() throws -> [Playlist] {
         try db.rows("""
-            SELECT p.id, p.name, p.updated_at, COUNT(i.video_id), p.folder_id
+            SELECT p.id, p.name, p.updated_at, COUNT(i.video_id), p.folder_id, p.offline
             FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id = p.id
             GROUP BY p.id ORDER BY p.updated_at DESC, p.id DESC
             """).map {
             Playlist(id: $0[0].int, name: $0[1].text ?? "", count: Int($0[3].int), thumbs: try coverThumbs($0[0].int), updatedAt: $0[2].int,
-                     folderId: $0[4] == .null ? nil : $0[4].int)
+                     folderId: $0[4] == .null ? nil : $0[4].int, offline: $0[5].int == 1)
         }
     }
 
@@ -321,8 +336,8 @@ actor LibraryStore {
 
     /// Folders, the one changed last first.
     func folders() throws -> [Folder] {
-        try db.rows("SELECT id, name, updated_at FROM folders ORDER BY updated_at DESC, id DESC")
-            .map { Folder(id: $0[0].int, name: $0[1].text ?? "", updatedAt: $0[2].int) }
+        try db.rows("SELECT id, name, updated_at, offline FROM folders ORDER BY updated_at DESC, id DESC")
+            .map { Folder(id: $0[0].int, name: $0[1].text ?? "", updatedAt: $0[2].int, offline: $0[3].int == 1) }
     }
 
     /// Makes a folder and returns its id.
@@ -343,6 +358,7 @@ actor LibraryStore {
         try db.transaction {
             try db.run("UPDATE playlists SET folder_id = NULL WHERE folder_id = ?", [.int(id)])
             try db.run("DELETE FROM folders WHERE id = ?", [.int(id)])
+            try dropUnkeptWaiting()
         }
         onChange()
     }
@@ -355,6 +371,7 @@ actor LibraryStore {
             for folder in Set([before, folderId].compactMap { $0 }) {
                 try db.run("UPDATE folders SET updated_at = ? WHERE id = ?", [.int(at), .int(folder)])
             }
+            try dropUnkeptWaiting()
         }
         onChange()
     }
@@ -396,6 +413,7 @@ actor LibraryStore {
     func deletePlaylist(_ id: Int64) throws {
         try db.transaction {
             try db.run("DELETE FROM playlists WHERE id = ?", [.int(id)])
+            try dropUnkeptWaiting()
             try dropUnusedTracks()
         }
         onChange()
@@ -411,6 +429,7 @@ actor LibraryStore {
     func removeFromPlaylist(_ id: Int64, _ videoId: String, at: Int64 = LibraryStore.now()) throws {
         try changePlaylist(id, at) {
             try db.run("DELETE FROM playlist_items WHERE playlist_id = ? AND video_id = ?", [.int(id), .text(videoId)])
+            try dropUnkeptWaiting()
             try dropUnusedTracks()
         }
     }
@@ -625,21 +644,30 @@ actor LibraryStore {
         onChange()
     }
 
-    /// The oldest song still to download in [state], other than those in [skip].
-    func nextDownload(_ state: String, skip: Set<String> = []) throws -> String? {
-        try db.rows("SELECT video_id FROM downloads WHERE state = ? ORDER BY rowid", [.text(state)])
-            .compactMap { $0[0].text }.first { !skip.contains($0) }
+    /// The oldest song still to download in [state], other than those in [skip]; with [keptOnly], only a song of a kept playlist.
+    func nextDownload(_ state: String, skip: Set<String> = [], keptOnly: Bool = false) throws -> String? {
+        try listed(state, keptOnly: keptOnly, order: " ORDER BY rowid").first { !skip.contains($0) }
     }
 
-    /// How many songs are still to download in [state], other than those in [skip].
-    func pendingDownloads(_ state: String, skip: Set<String> = []) throws -> Int {
-        try db.rows("SELECT video_id FROM downloads WHERE state = ?", [.text(state)]).compactMap { $0[0].text }.filter { !skip.contains($0) }.count
+    /// How many songs are still to download in [state], other than those in [skip]; with [keptOnly], of kept playlists only.
+    func pendingDownloads(_ state: String, skip: Set<String> = [], keptOnly: Bool = false) throws -> Int {
+        try listed(state, keptOnly: keptOnly).filter { !skip.contains($0) }.count
+    }
+
+    private func listed(_ state: String, keptOnly: Bool, order: String = "") throws -> [String] {
+        try db.rows("SELECT video_id FROM downloads WHERE state = ?\(keptOnly ? " AND video_id IN (\(Self.keptSongs))" : "")\(order)",
+                    keptOnly ? [.text(state), .int(-1), .int(-1)] : [.text(state)]).compactMap { $0[0].text }
     }
 
     // finishDownload and failDownload do not announce a change of the library: the downloader says how the list stands
     // (Downloader.progress), and the screen reads the list of downloads alone, not the whole library, each time
     func finishDownload(_ videoId: String, bytes: Int64, at: Int64 = LibraryStore.now()) throws {
         try db.run("UPDATE downloads SET state = ?, bytes = ?, at = ?, tries = 0 WHERE video_id = ?", [.text(Self.done), .int(bytes), .int(at), .text(videoId)])
+    }
+
+    /// The song is on the list of downloads, in any state.
+    func isListed(_ videoId: String) throws -> Bool {
+        try !db.rows("SELECT 1 FROM downloads WHERE video_id = ?", [.text(videoId)]).isEmpty
     }
 
     /// One try failed. After [maxTries] the song is marked failed; true when that happened.
@@ -686,9 +714,13 @@ actor LibraryStore {
         onChange()
     }
 
+    /// Takes every song off the list (the caller removes the files). Every kept playlist and folder is switched off too: the
+    /// person wants the room back, and a playlist that keeps itself whole would fetch it all again the next time the app opens.
     func clearDownloads() throws {
         try db.transaction {
             try db.run("DELETE FROM downloads")
+            try db.run("UPDATE playlists SET offline = 0")
+            try db.run("UPDATE folders SET offline = 0")
             try dropUnusedTracks()
         }
         onChange()
@@ -712,6 +744,69 @@ actor LibraryStore {
             JOIN tracks t ON t.video_id = l.video_id LEFT JOIN downloads d ON d.video_id = l.video_id
             WHERE d.video_id IS NULL AND l.video_id NOT LIKE '\(LocalMusic.prefix)%' ORDER BY l.liked_at DESC
             """)).map(\.track)
+    }
+
+    // ------------------------------------------------------------------ kept playlists
+
+    /// Keeps the songs of the playlist on this phone ([on]), or stops; see `setOffline`.
+    func setPlaylistOffline(_ id: Int64, _ on: Bool, remove: Bool = false, keepLiked: Bool = false) throws -> [String] {
+        try setOffline("playlists", id, on, remove: remove, keepLiked: keepLiked)
+    }
+
+    /// Keeps the songs of every playlist in the folder, the ones put in it later as well ([on]), or stops; see `setOffline`.
+    func setFolderOffline(_ id: Int64, _ on: Bool, remove: Bool = false, keepLiked: Bool = false) throws -> [String] {
+        try setOffline("folders", id, on, remove: remove, keepLiked: keepLiked)
+    }
+
+    /// Sets the mark of a playlist or a folder. The order of the list stays: it is not counted as a change. Switched off, its
+    /// songs that nothing else keeps (another kept playlist or folder, or the liked songs with [keepLiked]) and that are still to
+    /// be fetched (waiting for Wi-Fi, or asked for when it was switched on and not fetched yet) are taken off the list, so that
+    /// stopping really stops; with [remove], so are the ones on the phone and every other state.
+    /// Returns the songs taken off, whose files the caller removes.
+    private func setOffline(_ table: String, _ id: Int64, _ on: Bool, remove: Bool, keepLiked: Bool) throws -> [String] {
+        let dropped = try db.transaction { () -> [String] in
+            try db.run("UPDATE \(table) SET offline = ? WHERE id = ?", [.int(on ? 1 : 0), .int(id)])
+            if on { return [] }
+            let (condition, args) = removable(table, id, keepLiked: keepLiked)
+            let dropped = try db.rows("SELECT video_id FROM downloads WHERE \(condition)\(remove ? "" :  " AND state IN ('\(Self.waiting)', '\(Self.queued)')")", args)
+                .compactMap { $0[0].text }
+            for videoId in dropped { try db.run("DELETE FROM downloads WHERE video_id = ?", [.text(videoId)]) }
+            try dropUnusedTracks()
+            return dropped
+        }
+        onChange()
+        return dropped
+    }
+
+    /// How many songs on the phone switching off the playlist or the folder with removing would take away.
+    func offlineRemovable(playlistId: Int64?, folderId: Int64?, keepLiked: Bool) throws -> Int {
+        let (condition, args) = playlistId.map { removable("playlists", $0, keepLiked: keepLiked) }
+            ?? removable("folders", folderId ?? -1, keepLiked: keepLiked)
+        return Int(try db.rows("SELECT COUNT(*) FROM downloads WHERE state = '\(Self.done)' AND \(condition)", args).first?[0].int ?? 0)
+    }
+
+    /// The songs of a playlist or a folder that nothing else keeps once it is switched off, as a condition on `downloads`.
+    private func removable(_ table: String, _ id: Int64, keepLiked: Bool) -> (String, [SQLValue]) {
+        let mine = table == "playlists"
+            ? "SELECT video_id FROM playlist_items WHERE playlist_id = ?"
+            : "SELECT i.video_id FROM playlist_items i JOIN playlists p ON p.id = i.playlist_id WHERE p.folder_id = ?"
+        let condition = "video_id IN (\(mine)) AND video_id NOT IN (\(Self.keptSongs))"
+            + (keepLiked ? " AND video_id NOT IN (SELECT video_id FROM likes)" : "")
+        return (condition, [.int(id), .int(table == "playlists" ? id : -1), .int(table == "folders" ? id : -1)])
+    }
+
+    /// Whether any playlist is kept, by its own mark or its folder's: only then is there something to fetch for them.
+    func hasOffline() throws -> Bool {
+        try db.rows("SELECT EXISTS(SELECT 1 FROM playlists p LEFT JOIN folders f ON f.id = p.folder_id WHERE p.offline = 1 OR f.offline = 1)")
+            .first?[0].int == 1
+    }
+
+    /// Songs of kept playlists that are not on the list yet, for downloading them by themselves.
+    func offlineToDownload() throws -> [TrackRef] {
+        try entries(db.rows("""
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, 0, 0 FROM tracks t LEFT JOIN downloads d ON d.video_id = t.video_id
+            WHERE d.video_id IS NULL AND t.video_id IN (\(Self.keptSongs)) AND t.video_id NOT LIKE '\(LocalMusic.prefix)%' ORDER BY t.rowid
+            """, [.int(-1), .int(-1)])).map(\.track)
     }
 
     // ------------------------------------------------------------------ local files
@@ -811,6 +906,13 @@ actor LibraryStore {
 
     /// Forgets songs nothing points to any more. Every table that refers to a song must be listed here, or its songs
     /// would be lost.
+    /// A song that waited to be fetched by itself for a kept playlist that is not kept any more (deleted, left its folder, the
+    /// song taken out) is not asked for by anything: it is taken off the list, or it would wait for good. A liked song is asked
+    /// again by the run for liked songs, so it does no harm to let it go too.
+    private func dropUnkeptWaiting() throws {
+        try db.run("DELETE FROM downloads WHERE state = ? AND video_id NOT IN (\(Self.keptSongs))", [.text(Self.waiting), .int(-1), .int(-1)])
+    }
+
     private func dropUnusedTracks() throws {
         try db.run("""
             DELETE FROM tracks WHERE video_id NOT IN (SELECT video_id FROM likes)

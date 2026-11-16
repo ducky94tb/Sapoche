@@ -4,6 +4,9 @@ import androidx.test.core.app.ApplicationProvider
 import app.sapoche.sync.LoadFailure
 import app.sapoche.sync.TrackRef
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -193,6 +196,53 @@ class DownloaderTest {
         assertEquals(listOf("q"), fetched)
         assertEquals(1, downloader.drain(waiting = true).done)
         assertEquals(listOf("q", "w"), fetched)
+    }
+
+    @Test
+    fun aSongTakenOffTheListWhileOnItsWayIsNotCountedAndItsFileIsDiscarded() = runTest {
+        val discarded = mutableListOf<String>()
+        val racing = Downloader(store, fetch = { id ->
+            store.removeDownload(id) // its playlist was deleted meanwhile
+            if (id == "bad") throw IOException("no network")
+            fetched += id
+            5L
+        }, discard = { discarded += it })
+        store.requestDownloads(listOf(song("good"), song("bad"), song("last")), waiting = true)
+        val result = racing.drain(waiting = true)
+        assertEquals("only the song nobody took off counts", 0, result.done)
+        assertEquals(setOf("good", "bad", "last"), discarded.toSet())
+        assertFalse("a failure of a song that is gone is no reason to try again", result.retryLater)
+        assertEquals(emptyList<LibraryStore.Download>(), store.downloads())
+    }
+
+    @Test
+    fun aRunForKeptPlaylistsLeavesTheOtherWaitingSongs() = runTest {
+        val road = store.createPlaylist("Road", listOf(song("k")))
+        store.setPlaylistOffline(road, true)
+        store.requestDownloads(listOf(song("liked"), song("k")), waiting = true)
+        assertEquals(1, downloader.drain(waiting = true, keptOnly = true).done)
+        assertEquals("a liked song waits for its own job, on Wi-Fi with a charger", listOf("k"), fetched)
+        assertEquals(1, downloader.drain(waiting = true).done)
+        assertEquals(listOf("k", "liked"), fetched)
+    }
+
+    @Test
+    fun twoJobsOfWaitingSongsTakeTurnsAndFetchEachSongOnce() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val seen = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val slow = Downloader(store, fetch = { id ->
+            seen += id
+            gate.await()
+            1L
+        })
+        store.requestDownloads(listOf(song("a"), song("b")), waiting = true)
+        val liked = async(Dispatchers.Default) { slow.drain(waiting = true) }
+        while (seen.isEmpty()) Thread.sleep(5)
+        val kept = async(Dispatchers.Default) { slow.drain(waiting = true, keptOnly = false) }
+        Thread.sleep(200) // time for the second job to reach the first song, if it could
+        gate.complete(Unit)
+        assertEquals(2, liked.await().done + kept.await().done)
+        assertEquals(listOf("a", "b"), seen.toList())
     }
 
     @Test

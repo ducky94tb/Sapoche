@@ -223,8 +223,8 @@ actor SuggestionFeed {
 }
 
 /// Works through the list of songs to download, one at a time. Which songs to take is decided by the list's state:
-/// the ones asked for ([LibraryStore.queued]) any time, the ones that wait for Wi-Fi and a charger
-/// ([LibraryStore.waiting]) only when whoever calls knows those are there.
+/// the ones asked for ([LibraryStore.queued]) any time, the ones that wait to be fetched by themselves
+/// ([LibraryStore.waiting]: liked songs, songs of kept playlists) only when whoever calls knows those are there.
 actor Downloader {
     /// [retryLater]: a song failed but has tries left, so the job should be run again after a while.
     struct Result: Equatable {
@@ -251,6 +251,8 @@ actor Downloader {
     private let online: @Sendable () -> Bool
     /// Waits this many milliseconds; a test makes it instant.
     private let pause: @Sendable (Int64) async throws -> Void
+    /// Throws away what was written for a song that was taken off the list while it was on its way.
+    private let discard: @Sendable (String) async -> Void
     /// Told whenever [progress] changes.
     private let onProgress: @Sendable (Batch) -> Void
     private(set) var progress = Batch.idle {
@@ -263,12 +265,14 @@ actor Downloader {
     init(store: LibraryStore, fetch: @escaping @Sendable (String) async throws -> Int64, log: @escaping @Sendable (String) -> Void = { _ in },
          online: @escaping @Sendable () -> Bool = { true },
          pause: @escaping @Sendable (Int64) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0) * 1_000_000) },
+         discard: @escaping @Sendable (String) async -> Void = { _ in },
          onProgress: @escaping @Sendable (Batch) -> Void = { _ in }) {
         self.store = store
         self.fetch = fetch
         self.log = log
         self.online = online
         self.pause = pause
+        self.discard = discard
         self.onProgress = onProgress
     }
 
@@ -325,7 +329,8 @@ actor Downloader {
         }
     }
 
-    func drain(waiting: Bool) async throws -> Result {
+    /// Fetches the songs on the list in one state; with [keptOnly], only the ones of kept playlists (see `LibraryStore.nextDownload`).
+    func drain(waiting: Bool, keptOnly: Bool = false) async throws -> Result {
         let state = waiting ? LibraryStore.waiting : LibraryStore.queued
         // A song that failed now is not taken again in this run; its next try is for the next run
         var failedNow: Set<String> = []
@@ -335,16 +340,22 @@ actor Downloader {
         var setAside = 0
         progress = .idle
         do {
-            songs: while let videoId = try await store.nextDownload(state, skip: failedNow) {
+            songs: while let videoId = try await store.nextDownload(state, skip: failedNow, keptOnly: keptOnly) {
                 progress = Batch(active: videoId, done: done,
-                                 total: done + failedNow.count + setAside + (try await store.pendingDownloads(state, skip: failedNow)),
+                                 total: done + failedNow.count + setAside + (try await store.pendingDownloads(state, skip: failedNow, keptOnly: keptOnly)),
                                  failed: failedNow.count + setAside)
                 do {
                     try await store.finishDownload(videoId, bytes: try await fetchPatiently(videoId))
-                    done += 1
+                    // Taken off the list while it was on its way (its playlist was deleted, switched off...): nothing wants
+                    // the file, and nothing would ever remove it
+                    if try await store.isListed(videoId) { done += 1 } else { await discard(videoId) }
                 } catch is CancellationError {
                     throw CancellationError() // stopped: the song stays on the list as it was
                 } catch {
+                    if try await !store.isListed(videoId) {
+                        await discard(videoId)
+                        continue songs
+                    }
                     log("could not download \(videoId): \(error.localizedDescription)")
                     switch why(error) {
                     case .unavailable:

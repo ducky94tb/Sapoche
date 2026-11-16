@@ -77,6 +77,19 @@ void _someDownloads(FakeBackend b) {
   ]);
 }
 
+/// The playlist "Road trip" of every song, switched on ([kept]) or not, with the first [done] of them on the phone.
+void _keptPlaylist(FakeBackend b, {required bool kept, required int done}) {
+  b.playlistNames[1] = 'Road trip';
+  b.playlistSongs[1] = [...tracks];
+  if (kept) b.offlinePlaylists.add(1);
+  b.removable = done;
+  b.downloadList.addAll([
+    for (final (i, t) in tracks.indexed)
+      if (i < done) DownloadEntry(track: t, state: DownloadState.done, bytes: 4200000)
+      else if (kept) DownloadEntry(track: t, state: DownloadState.queued),
+  ]);
+}
+
 /// A song that did not start, told by the notice at the bottom of the playing room.
 ShotScreen _notice(String name, String code) => ShotScreen('notice-$name', prepare: (b) {
   b.homeResult = homeData;
@@ -225,6 +238,32 @@ final shotScreens = <ShotScreen>[
       await _tab(t, 'Road trip');
     },
   ),
+  // A playlist kept on the phone: the round button beside Play off, on its way, all there, and the question to stop it
+  for (final (name, kept, done) in const [('off', false, 0), ('coming', true, 2), ('done', true, 5)])
+    ShotScreen('playlist-offline-$name', prepare: (b) => _keptPlaylist(b, kept: kept, done: done), (t, b) async {
+      await _state(t, b, const RoomSnapshot());
+      await _tab(t, S.tabLibrary);
+      await _tab(t, 'Road trip');
+    }),
+  ShotScreen('playlist-offline-stop', prepare: (b) => _keptPlaylist(b, kept: true, done: 5), (t, b) async {
+    await _state(t, b, const RoomSnapshot());
+    await _tab(t, S.tabLibrary);
+    await _tab(t, 'Road trip');
+    await t.tap(find.byTooltip(S.downloadedSongs));
+    await _settle(t);
+  }),
+  ShotScreen('library-offline', prepare: (b) {
+    fillLibrary(b);
+    _keptPlaylist(b, kept: true, done: 5);
+    b.folderNames[1] = 'Trips';
+    b.offlineFolders.add(1);
+    b.playlistNames[2] = 'Evening';
+    b.playlistSongs[2] = [...tracks.take(2)];
+    b.playlistFolders[2] = 1;
+  }, (t, b) async {
+    await _state(t, b, const RoomSnapshot());
+    await _tab(t, S.tabLibrary);
+  }),
   ShotScreen('downloaded-empty', (t, b) async {
     await _state(t, b, const RoomSnapshot());
     await _tab(t, S.tabLibrary);

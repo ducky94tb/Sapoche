@@ -5,11 +5,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Works through the list of songs to download, one at a time. Which songs to take is decided by the list's
- * state: the ones asked for ([LibraryStore.QUEUED]) any time, the ones that wait for Wi-Fi and a charger
- * ([LibraryStore.WAITING]) only when whoever calls knows those are there.
+ * state: the ones asked for ([LibraryStore.QUEUED]) any time, the ones that wait to be fetched by themselves
+ * ([LibraryStore.WAITING]: liked songs, songs of kept playlists) only when whoever calls knows those are there.
  */
 class Downloader(
     private val store: LibraryStore,
@@ -18,6 +20,8 @@ class Downloader(
     private val log: (String) -> Unit = {},
     /** The phone has a working internet connection (not only a network): asked after a song failed, to tell why. */
     private val online: () -> Boolean = { true },
+    /** Throws away what was written for a song that was taken off the list while it was on its way. */
+    private val discard: suspend (videoId: String) -> Unit = {},
 ) {
     /** [retryLater]: a song failed but has tries left, so the job should be run again after a while. */
     data class Result(val done: Int, val retryLater: Boolean)
@@ -78,7 +82,14 @@ class Downloader(
         }
     }
 
-    suspend fun drain(waiting: Boolean): Result {
+    /** Two jobs take the songs that wait (liked songs, kept playlists): one at a time, so that both do not fetch the same song. */
+    private val waitingRun = Mutex()
+
+    /** Fetches the songs on the list in one state; with [keptOnly], only the ones of kept playlists (see [LibraryStore.nextDownload]). */
+    suspend fun drain(waiting: Boolean, keptOnly: Boolean = false): Result =
+        if (waiting) waitingRun.withLock { run(true, keptOnly) } else run(false, false)
+
+    private suspend fun run(waiting: Boolean, keptOnly: Boolean): Result {
         val state = if (waiting) LibraryStore.WAITING else LibraryStore.QUEUED
         // A song that failed now is not taken again in this run; its next try is for the next run
         val failedNow = HashSet<String>()
@@ -89,14 +100,20 @@ class Downloader(
         _progress.value = Batch.IDLE
         try {
             while (true) {
-                val videoId = store.nextDownload(state, failedNow) ?: break
-                _progress.value = Batch(videoId, done, done + failedNow.size + setAside + store.pendingDownloads(state, failedNow), failedNow.size + setAside)
+                val videoId = store.nextDownload(state, failedNow, keptOnly) ?: break
+                _progress.value = Batch(videoId, done, done + failedNow.size + setAside + store.pendingDownloads(state, failedNow, keptOnly), failedNow.size + setAside)
                 try {
                     store.finishDownload(videoId, fetchPatiently(videoId))
-                    done++
+                    // Taken off the list while it was on its way (its playlist was deleted, switched off...): nothing wants
+                    // the file, and nothing would ever remove it
+                    if (store.isListed(videoId)) done++ else discard(videoId)
                 } catch (e: CancellationException) {
                     throw e // stopped: the song stays on the list as it was
                 } catch (e: Exception) {
+                    if (!store.isListed(videoId)) {
+                        discard(videoId)
+                        continue
+                    }
                     log("could not download $videoId: ${e.javaClass.simpleName}: ${e.message}")
                     when (why(e)) {
                         // A video YouTube will not give out is the same on every try: it says so now instead of after three
