@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/hero.webp" alt="Sapoche on a phone and a tablet, playing MAKING MY WAY, and a room with two devices listening" width="100%">
+  <img src="docs/images/hero.webp" alt="Sapoche on a phone and a tablet, playing MAKING MY WAY with its YouTube comments open, and a room with two devices listening" width="100%">
 </p>
 
 > **A vibe-coded project.** Almost all of the code, tests and documentation were written by an AI coding assistant (Claude Code), directed by a person who tries it on real phones and decides what stays. It is a personal hobby project: expect rough edges and read the code before you trust it.
@@ -32,7 +32,7 @@
 - **Your look.** Light and dark themes, an accent colour of your own, and a layout for phones and tablets. English and Vietnamese.
 
 <p align="center">
-  <img src="docs/images/phones.webp" alt="Home, search, and the player in the dark and light themes on a phone" width="100%">
+  <img src="docs/images/phones.webp" alt="Home, a saved playlist with its download button, YouTube comments in the player, and the light theme on a phone" width="100%">
 </p>
 
 <p align="center">
@@ -43,7 +43,7 @@
   <img src="docs/images/tablets.webp" alt="An artist page and the accent colour settings on a tablet" width="100%">
 </p>
 
-<sub>Screenshots: a Sharp phone and an Android tablet emulator, playing <em>MAKING MY WAY</em> by Sơn Tùng M-TP. The song and its cover art belong to their owners.</sub>
+<sub>Screenshots: Android phone and tablet emulators, playing <em>MAKING MY WAY</em> by Sơn Tùng M-TP. The song and its cover art belong to their owners.</sub>
 
 ## How it works
 
