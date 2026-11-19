@@ -97,13 +97,13 @@ enum EqualizerTap {
                 EqualizerTap.box(tap).process(list, frames: framesOut.pointee)
             }
         )
-        var tap: Unmanaged<MTAudioProcessingTap>?
+        var tap: MTAudioProcessingTap?
         let status = MTAudioProcessingTapCreate(kCFAllocatorDefault, &callbacks, kMTAudioProcessingTapCreationFlag_PreEffects, &tap)
         guard status == noErr, let tap else {
             // The tap never took the box, so it is ours to let go of
             held.release()
             return nil
         }
-        return tap.takeRetainedValue()
+        return tap
     }
 }
