@@ -157,7 +157,10 @@ struct URLSessionFetcher: FileFetcher {
                 if let wait = beginWithin {
                     // The task has not begun its answer when the time is up: it is stopped, as it was not going to
                     box.watch(Task {
-                        try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                        // A timer that was cancelled (the task is over) gives nothing up: it used to wake at once and look at a
+                        // task that was just failing for another reason, and call that the silence (a handshake that broke
+                        // became a timeout, now and then)
+                        do { try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) } catch { return }
                         box.giveUpIfSilent()
                     })
                 }
