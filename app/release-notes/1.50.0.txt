@@ -1,0 +1,4 @@
+Soft song change, an equalizer and ListenBrainz
+- Settings > Playback > Soft song change: the end of a song fades out and the start of the next one fades in, from 0 to 12 seconds. It is off until you set it. Songs never overlap, so everyone in a room stays in step.
+- Settings > Playback > Equalizer: six bands and ready-made presets (bass boost, vocal, acoustic and more). On Android it works for everything you play; on iPhone for songs played from a file on the phone; a browser keeps YouTube's own sound and has none. It is only on your phone and changes nothing for the others in a room. Android can also open the equalizer of the phone itself.
+- Settings > ListenBrainz: paste the token of your ListenBrainz account and the songs you listen to are sent there once you have heard half of them or four minutes, with what plays now if you want it. It is off until you connect, and only the song goes out, nothing about the room.

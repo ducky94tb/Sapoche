@@ -1,0 +1,4 @@
+Chuyển bài mềm, bộ chỉnh âm và ListenBrainz
+- Cài đặt > Phát nhạc > Chuyển bài mềm: cuối bài nhỏ dần, đầu bài kế to dần, từ 0 đến 12 giây. Mặc định tắt, chọn để bật. Hai bài không chồng lên nhau nên cả phòng vẫn cùng nhịp.
+- Cài đặt > Phát nhạc > Bộ chỉnh âm: sáu dải và các mẫu có sẵn (tăng bass, giọng hát, acoustic...). Trên Android chỉnh được mọi thứ đang phát; trên iPhone chỉ với bài phát từ tệp trên máy; trình duyệt giữ tiếng gốc của YouTube nên không có. Chỉ có trên điện thoại của bạn, không đổi gì cho người khác trong phòng. Android còn mở được bộ chỉnh âm của chính điện thoại.
+- Cài đặt > ListenBrainz: dán token tài khoản ListenBrainz của bạn, các bài bạn nghe được gửi lên đó khi nghe xong một nửa hoặc 4 phút, kèm bài đang phát nếu bạn muốn. Tắt cho tới khi bạn kết nối, và chỉ bài hát được gửi đi, không có gì về phòng.
