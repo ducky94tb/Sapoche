@@ -801,6 +801,16 @@ void main() {
     expect(backend.calls.last, 'crossfade 6');
   });
 
+  test('the equalizer is flat until set, and the name and the bands go to the native side', () async {
+    expect(controller.equalizer.isFlat, isTrue);
+    await controller.setEqualizer(EqPreset.of('bassBoost'));
+    expect(controller.equalizer.preset, 'bassBoost');
+    expect(backend.calls.last, 'equalizer bassBoost 6,4,1,0,0,0');
+    await controller.setEqualizer(controller.equalizer.withBand(5, 3));
+    expect(controller.equalizer.preset, EqPreset.custom);
+    expect(backend.calls.last, 'equalizer custom 6,4,1,0,0,3');
+  });
+
   test('the sleep timer follows what the native side reports', () async {
     expect(controller.sleep.on, isFalse);
     await controller.setSleep(SleepMode.time, minutes: 30);

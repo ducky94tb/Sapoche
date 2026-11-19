@@ -260,7 +260,10 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           _Row(
             label: S.copyLog,
-            leading: Icon(Icons.content_copy_rounded, color: context.palette.primary),
+            leading: Icon(
+              Icons.content_copy_rounded,
+              color: context.palette.primary,
+            ),
             onTap: () async {
               final lines = await model.room.log();
               await Clipboard.setData(ClipboardData(text: lines.join('\n')));
@@ -275,7 +278,10 @@ class _SettingsPageState extends State<SettingsPage> {
             _Row(
               key: const ValueKey('server-check'),
               label: S.checkConnectionRow,
-              leading: Icon(Icons.network_check_rounded, color: context.palette.primary),
+              leading: Icon(
+                Icons.network_check_rounded,
+                color: context.palette.primary,
+              ),
               onTap: () => _showServerCheck(context, model.room),
             ),
         ],
@@ -792,6 +798,23 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           _CrossfadeRow(controller: model.room),
+          ListenableBuilder(
+            listenable: model.room,
+            builder: (context, _) => _NavRow(
+              key: const ValueKey('settings-equalizer'),
+              icon: Icons.equalizer_rounded,
+              label: S.equalizer,
+              value: S.eqPreset(model.room.equalizer.preset),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) => _SubPage(
+                    title: S.equalizer,
+                    children: [_EqualizerPanel(controller: model.room)],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     _Group(
@@ -805,7 +828,10 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _SettingQualityChips(snapshot: model.room.snapshot, onPick: model.room.setVideoQuality),
+                _SettingQualityChips(
+                  snapshot: model.room.snapshot,
+                  onPick: model.room.setVideoQuality,
+                ),
                 // A phone that plays no more than 1080p, or 1440p: said, rather than leaving the missing heights to be wondered about
                 if (!kIsWeb && model.room.snapshot.videoHeightMax < 2160)
                   Padding(
@@ -813,9 +839,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     child: Text(
                       S.videoLimitDevice(model.room.snapshot.videoHeightMax),
                       key: const ValueKey('quality-device-limit'),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: context.palette.textSecondary,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: context.palette.textSecondary),
                     ),
                   ),
               ],
@@ -1763,6 +1788,189 @@ class _Row extends StatelessWidget {
   }
 }
 
+/// The equalizer: the presets, the six bands, and (on a phone that has one) a way into its own equalizer.
+class _EqualizerPanel extends StatelessWidget {
+  const _EqualizerPanel({required this.controller});
+
+  final RoomController controller;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: controller,
+    builder: (context, _) {
+      final eq = controller.equalizer;
+      final ios = !kIsWeb && Platform.isIOS;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Group(
+            title: S.eqPresets,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                // Two even columns, so that the chips stand in rows and the frame is as wide as the page
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    const gap = 8.0;
+                    final width = (box.maxWidth - gap) / 2;
+                    return Wrap(
+                      spacing: gap,
+                      runSpacing: 4,
+                      children: [
+                        for (final id in [...EqPreset.all, EqPreset.custom])
+                          SizedBox(
+                            width: width,
+                            child: ChoiceChip(
+                              key: ValueKey('eq-preset-$id'),
+                              label: SizedBox(
+                                width: double.infinity,
+                                child: Text(
+                                  S.eqPreset(id),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              selected: eq.preset == id,
+                              // "Custom" keeps the bands as they are and only says that they are one's own
+                              onSelected: (_) => controller.setEqualizer(
+                                id == EqPreset.custom
+                                    ? EqSettings(preset: id, gains: eq.gains)
+                                    : EqPreset.of(id),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          _Group(
+            title: S.eqBands,
+            footer: ios ? '${S.eqHelp}\n\n${S.eqHelpIos}' : S.eqHelp,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
+                child: Row(
+                  children: [
+                    for (var band = 0; band < eqBands; band++)
+                      Expanded(
+                        child: _EqBand(
+                          band: band,
+                          gain: eq.gains[band],
+                          onChanged: (gain) =>
+                              controller.setEqualizer(eq.withBand(band, gain)),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              _Row(
+                key: const ValueKey('eq-reset'),
+                label: S.eqReset,
+                leading: Icon(
+                  Icons.restart_alt_rounded,
+                  color: eq.isFlat && eq.preset == EqPreset.off
+                      ? context.palette.textTertiary
+                      : context.palette.primary,
+                ),
+                onTap: eq.isFlat && eq.preset == EqPreset.off
+                    ? null
+                    : () => controller.setEqualizer(EqPreset.of(EqPreset.off)),
+              ),
+            ],
+          ),
+          if (controller.hasSystemEqualizer)
+            _Group(
+              children: [
+                _Row(
+                  key: const ValueKey('eq-system'),
+                  label: S.eqSystem,
+                  leading: Icon(
+                    Icons.tune_rounded,
+                    color: context.palette.primary,
+                  ),
+                  trailing: Icon(
+                    Icons.open_in_new_rounded,
+                    color: context.palette.textTertiary,
+                  ),
+                  onTap: controller.openSystemEqualizer,
+                ),
+              ],
+            ),
+        ],
+      );
+    },
+  );
+}
+
+/// One band: its gain above a slider that stands up, and its frequency under it.
+class _EqBand extends StatelessWidget {
+  const _EqBand({
+    required this.band,
+    required this.gain,
+    required this.onChanged,
+  });
+
+  final int band;
+  final int gain;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final theme = Theme.of(context).textTheme;
+    final frequency = S.eqBand(eqFrequencies[band]);
+    return Column(
+      children: [
+        Text(
+          gain > 0 ? '+$gain' : '$gain',
+          style: theme.bodySmall?.copyWith(
+            color: gain == 0 ? p.textSecondary : p.primary,
+          ),
+        ),
+        SizedBox(
+          height: 190,
+          // A band is a boost or a cut from the middle, so the track is not filled from the bottom: only the thumb moves
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: p.text.withValues(alpha: 0.24),
+              inactiveTrackColor: p.text.withValues(alpha: 0.24),
+              activeTickMarkColor: Colors.transparent,
+              inactiveTickMarkColor: Colors.transparent,
+            ),
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: Slider(
+                key: ValueKey('eq-band-$band'),
+                value: gain.toDouble(),
+                min: minEqGain.toDouble(),
+                max: maxEqGain.toDouble(),
+                divisions: maxEqGain - minEqGain,
+                semanticFormatterCallback: (v) =>
+                    '$frequency, ${S.eqGain(v.round())}',
+                onChanged: (v) {
+                  if (v.round() != gain) onChanged(v.round());
+                },
+              ),
+            ),
+          ),
+        ),
+        Text(
+          frequency,
+          maxLines: 1,
+          style: theme.labelSmall?.copyWith(color: p.textSecondary),
+        ),
+      ],
+    );
+  }
+}
+
 /// How long the soft change between songs is, from off to [maxCrossfadeSeconds] seconds.
 class _CrossfadeRow extends StatefulWidget {
   const _CrossfadeRow({required this.controller});
@@ -2022,9 +2230,8 @@ class _TasteLegend extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: p.textSecondary,
-    );
+    final style = Theme.of(context).textTheme.bodySmall
+        ?.copyWith(color: p.textSecondary);
     Widget item(IconData icon, Color color, String text) => Row(
       mainAxisSize: MainAxisSize.min,
       children: [

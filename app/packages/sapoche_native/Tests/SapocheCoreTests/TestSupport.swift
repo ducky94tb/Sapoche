@@ -212,6 +212,9 @@ final class FakePlayer: PlayerEngine {
 
     func setVolume(_ volume: Float) { self.volume = volume }
 
+    var equalizer: [Int] = []
+    func setEqualizer(_ gains: [Int]) { equalizer = gains }
+
     func setPauseAtSongEnd(_ on: Bool) { pauseAtSongEnd = on }
 
     /// Test hook: shove the position, as if the device drifted.

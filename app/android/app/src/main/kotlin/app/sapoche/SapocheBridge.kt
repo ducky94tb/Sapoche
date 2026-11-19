@@ -11,6 +11,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.sapoche.core.AudioQuality
 import app.sapoche.core.Crossfade
+import app.sapoche.core.Eq
 import app.sapoche.core.TrackInfo
 import app.sapoche.core.YoutubeLinks
 import app.sapoche.sync.ChatCipher
@@ -433,6 +434,15 @@ class SapocheBridge(
     private class NoRoomException : Exception()
 
     /** A failure the UI has words for, by its [code] (`S.serverError` in Dart). */
+    /** The panel of the equalizer the phone has of its own, for the sound of the player; null when there is none. */
+    private fun systemEqualizerIntent(): Intent? {
+        val intent = Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
+            .putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, activity.packageName)
+            .putExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION, SapocheApp.audioSessionId)
+            .putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC)
+        return if (intent.resolveActivity(activity.packageManager) != null) intent else null
+    }
+
     private class CodedException(val code: String, message: String) : Exception(message)
 
     private suspend fun handle(call: MethodCall): Any? {
@@ -451,6 +461,9 @@ class SapocheBridge(
                 "audioQuality" to SapocheApp.audioQuality.level,
                 "normalizeVolume" to prefs.getBoolean("normalize_volume", true),
                 "crossfadeSeconds" to prefs.getInt("crossfade_seconds", 0),
+                "eqPreset" to (prefs.getString("eq_preset", null) ?: "off"),
+                "eqGains" to SapocheApp.eqGains.toList(),
+                "systemEqualizer" to (systemEqualizerIntent() != null),
             )
             "setupLink" -> return Config.setupLink()
             // The server of this build is the one built in; only the key of a build for the public is taken from the link
@@ -525,6 +538,20 @@ class SapocheBridge(
             "setCrossfade" -> {
                 val seconds = (call.argument<Number>("seconds") ?: 0).toInt().coerceIn(0, Crossfade.MAX_SECONDS)
                 prefs.edit().putInt("crossfade_seconds", seconds).apply()
+                return null
+            }
+            "setEqualizer" -> {
+                val gains = Eq.clean(call.argument<List<Number>>("gains"))
+                prefs.edit().putString("eq_preset", call.argument<String>("preset") ?: "custom")
+                    .putString("eq_gains", gains.joinToString(",")).apply()
+                // The sound's thread reads this at its next buffer
+                SapocheApp.eqGains = gains
+                EventLog.d("eq", "bands ${gains.joinToString(",")}")
+                return null
+            }
+            "openSystemEqualizer" -> {
+                val intent = systemEqualizerIntent() ?: return null
+                activity.startActivity(intent)
                 return null
             }
             "forYou" -> return SapocheApp.suggestions.forYou().map { it.toMap() }

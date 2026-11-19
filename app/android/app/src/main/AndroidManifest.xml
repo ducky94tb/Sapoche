@@ -201,5 +201,9 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- To know whether the phone has an equalizer of its own to open from the settings -->
+        <intent>
+            <action android:name="android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL"/>
+        </intent>
     </queries>
 </manifest>

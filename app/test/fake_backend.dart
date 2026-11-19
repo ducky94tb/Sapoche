@@ -599,6 +599,13 @@ class FakeBackend implements Backend {
   @override
   Future<void> setCrossfade(int seconds) => _record('crossfade $seconds');
 
+  @override
+  Future<void> setEqualizer(String preset, List<int> gains) =>
+      _record('equalizer $preset ${gains.join(',')}');
+
+  @override
+  Future<void> openSystemEqualizer() => _record('systemEqualizer');
+
   SongRadio radioResult = const SongRadio();
   RelatedPage relatedResult = const RelatedPage();
   ArtistPage artistResult = const ArtistPage(id: 'UC1', name: 'Artist');

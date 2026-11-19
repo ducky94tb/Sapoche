@@ -3112,6 +3112,38 @@ void main() {
       expect(backend.calls, contains('crossfade 12'));
     });
 
+    testWidgets('the equalizer page picks a preset and moves a band, and the phone\'s own equalizer shows only when there is one', (
+      tester,
+    ) async {
+      final (backend, _) = await pumpApp(tester);
+      backend.emit(const StateEvent(RoomSnapshot()));
+      await tester.pumpAndSettle();
+      await openTopic(tester, 'playback');
+
+      final row = find.byKey(const ValueKey('settings-equalizer'));
+      await tester.ensureVisible(row);
+      expect(find.text('Off'), findsWidgets);
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('eq-system')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('eq-preset-bassBoost')));
+      await tester.pumpAndSettle();
+      expect(backend.calls, contains('equalizer bassBoost 6,4,1,0,0,0'));
+
+      // The right end of the last band is +12
+      final band = find.byKey(const ValueKey('eq-band-5'));
+      final box = tester.getRect(band);
+      await tester.tapAt(Offset(box.center.dx, box.top + 24));
+      await tester.pumpAndSettle();
+      expect(backend.calls.last, startsWith('equalizer custom 6,4,1,0,0,'));
+      expect(find.byKey(const ValueKey('eq-preset-custom')), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('eq-reset')));
+      await tester.pumpAndSettle();
+      expect(backend.calls.last, 'equalizer off 0,0,0,0,0,0');
+    });
+
     testWidgets('the autoplay switch in settings tells the native side', (
       tester,
     ) async {

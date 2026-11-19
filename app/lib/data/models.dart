@@ -1183,6 +1183,8 @@ class Profile {
     this.audioQuality = AudioQuality.max,
     this.normalizeVolume = true,
     this.crossfadeSeconds = 0,
+    this.equalizer = const EqSettings(),
+    this.systemEqualizer = false,
     this.libraryLost = false,
   });
 
@@ -1209,6 +1211,12 @@ class Profile {
   /// Seconds of the soft change between songs (the end of a song fades out, the start of the next fades in), 0 for none.
   final int crossfadeSeconds;
 
+  /// The bands of the equalizer. A browser has none: the sound is YouTube's.
+  final EqSettings equalizer;
+
+  /// The phone has an equalizer of its own that can be opened from here (Android, when one is installed).
+  final bool systemEqualizer;
+
   /// The address of the room server is known. On Android it is built into the app; on iOS the person enters it.
   final bool configured;
 
@@ -1231,6 +1239,8 @@ class Profile {
     audioQuality: audioQuality,
     normalizeVolume: normalizeVolume,
     crossfadeSeconds: crossfadeSeconds,
+    equalizer: equalizer,
+    systemEqualizer: systemEqualizer,
     libraryLost: libraryLost,
   );
 
@@ -1246,6 +1256,8 @@ class Profile {
     audioQuality: audioQuality,
     normalizeVolume: normalizeVolume,
     crossfadeSeconds: crossfadeSeconds,
+    equalizer: equalizer,
+    systemEqualizer: systemEqualizer,
     libraryLost: libraryLost,
   );
 
@@ -1261,6 +1273,8 @@ class Profile {
     audioQuality: value,
     normalizeVolume: normalizeVolume,
     crossfadeSeconds: crossfadeSeconds,
+    equalizer: equalizer,
+    systemEqualizer: systemEqualizer,
     libraryLost: libraryLost,
   );
 
@@ -1276,6 +1290,8 @@ class Profile {
     audioQuality: audioQuality,
     normalizeVolume: value,
     crossfadeSeconds: crossfadeSeconds,
+    equalizer: equalizer,
+    systemEqualizer: systemEqualizer,
     libraryLost: libraryLost,
   );
 
@@ -1291,6 +1307,25 @@ class Profile {
     audioQuality: audioQuality,
     normalizeVolume: normalizeVolume,
     crossfadeSeconds: value,
+    equalizer: equalizer,
+    systemEqualizer: systemEqualizer,
+    libraryLost: libraryLost,
+  );
+
+  Profile withEqualizer(EqSettings value) => Profile(
+    name: name,
+    device: device,
+    trimMs: trimMs,
+    server: server,
+    autoplay: autoplay,
+    shareTaste: shareTaste,
+    configured: configured,
+    hasKey: hasKey,
+    audioQuality: audioQuality,
+    normalizeVolume: normalizeVolume,
+    crossfadeSeconds: crossfadeSeconds,
+    equalizer: value,
+    systemEqualizer: systemEqualizer,
     libraryLost: libraryLost,
   );
 
@@ -1306,8 +1341,70 @@ class Profile {
     audioQuality: AudioQuality.of((map['audioQuality'] as num?)?.toInt()),
     normalizeVolume: map['normalizeVolume'] as bool? ?? true,
     crossfadeSeconds: (map['crossfadeSeconds'] as num?)?.toInt() ?? 0,
+    equalizer: EqSettings.fromMap(map),
+    systemEqualizer: map['systemEqualizer'] as bool? ?? false,
     libraryLost: map['libraryLost'] as bool? ?? false,
   );
+}
+
+/// The six bands of the equalizer (60, 150, 400 Hz, 1, 2.4, 15 kHz) in whole dB from [minEqGain] to [maxEqGain], and the
+/// name of the preset they came from. The native side keeps the numbers and applies them; `preset` is only what to show.
+class EqSettings {
+  const EqSettings({this.preset = EqPreset.off, this.gains = const [0, 0, 0, 0, 0, 0]});
+
+  final String preset;
+  final List<int> gains;
+
+  bool get isFlat => gains.every((g) => g == 0);
+
+  EqSettings withBand(int band, int gain) => EqSettings(
+    preset: EqPreset.custom,
+    gains: [for (var i = 0; i < eqBands; i++) i == band ? gain.clamp(minEqGain, maxEqGain) : gains[i]],
+  );
+
+  factory EqSettings.fromMap(Map<Object?, Object?> map) {
+    final raw = map['eqGains'];
+    final gains = [
+      for (var i = 0; i < eqBands; i++)
+        (raw is List && i < raw.length ? (raw[i] as num).toInt() : 0).clamp(minEqGain, maxEqGain),
+    ];
+    return EqSettings(preset: map['eqPreset'] as String? ?? EqPreset.off, gains: gains);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is EqSettings && other.preset == preset && listEquals(other.gains, gains);
+
+  @override
+  int get hashCode => Object.hash(preset, Object.hashAll(gains));
+}
+
+const eqBands = 6;
+const minEqGain = -12;
+const maxEqGain = 12;
+
+/// The centre of each band, in Hz (the same in `Eq` of Kotlin and Swift).
+const eqFrequencies = [60, 150, 400, 1000, 2400, 15000];
+
+/// The presets: a name for the settings page and the gains it sets.
+abstract final class EqPreset {
+  static const off = 'off';
+  static const custom = 'custom';
+
+  /// The presets a person picks, in the order they are shown ([custom] is only what a hand-moved band turns it into).
+  static const all = [off, 'bassBoost', 'bassCut', 'trebleBoost', 'vocal', 'acoustic', 'electronic'];
+
+  static const _gains = {
+    off: [0, 0, 0, 0, 0, 0],
+    'bassBoost': [6, 4, 1, 0, 0, 0],
+    'bassCut': [-6, -4, -1, 0, 0, 0],
+    'trebleBoost': [0, 0, 0, 1, 4, 6],
+    'vocal': [-2, -1, 2, 4, 2, -1],
+    'acoustic': [4, 3, 1, 2, 3, 3],
+    'electronic': [4, 3, 0, -1, 2, 4],
+  };
+
+  static EqSettings of(String id) => EqSettings(preset: id, gains: _gains[id] ?? _gains[off]!);
 }
 
 /// The longest soft change between songs, in seconds (the setting; `Crossfade` in each core clamps to the same).

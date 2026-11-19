@@ -88,6 +88,26 @@ void main() {
     expect((await backend.profile()).crossfadeSeconds, 8);
   });
 
+  test('the equalizer crosses as a name and six numbers, and comes back in the profile', () async {
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(control, (call) async {
+      calls.add(call);
+      return call.method == 'profile'
+          ? {'eqPreset': 'vocal', 'eqGains': [-2, -1, 2, 4, 2, -1], 'systemEqualizer': true}
+          : null;
+    });
+    final backend = NativeBackend();
+    await backend.setEqualizer('vocal', [-2, -1, 2, 4, 2, -1]);
+    await backend.openSystemEqualizer();
+    expect(calls[0].method, 'setEqualizer');
+    expect(calls[0].arguments, {'preset': 'vocal', 'gains': [-2, -1, 2, 4, 2, -1]});
+    expect(calls[1].method, 'openSystemEqualizer');
+    final profile = await backend.profile();
+    expect(profile.equalizer.preset, 'vocal');
+    expect(profile.equalizer.gains, [-2, -1, 2, 4, 2, -1]);
+    expect(profile.systemEqualizer, isTrue);
+  });
+
   test('everyone who listens shares one platform subscription', () async {
     var listens = 0;
     messenger.setMockStreamHandler(

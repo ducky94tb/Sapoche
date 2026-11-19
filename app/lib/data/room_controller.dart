@@ -1453,6 +1453,20 @@ class RoomController extends ChangeNotifier {
     return _run(() => _backend.setCrossfade(seconds));
   }
 
+  /// The equalizer of this phone.
+  EqSettings get equalizer => _profile.equalizer;
+
+  /// Whether the phone has an equalizer of its own to open.
+  bool get hasSystemEqualizer => _profile.systemEqualizer;
+
+  Future<void> setEqualizer(EqSettings value) {
+    _profile = _profile.withEqualizer(value);
+    notifyListeners();
+    return _run(() => _backend.setEqualizer(value.preset, value.gains));
+  }
+
+  Future<void> openSystemEqualizer() => _run(_backend.openSystemEqualizer);
+
   /// What YouTube would complete a half-typed search to.
   Future<List<String>> suggest(String query) async {
     try {

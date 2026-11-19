@@ -3,6 +3,7 @@ package app.sapoche
 import android.app.Application
 import app.sapoche.core.PictureInfo
 import app.sapoche.core.AudioQuality
+import app.sapoche.core.Eq
 import app.sapoche.core.FreshVisitors
 import app.sapoche.core.InnertubePlayer
 import app.sapoche.core.LyricsClient
@@ -38,6 +39,7 @@ class SapocheApp : Application() {
         StreamHosts.shared.onEvent = { EventLog.d("stream", it) }
         videoMaxHeight = getSharedPreferences("sapoche", MODE_PRIVATE).getInt("video_height", DEFAULT_VIDEO_HEIGHT)
         audioQuality = AudioQuality.of(getSharedPreferences("sapoche", MODE_PRIVATE).getInt("audio_quality", AudioQuality.MAX.level))
+        eqGains = Eq.clean(getSharedPreferences("sapoche", MODE_PRIVATE).getString("eq_gains", null)?.split(",")?.mapNotNull { it.trim().toIntOrNull() })
         language.value = getSharedPreferences("sapoche", MODE_PRIVATE).getString("language", null) ?: "en"
         resolver = NewPipeResolver(region = phoneRegion())
         val innertube = InnertubePlayer(
@@ -106,6 +108,14 @@ class SapocheApp : Application() {
         /** How much sound to fetch for a song that is not kept yet; read by the loader thread, so it is volatile. */
         @Volatile
         var audioQuality = AudioQuality.MAX
+
+        /** The six bands of the equalizer in whole dB (see `Eq`); read by the sound's thread, so it is volatile and never changed in place. */
+        @Volatile
+        var eqGains = IntArray(Eq.BANDS)
+
+        /** The id of the player's audio session, for the equalizer of the system; 0 until the player has one. */
+        @Volatile
+        var audioSessionId = 0
 
         /** The picture is on screen and so being loaded; read by the load control on the player's thread. */
         @Volatile

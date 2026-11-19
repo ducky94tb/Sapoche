@@ -35,6 +35,9 @@ protocol PlayerEngine: PlayerPort {
 
     func setVolume(_ volume: Float)
 
+    /// The six bands of the equalizer in whole dB (see `Eq`); applied to what plays and to what comes after.
+    func setEqualizer(_ gains: [Int])
+
     /// Asks the player to pause when the song that plays now is over.
     func setPauseAtSongEnd(_ on: Bool)
 
@@ -357,6 +360,7 @@ final class GroupController {
         trimMs = prefs.int64(Self.keyTrimMs) ?? 0
         videoMode = prefs.bool(Self.keyVideo, default: false)
         view = StateFlow(View())
+        engine.setEqualizer(Self.storedEqGains(prefs))
 
         health.onChange = { weak in
             NetworkState.shared.weak = weak
@@ -1217,6 +1221,24 @@ final class GroupController {
         }
     }
 
+    /// The name of the preset the equalizer was set from, for the screen to show; the person's own choice.
+    var equalizerPreset: String { prefs.string(Self.keyEqPreset) ?? "off" }
+
+    /// The six bands of the equalizer in whole dB.
+    var equalizerGains: [Int] { Self.storedEqGains(prefs) }
+
+    /// The equalizer of this device: kept, and applied at once. It is not shared with a room.
+    func setEqualizer(preset: String, gains: [Int]) {
+        let clean = Eq.clean(gains.map(Double.init))
+        prefs.set(preset, for: Self.keyEqPreset)
+        prefs.set(clean.map(String.init).joined(separator: ","), for: Self.keyEqGains)
+        engine.setEqualizer(clean)
+    }
+
+    private static func storedEqGains(_ prefs: KeyValueStore) -> [Int] {
+        Eq.clean(prefs.string(keyEqGains)?.split(separator: ",").compactMap { Double($0) })
+    }
+
     /// What the song that plays was like when the soft change last looked at it.
     private struct Seen {
         let id: String
@@ -1285,6 +1307,8 @@ final class GroupController {
 
     private static let crossfadeTickMs: Int64 = 33
     private static let keyCrossfade = "crossfade_seconds"
+    private static let keyEqPreset = "eq_preset"
+    private static let keyEqGains = "eq_gains"
 
     /// The player's volume is the song's own factor (from its loudness) times the fade of the sleep timer times the soft
     /// change between songs.

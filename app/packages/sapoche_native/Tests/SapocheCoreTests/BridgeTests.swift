@@ -373,6 +373,17 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(profile["normalizeVolume"] as? Bool, false)
     }
 
+    func testTheEqualizerIsKeptAndHandedToThePlayer() async throws {
+        var profile = try await result("profile", as: [String: Any].self)
+        XCTAssertEqual(profile["eqPreset"] as? String, "off")
+        XCTAssertEqual(profile["eqGains"] as? [Int], [0, 0, 0, 0, 0, 0])
+        _ = try await call("setEqualizer", ["preset": "bassBoost", "gains": [6, 4, 1, 0, 0, 99]])
+        profile = try await result("profile", as: [String: Any].self)
+        XCTAssertEqual(profile["eqPreset"] as? String, "bassBoost")
+        // Whole dB held to the range
+        XCTAssertEqual(profile["eqGains"] as? [Int], [6, 4, 1, 0, 0, 12])
+    }
+
     func testTheProfileTellsWhatTheUIAsksFor() async throws {
         let profile = try await result("profile", as: [String: Any].self)
         XCTAssertNil(profile["name"], "the name of the phone is not offered to the room")

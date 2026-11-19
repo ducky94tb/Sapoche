@@ -1146,6 +1146,36 @@ abstract final class S {
     'Cuối bài nhỏ dần, đầu bài kế to dần. Hai bài không chồng lên nhau nên cả phòng vẫn cùng nhịp. Không áp dụng khi bấm Next hoặc chọn bài, với bài ngắn hơn ba lần thời gian này, hay khi đang hiện video.',
   );
 
+  static String get equalizer => _t('Equalizer', 'Bộ chỉnh âm');
+  static String eqPreset(String id) => switch (id) {
+    'off' => _t('Off', 'Tắt'),
+    'bassBoost' => _t('Bass boost', 'Tăng bass'),
+    'bassCut' => _t('Bass cut', 'Giảm bass'),
+    'trebleBoost' => _t('Treble boost', 'Tăng treble'),
+    'vocal' => _t('Vocal', 'Giọng hát'),
+    'acoustic' => _t('Acoustic', 'Acoustic'),
+    'electronic' => _t('Electronic', 'Điện tử'),
+    _ => _t('Custom', 'Tuỳ chỉnh'),
+  };
+  static String get eqPresets => _t('Presets', 'Mẫu có sẵn');
+  static String get eqBands => _t('Bands', 'Các dải');
+  static String get eqReset => _t('Reset', 'Đặt lại');
+  /// 60 Hz, 1 kHz, 2.4 kHz: a unit is not translated.
+  static String eqBand(int hz) => hz >= 1000
+      ? '${(hz / 1000).toString().replaceAll(RegExp(r'\.0$'), '')} kHz'
+      : '$hz Hz';
+  static String eqGain(int db) => db > 0 ? '+$db dB' : '$db dB';
+  static String get eqSystem =>
+      _t('Open the equalizer of this phone', 'Mở bộ chỉnh âm của điện thoại');
+  static String get eqHelp => _t(
+    'Six bands, up to 12 dB each way. It is only on this phone and changes nothing for the others in a room. Boosting turns the whole sound down a little first, so that loud songs do not crackle.',
+    'Sáu dải, mỗi dải tăng hoặc giảm tối đa 12 dB. Chỉ có trên điện thoại này, không ảnh hưởng người khác trong phòng. Khi tăng, cả bài được hạ nhẹ trước để bài to không bị vỡ tiếng.',
+  );
+  static String get eqHelpIos => _t(
+    'On iPhone it works for songs played from a file on the phone (downloaded, or already saved). The song that starts a listen before it is saved, and videos, play without it.',
+    'Trên iPhone chỉ có với bài phát từ tệp trên máy (đã tải, hoặc đã lưu). Bài mở đầu khi chưa lưu và video phát không qua bộ chỉnh âm.',
+  );
+
   // Picture
   static String get modeAudio => _t('Audio', 'Âm thanh');
   static String get modeVideo => _t('Video', 'Video');

@@ -1,7 +1,9 @@
 package app.sapoche
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.media.audiofx.AudioEffect
 import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -18,9 +20,13 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.exoplayer.source.LoadEventInfo
@@ -100,7 +106,7 @@ class PlaybackService : MediaLibraryService() {
         val pictures = PictureTrackSelector(this, SapocheApp::pictureCeiling, SapocheApp::pictureBudgetKbps)
         SapocheApp.refreshPicture = { main.post { if (::player.isInitialized) publishPicture() } }
 
-        player = ExoPlayer.Builder(this)
+        player = ExoPlayer.Builder(this, equalizerRenderers())
             .setTrackSelector(pictures)
             .setMediaSourceFactory(
                 SapocheMediaSourceFactory(
@@ -509,6 +515,30 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** The player's own sound path with the equalizer in it (see [EqualizerProcessor]); the rest is what the player would have. */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun equalizerRenderers() = object : DefaultRenderersFactory(this) {
+        override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParameters: Boolean): AudioSink =
+            DefaultAudioSink.Builder(context)
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParameters)
+                .setAudioProcessors(arrayOf(EqualizerProcessor { SapocheApp.eqGains }))
+                .build()
+    }
+
+    /** Tells the equalizer of the system (if the phone has one) which sound is the player's, and when it is not any more. */
+    private fun announceAudioSession(id: Int, open: Boolean) {
+        if (id == C.AUDIO_SESSION_ID_UNSET || id == 0) return
+        sendBroadcast(
+            Intent(if (open) AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION else AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION)
+                .putExtra(AudioEffect.EXTRA_AUDIO_SESSION, id)
+                .putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+                .putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC),
+        )
+    }
+
+    private var announcedSession = C.AUDIO_SESSION_ID_UNSET
+
     private fun updateSoundOn() {
         soundOn.value = player.playWhenReady &&
             (player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_READY)
@@ -606,6 +636,7 @@ class PlaybackService : MediaLibraryService() {
         SapocheApp.setGroup(null)
         session?.release()
         session = null
+        announceAudioSession(announcedSession, open = false)
         player.release()
         super.onDestroy()
     }
@@ -677,6 +708,13 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             EventLog.d("player", "isPlaying=$isPlaying")
+        }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            announceAudioSession(announcedSession, open = false)
+            announcedSession = audioSessionId
+            SapocheApp.audioSessionId = if (audioSessionId == C.AUDIO_SESSION_ID_UNSET) 0 else audioSessionId
+            announceAudioSession(audioSessionId, open = true)
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {

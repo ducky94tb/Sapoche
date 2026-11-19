@@ -5,6 +5,15 @@ import 'package:sapoche/data/models.dart';
 import 'package:sapoche/format.dart';
 
 void main() {
+  test('moving one band of the equalizer makes it custom and keeps the others', () {
+    final moved = EqPreset.of('bassBoost').withBand(2, -3);
+    expect(moved.preset, EqPreset.custom);
+    expect(moved.gains, [6, 4, -3, 0, 0, 0]);
+    expect(EqPreset.of('bassBoost').withBand(0, 99).gains.first, maxEqGain);
+    expect(EqPreset.all.every((id) => EqPreset.of(id).gains.length == eqBands), isTrue);
+    expect(EqPreset.of('nonsense').isFlat, isTrue);
+  });
+
   test('parses the state the native side sends', () {
     final json = jsonDecode(
       '''
@@ -331,6 +340,18 @@ void main() {
       expect(Profile.fromMap({'name': 'Anna'}).normalizeVolume, isTrue);
       expect(Profile.fromMap({'name': 'Anna'}).crossfadeSeconds, 0);
       expect(Profile.fromMap({'crossfadeSeconds': 6}).crossfadeSeconds, 6);
+      expect(Profile.fromMap({'name': 'Anna'}).equalizer.isFlat, isTrue);
+      expect(Profile.fromMap({'name': 'Anna'}).systemEqualizer, isFalse);
+      final eq = Profile.fromMap({
+        'eqPreset': 'bassBoost',
+        'eqGains': [6, 4, 1, 0, 0, 40],
+        'systemEqualizer': true,
+      });
+      expect(eq.equalizer.preset, 'bassBoost');
+      // Held to the range, and a band that is missing is 0
+      expect(eq.equalizer.gains, [6, 4, 1, 0, 0, 12]);
+      expect(eq.systemEqualizer, isTrue);
+      expect(const Profile(equalizer: EqSettings(preset: 'vocal')).withAutoplay(false).equalizer.preset, 'vocal');
       expect(
         const Profile(crossfadeSeconds: 6).withAutoplay(false).crossfadeSeconds,
         6,

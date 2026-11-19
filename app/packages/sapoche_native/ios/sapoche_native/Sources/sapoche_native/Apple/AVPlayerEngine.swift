@@ -49,6 +49,9 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
     /// Fetches the file of the song that plays from its stream, for next time.
     private var keepTask: Task<Void, Never>?
 
+    /// The bands of the equalizer, which every tap on a song from a file follows.
+    private let equalizer = EqualizerState()
+
     private var speed: Float = 1
     private var pauseAtEnd = false
     private var pausedAtEnd = false
@@ -296,6 +299,24 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
         player.volume = volume
     }
 
+    /// The bands of the equalizer, which reach the songs that play from a file (see [EqualizerTap]): what plays and what is
+    /// queued take it up at once when the equalizer is on, and later songs are made with it.
+    func setEqualizer(_ gains: [Int]) {
+        equalizer.gains = gains
+        guard !Eq.isFlat(gains) else { return }
+        for item in [currentPlayerItem, queuedPlayerItem].compactMap({ $0 }) {
+            Task { await attachEqualizer(to: item) }
+        }
+    }
+
+    /// Runs the sound of [item] through the equalizer, when it is from a file and not through it yet.
+    private func attachEqualizer(to item: AVPlayerItem) async {
+        guard item.audioMix == nil, let asset = item.asset as? AVURLAsset, asset.url.isFileURL else { return }
+        if let mix = await EqualizerTap.mix(for: asset, state: equalizer), item.audioMix == nil {
+            item.audioMix = mix
+        }
+    }
+
     func setPauseAtSongEnd(_ on: Bool) {
         pauseAtEnd = on
         player.actionAtItemEnd = on ? .pause : .advance
@@ -435,7 +456,10 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
                 if !Task.isCancelled { log("could not add the picture of '\(queued.title)': \(error.localizedDescription)") }
             }
         }
-        return Built(item: plain(audio), video: false, inPieces: false, streamed: !playable.isFile)
+        let item = plain(audio)
+        // While the equalizer is flat the sound goes by untouched; the tap is put on when it is turned on (see setEqualizer)
+        if !Eq.isFlat(equalizer.gains) { await attachEqualizer(to: item) }
+        return Built(item: item, video: false, inPieces: false, streamed: !playable.isFile)
     }
 
     /// The tallest the player may go to for [item], which holds [levels]: the biggest of them within the height asked for, or the

@@ -343,6 +343,19 @@ final shotScreens = <ShotScreen>[
       await t.tap(find.byKey(ValueKey('settings-$topic')));
       await _settle(t);
     }),
+  ShotScreen('settings-equalizer', (t, b) async {
+    await _state(t, b, const RoomSnapshot());
+    await t.tap(find.text(S.tabHome));
+    await _settle(t);
+    await _openSettings(t);
+    await _settle(t);
+    await t.tap(find.byKey(const ValueKey('settings-playback')));
+    await _settle(t);
+    final row = find.byKey(const ValueKey('settings-equalizer'));
+    await t.ensureVisible(row);
+    await t.tap(row);
+    await _settle(t);
+  }),
   ..._playerStyleScreens(PlayerStyle.spotify, 'spotify'),
   ..._playerStyleScreens(PlayerStyle.appleMusic, 'apple'),
   // The three on a phone on its side, where they share one layout

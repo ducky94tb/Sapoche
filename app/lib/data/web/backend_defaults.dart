@@ -142,6 +142,13 @@ abstract class BackendDefaults implements Backend {
   @override
   Future<void> setNormalizeVolume(bool on) async {}
 
+  // The sound of a browser is YouTube's: the page cannot reach it, so there is no equalizer (the settings page hides it)
+  @override
+  Future<void> setEqualizer(String preset, List<int> gains) async {}
+
+  @override
+  Future<void> openSystemEqualizer() async {}
+
   @override
   Future<BackupCounts?> exportBackup() async => null;
 

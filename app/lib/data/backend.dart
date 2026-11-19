@@ -462,6 +462,13 @@ abstract class Backend {
   /// next one fades in, when it came by itself. The songs do not overlap, so a room stays in step.
   Future<void> setCrossfade(int seconds);
 
+  /// The equalizer: [preset] is the name to show, [gains] the six bands in whole dB (see [EqSettings]). It is this phone's
+  /// own and is not shared with a room. A browser does nothing: the sound is YouTube's.
+  Future<void> setEqualizer(String preset, List<int> gains);
+
+  /// Opens the equalizer that the phone has of its own (Android, see [Profile.systemEqualizer]).
+  Future<void> openSystemEqualizer();
+
   /// The person's playlists, the one changed last first.
   Future<List<SavedPlaylist>> playlists();
   Future<List<Track>> playlistTracks(int id);
@@ -1149,6 +1156,13 @@ class NativeBackend implements Backend {
   @override
   Future<void> setCrossfade(int seconds) =>
       _call('setCrossfade', {'seconds': seconds});
+
+  @override
+  Future<void> setEqualizer(String preset, List<int> gains) =>
+      _call('setEqualizer', {'preset': preset, 'gains': gains});
+
+  @override
+  Future<void> openSystemEqualizer() => _call('openSystemEqualizer');
 
   @override
   Future<SongRadio> musicNext(String videoId) async => SongRadio.fromMap(
