@@ -57,6 +57,8 @@ Uint8List? squareAvatar(Uint8List source) {
           interpolation: img.Interpolation.average,
         )
       : square;
+  // The resize and the encoder carry the EXIF of the photo along, place included; the room shows an avatar to everyone
+  scaled.exif = img.ExifData();
   final limit = RoomController.maxAvatarChars ~/ 4 * 3;
   late Uint8List jpeg;
   for (final quality in _qualities) {
@@ -99,6 +101,7 @@ Uint8List? uprightPhoto(Uint8List source) {
         ? img.copyResize(upright, width: wallpaperPickSide)
         : img.copyResize(upright, height: wallpaperPickSide);
   }
+  upright.exif = img.ExifData(); // the place the photo was taken goes no further
   return img.encodeJpg(upright, quality: 88);
 }
 
@@ -133,6 +136,7 @@ Uint8List? cutWallpaper(
     width: (width * w).round().clamp(1, w - x),
     height: (height * h).round().clamp(1, h - y),
   );
+  cut.exif = img.ExifData();
   final limit = maxWallpaperChars ~/ 4 * 3;
   late Uint8List jpeg;
   for (var wide = side; wide >= 270; wide = wide * 3 ~/ 4) {

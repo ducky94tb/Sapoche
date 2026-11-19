@@ -1,3 +1,4 @@
+import { errorText, logEvent } from "./log";
 import { DurableObject } from "cloudflare:workers";
 import { MEDIA_ALBUM_MAX, mediaKey, mediaLimits, newMediaId, signTicket } from "./media";
 import { PROTOCOL_VERSION, REACTIONS, isEmoji } from "./protocol";
@@ -1339,6 +1340,7 @@ export class Room extends DurableObject<Env> {
     if (members.every((m) => this.s.failedIds.includes(m.id))) {
       const item = this.s.queue[this.s.index];
       this.broadcast({ t: "error", code: "unplayable", message: `Nobody could load: ${item?.title ?? "item"}` });
+      logEvent("unplayable", { members: members.length, run: (this.s.unplayableRun ?? 0) + 1 });
       // Autoplay is asked after a song nobody could play too, but not after a run of them: if its successors were broken too it would never end
       this.s.unplayableRun = (this.s.unplayableRun ?? 0) + 1;
       return this.onNext(undefined, this.s.unplayableRun < UNPLAYABLE_RUN_MAX);
@@ -1565,7 +1567,18 @@ export class Room extends DurableObject<Env> {
           rank(x.att) - rank(y.att) ||
           (x.att.joinedAt ?? 0) - (y.att.joinedAt ?? 0),
       )[0];
-    if (!asked) return this.stopAsking();
+    if (!asked) {
+      logEvent("autoplay.nobody", { rounds: this.s.fill?.rounds ?? 1 });
+      return this.stopAsking();
+    }
+    logEvent("autoplay.ask", {
+      nth: before.length + 1,
+      round: this.s.fill?.rounds ?? 1,
+      owner: asked.att.id === this.s.ownerId,
+      solo: !!asked.att.solo,
+      quiet: now - asked.att.lastSeen > limit,
+      here: this.ctx.getWebSockets().length,
+    });
     this.s.fill = { videoId: last.videoId, title: last.title, asked: [...before, asked.att.id], rounds: this.s.fill?.rounds };
     if (this.s.fill.asked.length < FILL_ASKS_MAX) this.s.alarms.fill = now + millis(this.env.FILL_MS, FILL_RETRY_MS);
     else delete this.s.alarms.fill;
@@ -1585,6 +1598,7 @@ export class Room extends DurableObject<Env> {
   private async askAgainForMoreSongs(): Promise<void> {
     const fill = this.s.fill;
     if (!fill || this.s.phase !== "idle" || !this.s.autoplay) return this.stopAsking();
+    logEvent("autoplay.timeout", { asked: fill.asked.length });
     await this.askForMoreSongs(fill);
   }
 
@@ -1673,6 +1687,15 @@ export class Room extends DurableObject<Env> {
   // ------------------------------------------------------------------ alarm
 
   async alarm(): Promise<void> {
+    try {
+      await this.runAlarms();
+    } catch (error) {
+      logEvent("alarm.error", { error: errorText(error) });
+      throw error;
+    }
+  }
+
+  private async runAlarms(): Promise<void> {
     const now = Date.now();
     const due = (Object.entries(this.s.alarms) as [AlarmKind, number][]).filter(([, at]) => at <= now).map(([kind]) => kind);
     for (const kind of due) delete this.s.alarms[kind];
@@ -1882,6 +1905,7 @@ export class Room extends DurableObject<Env> {
   }
 
   private fail(ws: WebSocket, code: string, message: string): void {
+    logEvent("fail", { code });
     this.send(ws, { t: "error", code, message });
   }
 

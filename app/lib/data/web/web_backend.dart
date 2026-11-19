@@ -353,9 +353,11 @@ class WebBackend extends BackendDefaults {
       throw BackendException('failed', 'The server cannot be reached');
     }
     if (reply.statusCode < 200 || reply.statusCode >= 300) {
-      throw reply.statusCode == 401
-          ? BackendException('key_refused', 'The server turned the key down')
-          : BackendException('failed', 'The server answered ${reply.statusCode}');
+      throw switch (reply.statusCode) {
+        401 => BackendException('key_refused', 'The server turned the key down'),
+        429 => BackendException('server_busy', 'The server asked to wait a minute'),
+        _ => BackendException('failed', 'The server answered ${reply.statusCode}'),
+      };
     }
     final code = (jsonDecode(reply.body) as Map<String, dynamic>)['code'] as String?;
     if (code == null) throw BackendException('failed', 'The server gave no room code');
@@ -1325,6 +1327,7 @@ class WebBackend extends BackendDefaults {
       _keyRefused();
       throw BackendException('failed', 'The server turned the key down');
     }
+    if (reply.statusCode == 429) throw BackendException('server_busy', 'The server asked to wait a minute');
     if (reply.statusCode != 200) {
       throw BackendException('failed', 'YouTube Music did not answer (${reply.statusCode})');
     }

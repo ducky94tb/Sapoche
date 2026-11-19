@@ -1024,9 +1024,11 @@ final class Bridge {
         config.authHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
         let reply = try await http.send(request)
         guard (200..<300).contains(reply.status) else {
-            throw reply.status == 401
-                ? BridgeError(code: "key_refused", message: "The server turned the key down")
-                : BridgeError(code: "failed", message: "The server answered \(reply.status)")
+            switch reply.status {
+            case 401: throw BridgeError(code: "key_refused", message: "The server turned the key down")
+            case 429: throw BridgeError(code: "server_busy", message: "The server asked to wait a minute")
+            default: throw BridgeError(code: "failed", message: "The server answered \(reply.status)")
+            }
         }
         guard let code = JSON.parse(data: reply.data)?.at("code").string else { throw BridgeError(code: "failed", message: "The server gave no room code") }
         return code

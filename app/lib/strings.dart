@@ -138,6 +138,10 @@ abstract final class S {
     ),
     'room_full' => _t('The room is full', 'Phòng đã đầy'),
     'key_refused' => keyRefused,
+    'server_busy' => _t(
+      'The server is busy, try again in a minute',
+      'Máy chủ đang bận, hãy thử lại sau một phút',
+    ),
     'queue_full' => _t('The queue is full', 'Hàng đợi đã đầy'),
     'rate_limited' => _t(
       'Too many messages, slow down',

@@ -18,6 +18,8 @@ object EventLog {
     private const val MAX_FILE_BYTES = 2_000_000L
     private const val BATCH_LINES = 25
     private const val BATCH_MS = 60_000L
+    private const val PREVIOUS_RUN_LINES = 100
+    private const val PREVIOUS_RUN_BYTES = 64 * 1024
 
     private val format = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private val lines = ArrayDeque<String>()
@@ -26,12 +28,22 @@ object EventLog {
     private var unwrittenLines = 0
     private var lastWriteMs = System.currentTimeMillis()
 
+    /** The last lines the file holds of the run before this one; read at start, before this run writes anything. */
+    private var previousRun: List<String> = emptyList()
+
+    /** The run before this one ended with a crash or an ANR: its last lines come with the log that is copied. */
+    @Volatile
+    var previousRunFailed = false
+
     val listeners = CopyOnWriteArrayList<(String) -> Unit>()
 
     fun init(dir: File) {
         val f = File(dir, "sapoche.log")
         if (f.exists() && f.length() > MAX_FILE_BYTES) f.delete()
         file = f
+        previousRun = runCatching { tail(f) }.getOrDefault(emptyList())
+        // A crash the handler saw wrote its own line (see CrashLog); the system's word on ANRs and kills comes later
+        previousRunFailed = previousRun.takeLastWhile { !it.endsWith("---- process started ----") }.any { it.contains(" [crash] ") }
         d("log", "---- process started ----")
     }
 
@@ -58,4 +70,24 @@ object EventLog {
 
     @Synchronized
     fun snapshot(): List<String> = lines.toList()
+
+    /** What "Copy log" gives: this run, and before it the end of the run that crashed, when the last one did. */
+    @Synchronized
+    fun snapshotForCopy(): List<String> =
+        if (previousRunFailed && previousRun.isNotEmpty())
+            previousRun + "---- end of the previous run, which ended with a crash or an ANR ----" + lines
+        else lines.toList()
+
+    /** The last [PREVIOUS_RUN_LINES] lines of [f], from its last bytes only: the file may be as big as [MAX_FILE_BYTES]. */
+    private fun tail(f: File): List<String> {
+        if (!f.exists()) return emptyList()
+        java.io.RandomAccessFile(f, "r").use { raf ->
+            val from = maxOf(0L, raf.length() - PREVIOUS_RUN_BYTES)
+            raf.seek(from)
+            val bytes = ByteArray((raf.length() - from).toInt()).also { raf.readFully(it) }
+            val all = String(bytes, Charsets.UTF_8).lines().filter { it.isNotEmpty() }
+            // The first line of a slice cut in the middle is only a part
+            return (if (from > 0) all.drop(1) else all).takeLast(PREVIOUS_RUN_LINES)
+        }
+    }
 }

@@ -14,6 +14,10 @@ interface Env {
   MEDIA_ACCOUNT_MAX?: string;
   MEDIA_PER_DAY?: string;
   MEDIA_TICKET_MS?: string;
+  /** Limits of requests for one address in a minute (wrangler.jsonc); not set where nothing is bound, as in the tests. */
+  LIMIT_ROOMS?: RateLimit;
+  LIMIT_YT?: RateLimit;
+  LIMIT_JOIN?: RateLimit;
   /**
    * Shared secret every client must present, set with `wrangler secret put ROOM_KEY`. When it is not
    * set (local development) the server is open.

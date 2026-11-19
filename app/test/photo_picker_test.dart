@@ -66,4 +66,31 @@ void main() {
   test('gives nothing for something that is not a picture', () {
     expect(squareAvatar(Uint8List.fromList([1, 2, 3, 4])), isNull);
   });
+
+  group('leaves no EXIF (where the photo was taken) in what is sent to the room', () {
+    // A photo as a phone makes it: a camera make, a place and a turned orientation
+    Uint8List located() {
+      final photo = img.Image(width: 400, height: 300);
+      photo.exif.imageIfd.make = 'Camera maker';
+      photo.exif.imageIfd.orientation = 6;
+      photo.exif.gpsIfd['GPSLatitudeRef'] = 'N';
+      photo.exif.gpsIfd['GPSLatitude'] = img.IfdValueRational(10, 1);
+      final jpeg = img.encodeJpg(photo);
+      expect(img.decodeJpg(jpeg)!.exif.gpsIfd.isEmpty, isFalse, reason: 'the test photo has a place');
+      return jpeg;
+    }
+
+    test('an avatar', () {
+      expect(img.decodeJpg(squareAvatar(located())!)!.exif.isEmpty, isTrue);
+    });
+
+    test('a photo to place behind the chat', () {
+      expect(img.decodeJpg(uprightPhoto(located())!)!.exif.isEmpty, isTrue);
+    });
+
+    test('the wallpaper cut out of it', () {
+      final cut = cutWallpaper(located(), left: 0, top: 0, width: 1, height: 1)!;
+      expect(img.decodeJpg(cut)!.exif.isEmpty, isTrue);
+    });
+  });
 }

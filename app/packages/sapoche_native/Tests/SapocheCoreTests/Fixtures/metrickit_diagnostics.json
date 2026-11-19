@@ -1,0 +1,55 @@
+{
+  "timeStampBegin": "2026-11-18 10:00:00",
+  "timeStampEnd": "2026-11-19 10:00:00",
+  "crashDiagnostics": [
+    {
+      "version": "1.0.0",
+      "diagnosticMetaData": {
+        "appBuildVersion": "101",
+        "signal": "11",
+        "exceptionType": "1",
+        "exceptionCode": "1",
+        "terminationReason": "Namespace SIGNAL, Code 11\nSegmentation fault"
+      },
+      "callStackTree": {
+        "callStackPerThread": false,
+        "callStacks": [
+          {
+            "threadAttributed": false,
+            "callStackRootFrames": [{ "binaryName": "other", "offsetIntoBinaryTextSegment": 1, "subFrames": [] }]
+          },
+          {
+            "threadAttributed": true,
+            "callStackRootFrames": [
+              {
+                "binaryName": "dyld",
+                "offsetIntoBinaryTextSegment": 100,
+                "subFrames": [
+                  {
+                    "binaryName": "UIKitCore",
+                    "offsetIntoBinaryTextSegment": 200,
+                    "subFrames": [
+                      {
+                        "binaryName": "Runner",
+                        "offsetIntoBinaryTextSegment": 300,
+                        "subFrames": [{ "binaryName": "libsystem_kernel.dylib", "offsetIntoBinaryTextSegment": 400 }]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "hangDiagnostics": [
+    {
+      "diagnosticMetaData": { "hangDuration": "3.4 sec", "appBuildVersion": "101" },
+      "callStackTree": {
+        "callStacks": [{ "callStackRootFrames": [{ "binaryName": "Runner", "offsetIntoBinaryTextSegment": 5 }] }]
+      }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+Safer photos and clearer problems
+- Profile pictures and chat backgrounds no longer carry the place where the photo was taken.
+- If the server is busy you now see "The server is busy, try again in a minute" instead of a connection error.
+- After a crash, "Copy log" in Settings now includes the end of the previous run, which makes problems easier to find.

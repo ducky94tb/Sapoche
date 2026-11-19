@@ -364,6 +364,8 @@ void main() {
   test('a room that cannot be made says why when the server says it', () async {
     backend.failWith = BackendException('key_refused', 'The server turned the key down');
     expect(await controller.createRoom('Anna'), startsWith('The group key was not accepted'));
+    backend.failWith = BackendException('server_busy', 'The server asked to wait a minute');
+    expect(await controller.createRoom('Anna'), 'The server is busy, try again in a minute');
     backend.failWith = StateError('Bad state: something');
     expect(await controller.createRoom('Anna'), 'Could not create a room. Check the connection and try again.');
   });

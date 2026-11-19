@@ -592,9 +592,12 @@ class SapocheBridge(
                 ),
             )
             // Songs likely to be touched soon: their streams are looked up ahead, unless they are on the phone already
-            "warm" -> SapocheApp.streams.warm(
-                call.argument<List<String>>("ids").orEmpty().filterNot { LocalMusic.isLocal(it) || SapocheApp.caches.isComplete(it) },
-            )
+            "warm" -> {
+                SapocheApp.streams.warm(
+                    call.argument<List<String>>("ids").orEmpty().filterNot { LocalMusic.isLocal(it) || SapocheApp.caches.isComplete(it) },
+                )
+                return null
+            }
             "suggest" -> return suggest(call.argument<String>("query").orEmpty())
             "searchPlaylists" -> return searchPlaylists(call.argument<String>("query").orEmpty())
             "search" -> return search(call.argument<String>("query").orEmpty(), call.argument<Boolean>("songsOnly") == true, call.argument<Number>("limit")?.toInt() ?: SEARCH_LIMIT)
@@ -807,7 +810,7 @@ class SapocheBridge(
                 )
                 return null
             }
-            "log" -> return EventLog.snapshot()
+            "log" -> return EventLog.snapshotForCopy()
             "note" -> {
                 EventLog.d("ui", call.argument<String>("line").orEmpty())
                 return null
@@ -1021,6 +1024,7 @@ class SapocheBridge(
             .build()
         http.newCall(request).execute().use {
             if (it.code == 401) throw CodedException("key_refused", "The server turned the key down")
+            if (it.code == 429) throw CodedException("server_busy", "The server asked to wait a minute")
             check(it.isSuccessful) { "The server answered ${it.code}" }
             JSONObject(it.body.string()).getString("code")
         }

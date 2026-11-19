@@ -43,6 +43,19 @@ async function authorized(request: Request, url: URL, env: Env): Promise<boolean
   return sameSecret(given, env.ROOM_KEY);
 }
 
+/**
+ * Whether this address has asked for [route] too often. The count is Cloudflare's, kept per location, and only rough.
+ * Without the binding, or without an address from the edge, nothing is limited; `wrangler dev` names the machine itself
+ * (127.0.0.1), and the simulations create rooms faster than a person ever would, so that address is let through too.
+ */
+async function tooOften(limiter: RateLimit | undefined, request: Request, route: string): Promise<boolean> {
+  const address = request.headers.get("CF-Connecting-IP");
+  if (!limiter || !address || address === "127.0.0.1" || address === "::1") return false;
+  return !(await limiter.limit({ key: `${route}:${address}` })).success;
+}
+
+const slowDown = () => new Response("Too many requests", { status: 429, headers: { "Retry-After": "60" } });
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -75,6 +88,11 @@ export default {
     if ((isRoomRoute || update || youtube || media || pushKey) && !(await authorized(request, url, env))) {
       return new Response("Unauthorized", { status: 401 });
     }
+
+    // After the key, so that a wrong key is told so as before; a stranger without it never costs a count
+    if (youtube && (await tooOften(env.LIMIT_YT, request, "yt"))) return slowDown();
+    if (request.method === "POST" && url.pathname === "/rooms" && (await tooOften(env.LIMIT_ROOMS, request, "rooms"))) return slowDown();
+    if (ROOM_ROUTE.test(url.pathname) && (await tooOften(env.LIMIT_JOIN, request, "join"))) return slowDown();
 
     // The public half of the key that signs pushes: a browser needs it to ask for them
     if (pushKey) return env.VAPID_PUBLIC ? Response.json({ key: env.VAPID_PUBLIC }) : new Response("Not found", { status: 404 });

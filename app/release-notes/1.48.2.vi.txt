@@ -1,0 +1,4 @@
+Ảnh an toàn hơn, báo lỗi rõ hơn
+- Ảnh đại diện và ảnh nền chat không còn mang theo nơi bạn chụp ảnh.
+- Khi máy chủ đang bận, bạn thấy "Máy chủ đang bận, hãy thử lại sau một phút" thay vì báo lỗi kết nối.
+- Sau khi app bị văng, "Sao chép nhật ký" trong Cài đặt kèm cả phần cuối của lần chạy trước, giúp tìm lỗi dễ hơn.

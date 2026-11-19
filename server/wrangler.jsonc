@@ -35,6 +35,19 @@
 			"bucket_name": "sapoche-media"
 		}
 	],
+	// A rough limit for one address in one minute (the count is kept per Cloudflare location, see index.ts): enough to stop a
+	// stranger who got hold of the key from using the day's requests, wide enough for friends behind one mobile address
+	"ratelimits": [
+		{ "name": "LIMIT_ROOMS", "namespace_id": "5101", "simple": { "limit": 20, "period": 60 } },
+		{ "name": "LIMIT_YT", "namespace_id": "5102", "simple": { "limit": 300, "period": 60 } },
+		{ "name": "LIMIT_JOIN", "namespace_id": "5103", "simple": { "limit": 120, "period": 60 } }
+	],
+	// Workers Logs keep only the lines the code writes (log.ts). The log of each request is off: the web app opens its
+	// WebSocket with the room key in the address, and a log of addresses would be a log of keys
+	"observability": {
+		"enabled": true,
+		"logs": { "enabled": true, "invocation_logs": false, "persist": true }
+	},
 	// Free plan only supports SQLite-backed Durable Objects
 	"migrations": [
 		{

@@ -48,6 +48,8 @@ final class SapocheRuntime {
         let prefs = prefs
         let region = Locale.current.regionCode ?? "US"
         let http = URLSessionHTTP()
+        // The system tells of a crash or a hang of an earlier run now, if there was one
+        DiagnosticsLog.shared.start()
 
         let music = MusicClient(region: { region }, http: http)
         let resolver = YouTubeResolver(http: http, music: music, region: region)

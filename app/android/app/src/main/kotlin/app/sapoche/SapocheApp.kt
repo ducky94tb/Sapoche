@@ -33,6 +33,8 @@ class SapocheApp : Application() {
         Config.init(this)
         instance = this
         EventLog.init(filesDir)
+        CrashLog.install()
+        CrashLog.readExits(this)
         StreamHosts.shared.onEvent = { EventLog.d("stream", it) }
         videoMaxHeight = getSharedPreferences("sapoche", MODE_PRIVATE).getInt("video_height", DEFAULT_VIDEO_HEIGHT)
         audioQuality = AudioQuality.of(getSharedPreferences("sapoche", MODE_PRIVATE).getInt("audio_quality", AudioQuality.MAX.level))

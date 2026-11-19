@@ -151,6 +151,7 @@ async function main() {
   const healthBody = await health.json();
   check("GET /health is ok and reports the protocol version", health.ok && healthBody.ok === true && healthBody.protocol >= 3, JSON.stringify(healthBody));
   if (KEY) await authSection();
+  if (KEY) await rateLimitSection();
   const created = await (await fetch(`${BASE}/rooms`, { method: "POST", headers: keyHeaders })).json();
   check("POST /rooms returns a 6 character code", /^[A-Z2-9]{6}$/.test(created.code), JSON.stringify(created));
   const code = created.code;
@@ -375,6 +376,24 @@ async function gaplessSection() {
   check("advanced far from the end of the item is ignored", await x.stays((m) => m.t === "advance", 500));
 
   [a, b, late, x].forEach((c) => c.close());
+}
+
+/** One address may ask only so often (wrangler.jsonc); the edge names the address, and a local run has no edge (it says 127.0.0.1, never limited), so the test does. */
+async function rateLimitSection() {
+  console.log("Limits for one address");
+  const from = (address) => ({ ...keyHeaders, "CF-Connecting-IP": address });
+  const create = (headers) => fetch(`${BASE}/rooms`, { method: "POST", headers });
+  const codes = [];
+  for (let i = 0; i < 20; i++) codes.push((await create(from("198.51.100.7"))).status);
+  check("an address may create 20 rooms in a minute", codes.every((c) => c === 200), codes.join(","));
+  const over = await create(from("198.51.100.7"));
+  check("the 21st is told to wait a minute", over.status === 429 && over.headers.get("Retry-After") === "60", `status=${over.status}`);
+  check("another address is not held back by it", (await create(from("198.51.100.8"))).status === 200);
+  check("a wrong key is still refused as unauthorized, not counted", (await fetch(`${BASE}/rooms`, { method: "POST", headers: { "X-Sapoche-Key": "wrong", "CF-Connecting-IP": "198.51.100.7" } })).status === 401);
+  check("without an address from the edge nothing is limited", (await create(keyHeaders)).status === 200);
+  const joins = [];
+  for (let i = 0; i < 121; i++) joins.push((await fetch(`${BASE}/room/ABCDEF/info`, { headers: from("198.51.100.9") })).status);
+  check("a room's address is limited too, at 120 in a minute", joins.slice(0, 120).every((c) => c !== 429) && joins[120] === 429, `last=${joins[120]}`);
 }
 
 /** The shared secret keeps strangers from creating rooms or joining them. */

@@ -1051,8 +1051,11 @@ class FakeBackend implements Backend {
   @override
   Future<List<String>> log() async => logLines;
 
+  /// What the app wrote into its own log with [note].
+  final notes = <String>[];
+
   @override
-  Future<void> note(String line) async {}
+  Future<void> note(String line) async => notes.add(line);
 }
 
 RoomSnapshot sampleRoom({

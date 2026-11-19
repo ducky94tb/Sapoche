@@ -8,6 +8,7 @@ import 'data/backend.dart';
 import 'data/backend_factory.dart';
 import 'data/calm.dart';
 import 'data/comments.dart';
+import 'data/error_log.dart';
 import 'data/library_controller.dart';
 import 'data/music_controller.dart';
 import 'data/recent_rooms.dart';
@@ -31,6 +32,8 @@ Future<void> main() async {
   sizeImageCache();
   Calm.light.addListener(sizeImageCache);
   final Backend backend = await createBackend();
+  // A widget that throws in a release build leaves nothing behind; this puts it in the log of the app
+  ErrorLog(backend.note).install();
   // Before the first cover is asked for; without the folder the covers are only fetched
   CoverFiles.useFolder(
     await backend.cacheFolder().catchError((Object _) => null),
