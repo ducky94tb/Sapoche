@@ -6,6 +6,9 @@ import 'package:sapoche/data/backend.dart';
 import 'package:sapoche/data/models.dart';
 import 'package:sapoche/strings.dart';
 import 'package:sapoche/ui/home_shell.dart';
+import 'package:sapoche/ui/home_page.dart';
+import 'package:sapoche/ui/player_sheet.dart';
+import 'package:sapoche/ui/now_playing_page.dart';
 import 'package:sapoche/ui/player/lyrics_view.dart';
 import 'package:sapoche/ui/widgets/mini_player.dart';
 import 'package:sapoche/ui/widgets/player_bar.dart';
@@ -47,8 +50,9 @@ const songB = Track(
   durMs: 180000,
 );
 
+/// The layout as the pages see it: from inside the home screen, where the window and the player beside the pages are known.
 ShellLayout layoutOf(WidgetTester tester) =>
-    HomeShell.layoutOf(tester.element(find.byType(HomeShell)));
+    HomeShell.layoutOf(tester.element(find.byType(PlayerSheetScope)));
 
 void main() {
   group('the layout follows the width of the window', () {
@@ -60,8 +64,15 @@ void main() {
       (599.0, 900.0, ShellLayout.bars),
       (540.0, 360.0, ShellLayout.bars),
       (820.0, 1180.0, ShellLayout.rail),
+      // With the player beside the pages a sidebar stays only where the pages keep 560 dp
+      (915.0, 412.0, ShellLayout.rail),
+      (1024.0, 768.0, ShellLayout.rail),
+      (1180.0, 820.0, ShellLayout.rail),
       (1280.0, 800.0, ShellLayout.sidebar),
+      (1440.0, 900.0, ShellLayout.sidebar),
       (1920.0, 1080.0, ShellLayout.sidebar),
+      // Tall, a window has no player beside the pages and keeps the sidebar it had
+      (1180.0, 1500.0, ShellLayout.sidebar),
     ]) {
       testWidgets('${width}x$height is $layout', (tester) async {
         await pumpAt(tester, width, height);
@@ -95,6 +106,97 @@ void main() {
     );
   }
 
+  group('the player beside the pages', () {
+    // The pages have what is left of the window: the rail or the sidebar, the card and the gaps round it
+    for (final (width, height, dock, gap) in [
+      (844.0, 390.0, 337.6, 12.0),
+      (915.0, 412.0, 360.0, 12.0),
+      (1024.0, 768.0, 360.0, 16.0),
+      (1180.0, 820.0, 377.6, 16.0),
+      (1280.0, 800.0, 409.6, 12.0),
+      (1440.0, 900.0, 440.0, 12.0),
+    ]) {
+      testWidgets(
+        '${width}x$height: the pages have what is left of the window',
+        (tester) async {
+          await pumpAt(tester, width, height);
+          expect(find.byType(NowPlayingPage), findsOneWidget);
+          expect(find.byType(MiniPlayer), findsNothing);
+          expect(find.byType(PlayerBar), findsNothing);
+          // What a page reads of its window is what is left of it, after the card and the space on both sides of it
+          final page = tester.element(find.byType(HomePage).first);
+          expect(
+            MediaQuery.sizeOf(page).width,
+            closeTo(width - dock - 2 * gap, 1),
+          );
+          expect(MediaQuery.sizeOf(page).height, height);
+          // And what is decided for the window is not changed by it
+          expect(HomeShell.windowOf(page), Size(width, height));
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+
+    for (final (width, height) in [
+      (390.0, 844.0),
+      (640.0, 360.0),
+      (1180.0, 1500.0),
+    ]) {
+      testWidgets('${width}x$height: not beside the pages', (tester) async {
+        await pumpAt(tester, width, height);
+        expect(find.byType(NowPlayingPage), findsNothing);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('with no song there is none, and the pages have the window', (
+      tester,
+    ) async {
+      final (backend, _) = await pumpApp(tester, listen: false);
+      backend.emit(const StateEvent(RoomSnapshot()));
+      await resize(tester, 1280, 800);
+      expect(find.byType(NowPlayingPage), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'the first song brings it, and the last one gone takes it away',
+      (tester) async {
+        final (backend, _) = await pumpApp(tester, listen: false);
+        backend.emit(const StateEvent(RoomSnapshot()));
+        await resize(tester, 1280, 800);
+        backend.emit(StateEvent(sampleRoom()));
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(find.byType(NowPlayingPage), findsOneWidget);
+        backend.emit(const StateEvent(RoomSnapshot()));
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(find.byType(NowPlayingPage), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets('Back goes back in the pages, not in the player', (
+      tester,
+    ) async {
+      await pumpAt(tester, 1280, 800);
+      await tester.tap(find.byTooltip(S.lyrics));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(LyricsView), findsOneWidget);
+      // The panel is the player's own: Back leaves it open
+      await tester.binding.handlePopRoute();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(LyricsView), findsOneWidget);
+      expect(find.byType(NowPlayingPage), findsOneWidget);
+    });
+
+    testWidgets('Escape does not close it', (tester) async {
+      await pumpAt(tester, 1280, 800);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(NowPlayingPage), findsOneWidget);
+    });
+  });
+
   group('beside a rail', () {
     testWidgets('the tabs are in a column on the left and open pages', (
       tester,
@@ -123,11 +225,12 @@ void main() {
     });
   });
 
+  // A window that is taller than it is wide has no player beside the pages, so the bar runs along the bottom
   group('beside a sidebar', () {
     testWidgets('has the search field, the tabs and the playlists', (
       tester,
     ) async {
-      await pumpAt(tester, 1280, 800);
+      await pumpAt(tester, 1400, 1500);
       expect(find.text(S.tabSearch), findsWidgets);
       expect(find.text(S.tabLibrary), findsWidgets);
       expect(find.text(S.likedSongs), findsOneWidget);
@@ -139,7 +242,7 @@ void main() {
     testWidgets('a liked-songs row opens that list of the library', (
       tester,
     ) async {
-      await pumpAt(tester, 1280, 800);
+      await pumpAt(tester, 1400, 1500);
       await tester.tap(find.text(S.likedSongs));
       await tester.pumpAndSettle();
       // Its title, and the row of the sidebar that opened it
@@ -150,7 +253,7 @@ void main() {
     testWidgets('the music on the phone has a row, which opens its list', (
       tester,
     ) async {
-      await pumpAt(tester, 1280, 800);
+      await pumpAt(tester, 1400, 1500);
       expect(find.text(S.localMusic), findsOneWidget);
       await tester.tap(find.text(S.localMusic));
       await tester.pumpAndSettle();
@@ -161,18 +264,18 @@ void main() {
     testWidgets('the player bar runs along the bottom, right of the sidebar', (
       tester,
     ) async {
-      await pumpAt(tester, 1280, 800);
+      await pumpAt(tester, 1400, 1500);
       final bar = tester.getRect(find.byType(PlayerBar));
       expect(bar.left, greaterThan(250));
-      expect(bar.right, lessThanOrEqualTo(1280));
-      expect(bar.bottom, lessThanOrEqualTo(800));
+      expect(bar.right, lessThanOrEqualTo(1400));
+      expect(bar.bottom, lessThanOrEqualTo(1500));
       expect(bar.height, PlayerBar.height);
     });
 
     testWidgets('the bar opens the player, and its lyrics button the lyrics', (
       tester,
     ) async {
-      await pumpAt(tester, 1280, 800);
+      await pumpAt(tester, 1400, 1500);
       await tester.tap(find.byTooltip(S.lyrics));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 800));
@@ -183,7 +286,7 @@ void main() {
     testWidgets('tapping the bar opens the player on the cover', (
       tester,
     ) async {
-      await pumpAt(tester, 1280, 800);
+      await pumpAt(tester, 1400, 1500);
       await tester.tap(
         find.descendant(
           of: find.byType(PlayerBar),
@@ -193,12 +296,12 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 800));
       expect(find.byType(LyricsView), findsNothing);
-      expect(find.byTooltip(S.close), findsOneWidget);
+      expect(find.byType(NowPlayingPage), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('Escape closes the player', (tester) async {
-      await pumpAt(tester, 1280, 800);
+      await pumpAt(tester, 1400, 1500);
       await tester.tap(
         find.descendant(
           of: find.byType(PlayerBar),
@@ -210,11 +313,11 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 800));
-      expect(find.byTooltip(S.close), findsNothing);
+      expect(find.byType(NowPlayingPage), findsNothing);
     });
 
     testWidgets('settings show a topic beside the list', (tester) async {
-      await pumpAt(tester, 1280, 800);
+      await pumpAt(tester, 1400, 1500);
       // Beside a sidebar there is no gear at the top of Home: Settings is a row of the sidebar
       expect(find.byTooltip(S.settingsTitle), findsNothing);
       await tester.tap(find.text(S.settingsTitle).last);
@@ -304,7 +407,7 @@ void main() {
     });
 
     testWidgets('home keeps to a readable width in the middle', (tester) async {
-      await pumpAt(tester, 1920, 1080);
+      await pumpAt(tester, 1920, 2000);
       await tester.tap(find.text(S.tabHome).first);
       await tester.pumpAndSettle();
       final title = tester.getRect(

@@ -8,7 +8,8 @@ import 'package:sapoche/ui/widgets/player_bar.dart';
 import 'fake_backend.dart';
 import 'pump_app.dart';
 
-/// A wide window with a song playing, on the list of liked songs: the player bar floats over the foot of the page.
+/// A wide window with a song playing, on the list of liked songs: the player bar floats over the foot of the page. It is
+/// taller than it is wide: a window on its side has the player beside the pages, with no bar.
 Future<FakeBackend> _likedWithPlayer(WidgetTester tester, {required int songs}) async {
   final (backend, _) = await pumpApp(
     tester,
@@ -21,7 +22,7 @@ Future<FakeBackend> _likedWithPlayer(WidgetTester tester, {required int songs}) 
   // After pumpApp, which sets a window of its own
   tester.view
     ..devicePixelRatio = 1
-    ..physicalSize = const Size(1280, 800);
+    ..physicalSize = const Size(1400, 1500);
   backend.emit(StateEvent(sampleRoom()));
   backend.emit(const PositionEvent(PlayerPosition(playing: true, positionMs: 4000, durationMs: 200000)));
   backend.emit(const LibraryEvent());

@@ -5,6 +5,7 @@ import 'package:sapoche/data/backend.dart';
 import 'package:sapoche/data/models.dart';
 import 'package:sapoche/data/music_models.dart';
 import 'package:sapoche/strings.dart';
+import 'package:sapoche/ui/now_playing_page.dart';
 import 'package:sapoche/ui/artist_page.dart';
 import 'package:sapoche/ui/chat_sheet.dart';
 import 'package:sapoche/ui/collection_screen.dart';
@@ -40,6 +41,11 @@ Future<void> _playing(WidgetTester t, FakeBackend b, {bool video = false}) async
 /// Opens the full player from whichever bar has the song: the mini player on a phone, the long bar of a wide window.
 Future<void> _openPlayer(WidgetTester t, {bool settle = true}) async {
   final bar = find.byType(PlayerBar);
+  // Beside the pages the player is there already
+  if (find.byType(NowPlayingPage).evaluate().isNotEmpty) {
+    await _settle(t);
+    return;
+  }
   if (bar.evaluate().isNotEmpty) {
     await t.tapAt(t.getTopLeft(bar.first) + const Offset(40, 30));
   } else {
@@ -367,9 +373,10 @@ final shotScreens = <ShotScreen>[
     await t.tap(row);
     await _settle(t);
   }),
+  ..._dockScreens(),
   ..._playerStyleScreens(PlayerStyle.spotify, 'spotify'),
   ..._playerStyleScreens(PlayerStyle.appleMusic, 'apple'),
-  // The three on a phone on its side, where they share one layout
+  // The three on a phone on its side, each with a small layout of its own (beside the pages, or a sheet when too narrow)
   for (final (style, suffix) in [
     (PlayerStyle.classic, ''),
     (PlayerStyle.spotify, '-spotify'),
@@ -382,14 +389,50 @@ final shotScreens = <ShotScreen>[
     ShotScreen('player-land-lyrics$suffix', style: style, windows: shotLandscape, prepare: (b) => b.lyricsResult = lyricsData, listen: true, (t, b) async {
       await _playing(t, b);
       await _openPlayer(t);
-      await t.tap(find.byTooltip(S.lyrics));
-      await _settle(t);
+      await _openPanel(t, S.lyrics);
     }),
     ShotScreen('player-land-queue$suffix', style: style, windows: shotLandscape, listen: true, (t, b) async {
       await _playing(t, b);
       await _openPlayer(t);
-      await t.tap(find.byTooltip(S.upNext));
-      await _settle(t);
+      await _openPanel(t, S.upNext);
+    }),
+  ],
+];
+
+/// Opens the panel with [title] (Lyrics, Up next): the button of that name where the player has one, else the card of the
+/// style of cards, which is under the cover and the song, so the column is scrolled to it.
+Future<void> _openPanel(WidgetTester t, String title) async {
+  final button = find.descendant(of: find.byType(NowPlayingPage), matching: find.byTooltip(title));
+  if (button.evaluate().isNotEmpty) {
+    await t.tap(button);
+    return _settle(t);
+  }
+  var scroll = find.descendant(of: find.byType(SpotifyPlayer), matching: find.byType(CustomScrollView));
+  if (scroll.evaluate().isEmpty) {
+    scroll = find.descendant(of: find.byType(SpotifyPlayer), matching: find.byType(SingleChildScrollView));
+  }
+  await t.drag(scroll, const Offset(0, -150));
+  await _settle(t);
+  final finder = find.descendant(of: find.byType(SpotifyPlayer), matching: find.text(title));
+  await t.ensureVisible(finder);
+  await t.tap(finder);
+  await _settle(t);
+}
+
+/// The player beside the pages on a tablet and a computer: the upright player of each style, with the cover, the lyrics
+/// and the queue.
+List<ShotScreen> _dockScreens() => [
+  for (final (style, suffix) in [
+    (PlayerStyle.classic, ''),
+    (PlayerStyle.spotify, '-spotify'),
+    (PlayerStyle.appleMusic, '-apple'),
+  ]) ...[
+    ShotScreen('player-dock$suffix', style: style, windows: shotDock, listen: true, (t, b) async {
+      await _playing(t, b);
+    }),
+    ShotScreen('player-dock-queue$suffix', style: style, windows: shotDock, listen: true, (t, b) async {
+      await _playing(t, b);
+      await _openPanel(t, S.upNext);
     }),
   ],
 ];
@@ -403,7 +446,11 @@ List<ShotScreen> _playerStyleScreens(PlayerStyle style, String suffix) {
       await t.tap(find.byTooltip(title));
       return _settle(t);
     }
-    final scroll = find.descendant(of: find.byType(SpotifyPlayer), matching: find.byType(CustomScrollView));
+    var scroll = find.descendant(of: find.byType(SpotifyPlayer), matching: find.byType(CustomScrollView));
+    // A phone on its side scrolls a column instead of a page
+    if (scroll.evaluate().isEmpty) {
+      scroll = find.descendant(of: find.byType(SpotifyPlayer), matching: find.byType(SingleChildScrollView));
+    }
     await t.drag(scroll, const Offset(0, -700));
     await _settle(t);
     final finder = find.descendant(of: find.byType(SpotifyPlayer), matching: find.text(title));

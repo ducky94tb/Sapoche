@@ -22,11 +22,12 @@ import 'classic_player.dart';
 import 'look.dart';
 import 'lyrics_ticker.dart';
 import 'parts.dart';
+import 'up_next_view.dart' show RepeatButton, ShuffleButton;
 
 /// The player of the style of cards: the face of the song (the cover, the seek bar, the buttons with shuffle and repeat
 /// beside the play button) fills the screen, and below it, as the page is scrolled, are cards: the lyrics, the artist,
-/// the queue, the comments. A card opens its page whole, which Back closes first. On a screen on its side and in a
-/// roomy window there are no cards and the places are the classic player's, with this style's look.
+/// the queue, the comments. A card opens its page whole, which Back closes first. On a screen on its side the face is
+/// shorter: the cards are under the cover and the song in a column that scrolls, and the buttons stay at the foot.
 class SpotifyPlayer extends StatelessWidget {
   const SpotifyPlayer({
     super.key,
@@ -45,8 +46,8 @@ class SpotifyPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, box) => box.maxWidth > box.maxHeight
-        ? ClassicPlayer(
+    builder: (context, box) => box.maxHeight < playerCompactHeight
+        ? _Compact(
             controller: controller,
             current: current,
             panel: panel,
@@ -113,6 +114,8 @@ class _TallState extends State<_Tall> {
   /// where the pull had put it.
   bool _onScroll(ScrollNotification n) {
     final sheet = PlayerSheetScope.of(context);
+    // Beside the pages the player is not pulled down
+    if (PlayerLookScope.dockedOf(context)) return false;
     if (n is OverscrollNotification &&
         n.dragDetails != null &&
         (n.overscroll < 0 || _pulling)) {
@@ -150,7 +153,11 @@ class _TallState extends State<_Tall> {
               child: Row(
                 children: [
                   const SizedBox(width: 6),
-                  const PlayerCloseButton(),
+                  // Beside the pages the player has no way out; the room it takes keeps the line in the middle
+                  if (PlayerLookScope.dockedOf(context))
+                    const SizedBox(width: 48)
+                  else
+                    const PlayerCloseButton(),
                   Expanded(
                     // The album, when YouTube Music has said which it is (the queue knows only the song)
                     child: FutureBuilder<SongRadio>(
@@ -322,6 +329,206 @@ class _TallState extends State<_Tall> {
   }
 }
 
+/// The face of a phone on its side, a column that is short: "Playing from" in one line over a place that scrolls (the
+/// cover and the song, then the cards), and the seek bar and the buttons held at the foot, with shuffle and repeat at the
+/// ends of them. A panel opened from a card takes the place that scrolls, under a line with the song.
+class _Compact extends StatelessWidget {
+  const _Compact({
+    required this.controller,
+    required this.current,
+    required this.panel,
+    required this.onPanel,
+    required this.onChoose,
+  });
+
+  final RoomController controller;
+  final QueueEntry current;
+  final NowPlayingPanel panel;
+  final ValueChanged<NowPlayingPanel> onPanel;
+  final ValueChanged<NowPlayingPanel> onChoose;
+
+  RoomController get _c => controller;
+
+  Widget _header(BuildContext context) {
+    final p = context.palette;
+    final theme = Theme.of(context).textTheme;
+    return SizedBox(
+      height: 32,
+      child: Row(
+        children: [
+          const SizedBox(width: 40),
+          Expanded(
+            // The album, when YouTube Music has said which it is (the queue knows only the song)
+            child: FutureBuilder<SongRadio>(
+              future: current.isLocal
+                  ? null
+                  : AppScope.of(context).music.radio(current.videoId),
+              builder: (context, async) {
+                final album = async.data?.songOf(current.videoId)?.album;
+                final line = album ?? (_c.snapshot.inRoom ? S.room : null);
+                return Text(
+                  line == null
+                      ? S.nowPlaying.toUpperCase()
+                      : '${S.nowPlaying.toUpperCase()} · $line',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.labelSmall?.copyWith(
+                    color: p.textSecondary,
+                    letterSpacing: 0.8,
+                    fontWeight: FontWeight.w700,
+                  ),
+                );
+              },
+            ),
+          ),
+          SizedBox(
+            width: 40,
+            child: PlayerMoreButton(
+              controller: _c,
+              current: current,
+              compact: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cover = panel == NowPlayingPanel.cover;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: playerCompactWidthMax),
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 8),
+          child: Column(
+            children: [
+              if (cover)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: _header(context),
+                ),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 240),
+                  layoutBuilder: (current, previous) => Stack(
+                    fit: StackFit.expand,
+                    children: [...previous, ?current],
+                  ),
+                  child: cover
+                      ? _Scrolling(
+                          key: const ValueKey('cover'),
+                          controller: _c,
+                          current: current,
+                          onChoose: onChoose,
+                        )
+                      : PlayerPanelStage(
+                          key: ValueKey(panel),
+                          controller: _c,
+                          current: current,
+                          panel: panel,
+                          onCover: () => onChoose(NowPlayingPanel.cover),
+                          compact: true,
+                        ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 4),
+                    PlaybackBar(controller: _c, inline: true),
+                    CompactTransport(
+                      controller: _c,
+                      leading: ShuffleButton(controller: _c, bare: true),
+                      trailing: RepeatButton(controller: _c, bare: true),
+                    ),
+                    if (_c.snapshot.inRoom)
+                      RoomStrip(controller: _c, compact: true),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The column that scrolls in [_Compact]: the cover and the song, then the cards. The cover is as large as the place
+/// leaves it after the song, with a little of the first card showing under, to say that there is more.
+class _Scrolling extends StatelessWidget {
+  const _Scrolling({
+    super.key,
+    required this.controller,
+    required this.current,
+    required this.onChoose,
+  });
+
+  final RoomController controller;
+  final QueueEntry current;
+  final ValueChanged<NowPlayingPanel> onChoose;
+
+  /// The song under the cover, and what is left showing of the card under it.
+  static const _title = 48.0;
+  static const _peek = 16.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final video = controller.snapshot.video;
+    return LayoutBuilder(
+      builder: (context, box) {
+        final width = box.maxWidth - 32;
+        final room = max(0.0, box.maxHeight - _title - 8 - _peek);
+        final side = video
+            ? min(room, width * 9 / 16)
+            : min(width, max(room, 96.0));
+        return ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (rect) => const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF000000), Color(0xFF000000), Color(0x00000000)],
+            stops: [0, 0.88, 1],
+          ).createShader(rect),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: side,
+                  child: CompactCover(
+                    controller: controller,
+                    current: current,
+                    maxSide: width,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                PlayerTitleRow(
+                  controller: controller,
+                  current: current,
+                  dense: true,
+                  showMore: false,
+                  extra: ModeToggle(controller: controller),
+                ),
+                _Cards(
+                  controller: controller,
+                  current: current,
+                  onChoose: onChoose,
+                  margin: 0,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _StickyHeader extends StatelessWidget {
   const _StickyHeader({required this.controller, required this.current});
 
@@ -379,17 +586,21 @@ class _Cards extends StatelessWidget {
     required this.controller,
     required this.current,
     required this.onChoose,
+    this.margin = _margin - 6,
   });
 
   final RoomController controller;
   final QueueEntry current;
   final ValueChanged<NowPlayingPanel> onChoose;
 
+  /// The space at each side of the cards.
+  final double margin;
+
   @override
   Widget build(BuildContext context) {
     final upNext = controller.snapshot.upNext;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(_margin - 6, 8, _margin - 6, 32),
+      padding: EdgeInsets.fromLTRB(margin, 8, margin, 32),
       child: Column(
         children: [
           _LyricsCard(

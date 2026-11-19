@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'home_shell.dart';
 import 'now_playing_page.dart';
+import 'player/parts.dart' show NowPlayingPanel;
 import 'scope.dart';
 import 'widgets/artwork.dart';
 import 'widgets/mini_player.dart';
@@ -97,33 +98,46 @@ class PlayerSheetController extends ChangeNotifier {
         : Curves.easeOutCubic.transform(v);
   }
 
+  /// Whether the player stands beside the page (a window that is wider than it is tall): it is always there, there is
+  /// no sheet to open or close, and the sheet keeps what it was while the window is turned. Set by the home screen.
+  final docked = ValueNotifier<bool>(false);
+
+  /// Says that the home screen has put the player beside the page, or taken it away again.
+  void setDocked(bool value) {
+    if (_disposed || docked.value == value) return;
+    docked.value = value;
+    // Turned back to upright with the sheet closed, the player opens on the cover, not on what was shown beside the page
+    if (!value && !_open) panel.value = NowPlayingPanel.cover;
+  }
+
+  /// What the middle of the player shows: the cover, or lyrics, the queue, the comments in its place. It lives here and
+  /// not in the page of the player, so that it stays when the phone is turned and the player changes from a sheet to
+  /// the docked one.
+  final panel = ValueNotifier<NowPlayingPanel>(NowPlayingPanel.cover);
+
   void open() {
+    // A player that is docked is open already; a sheet opened behind it would be there when the phone is turned back
+    if (docked.value) return;
     _setOpen(true);
     _animate(1, ms: _openMs, byFinger: false);
   }
 
-  PlayerPanel? _panel;
-
   /// Opens the player on one of its panels, for the buttons of the player bar of a wide screen.
-  void openOn(PlayerPanel panel) {
-    _panel = panel;
+  void openOn(PlayerPanel which) {
+    panel.value = switch (which) {
+      PlayerPanel.lyrics => NowPlayingPanel.lyrics,
+      PlayerPanel.upNext => NowPlayingPanel.upNext,
+    };
     open();
   }
 
-  /// The panel the player was asked to open on, once.
-  PlayerPanel? takePanel() {
-    final panel = _panel;
-    _panel = null;
-    return panel;
-  }
-
-  /// Set by the open player while it shows lyrics or the queue in place of the cover: Back closes that first and says
-  /// so by returning true; the player itself closes only when this is null or returns false.
-  bool Function()? stepBack;
-
   /// What Back does with the player open: a panel goes back to the cover, else the player closes.
   void back() {
-    if (!(stepBack?.call() ?? false)) close();
+    if (panel.value != NowPlayingPanel.cover) {
+      panel.value = NowPlayingPanel.cover;
+    } else {
+      close();
+    }
   }
 
   void close() {
@@ -159,6 +173,8 @@ class PlayerSheetController extends ChangeNotifier {
     _disposed = true;
     position.dispose();
     miniHidden.dispose();
+    docked.dispose();
+    panel.dispose();
     super.dispose();
   }
 
@@ -180,7 +196,14 @@ class PlayerSheetController extends ChangeNotifier {
     final run = target == 1
         ? position.animateTo(1, duration: duration, curve: curve)
         : position.animateBack(0, duration: duration, curve: curve);
-    run.whenComplete(() => linear = false);
+    run.whenComplete(() {
+      linear = false;
+      // The player is closed: the next time it opens on the cover
+      // (not when it was opened again in the meantime: a touch on the bar closes it for a moment, as it starts the drag)
+      if (target == 0 && !_disposed && !_open && position.value == 0) {
+        panel.value = NowPlayingPanel.cover;
+      }
+    });
   }
 }
 
@@ -381,11 +404,10 @@ class CoverSlot extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: controller.position,
     child: child,
-    builder: (context, child) =>
-        Opacity(
-          opacity: controller.inMotion && controller.coverFlies ? 0 : 1,
-          child: child,
-        ),
+    builder: (context, child) => Opacity(
+      opacity: controller.inMotion && controller.coverFlies ? 0 : 1,
+      child: child,
+    ),
   );
 }
 

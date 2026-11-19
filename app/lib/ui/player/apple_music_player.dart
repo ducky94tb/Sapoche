@@ -13,13 +13,15 @@ import '../widgets/artwork.dart';
 import '../widgets/playback_bar.dart';
 import '../widgets/volume_bar.dart';
 import 'classic_player.dart';
+import 'look.dart';
 import 'lyrics_ticker.dart';
 import 'parts.dart';
 
 /// The player of the style of the full cover: the cover runs across the whole width at the top and melts into the
 /// colours behind it, the buttons are plain glyphs with no disc, and the row of icons has the lyrics, where the sound
 /// goes and the queue (the comments and the sleep timer are in the "…" of the song). With a picture to show, a panel
-/// open, on a screen on its side and in a roomy window the places are the classic player's, with this style's look.
+/// open, the places are the classic player's, with this style's look. On a screen on its side the cover runs across the
+/// whole width of the player and up to its top edge, whatever the height.
 class AppleMusicPlayer extends StatelessWidget {
   const AppleMusicPlayer({
     super.key,
@@ -38,16 +40,92 @@ class AppleMusicPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, box) => box.maxWidth > box.maxHeight
-        ? ClassicPlayer(
-            controller: controller,
-            current: current,
-            panel: panel,
-            onPanel: onPanel,
-            onChoose: onChoose,
-          )
+    builder: (context, box) => box.maxHeight < playerCompactHeight
+        ? _compact(context)
         : _tall(context),
   );
+
+  /// A phone on its side: the cover across the player and up to its top, melting into the colours behind it, with the
+  /// song over its foot; the seek bar in one line and the buttons with Lyrics and Up next at the ends of them. A picture
+  /// is as wide as the player at its top, and a panel takes the place of the cover under a line with the song.
+  Widget _compact(BuildContext context) {
+    final video = controller.snapshot.video;
+    final cover = panel == NowPlayingPanel.cover;
+    final inRoom = controller.snapshot.inRoom;
+    final controls = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          PlaybackBar(controller: controller, inline: true),
+          const SizedBox(height: 2),
+          CompactTransport(
+            controller: controller,
+            leading: PanelButton(
+              icon: Icons.lyrics_outlined,
+              label: S.lyrics,
+              target: NowPlayingPanel.lyrics,
+              panel: panel,
+              onPanel: onPanel,
+            ),
+            trailing: PanelButton(
+              icon: Icons.queue_music_rounded,
+              label: S.upNext,
+              target: NowPlayingPanel.upNext,
+              panel: panel,
+              onPanel: onPanel,
+            ),
+          ),
+          if (inRoom) RoomStrip(controller: controller, compact: true),
+        ],
+      ),
+    );
+    if (!cover) {
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: playerCompactWidthMax),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 8),
+            child: Column(
+              children: [
+                Expanded(
+                  child: PlayerPanelStage(
+                    key: ValueKey(panel),
+                    controller: controller,
+                    current: current,
+                    panel: panel,
+                    onCover: () => onChoose(NowPlayingPanel.cover),
+                    compact: true,
+                  ),
+                ),
+                controls,
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: playerCompactWidthMax),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            children: [
+              Expanded(
+                child: _CompactCover(
+                  controller: controller,
+                  current: current,
+                  video: video,
+                ),
+              ),
+              controls,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _tall(BuildContext context) {
     final p = context.palette;
@@ -69,7 +147,11 @@ class AppleMusicPlayer extends StatelessWidget {
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    PlayerGrabber(color: p.textTertiary.withValues(alpha: 0.5)),
+                    // Beside the pages the player is not pulled down: no handle
+                    if (!PlayerLookScope.dockedOf(context))
+                      PlayerGrabber(
+                        color: p.textTertiary.withValues(alpha: 0.5),
+                      ),
                     Positioned(
                       right: 12,
                       child: ModeToggle(controller: controller),
@@ -332,15 +414,16 @@ class _FullCoverState extends State<_FullCover> {
                 right: 12,
                 child: ModeToggle(controller: controller, onPicture: true),
               ),
-              // The way out, on the picture
-              Positioned(
-                top: top + 6,
-                left: 0,
-                right: 0,
-                child: const Center(
-                  child: PlayerGrabber(color: Color(0xB3FFFFFF)),
+              // The way out, on the picture: not beside the pages, where the player is not pulled down
+              if (!PlayerLookScope.dockedOf(context))
+                Positioned(
+                  top: top + 6,
+                  left: 0,
+                  right: 0,
+                  child: const Center(
+                    child: PlayerGrabber(color: Color(0xB3FFFFFF)),
+                  ),
                 ),
-              ),
               Positioned(
                 left: _margin,
                 right: _margin,
@@ -349,6 +432,123 @@ class _FullCoverState extends State<_FullCover> {
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+}
+
+/// The cover of a phone on its side: across the whole width and up to the top edge, its foot melting into the colours
+/// behind it, with the song over that foot. A picture (the video) is 16 to 9 across the width at the top instead, and
+/// the song is under it.
+class _CompactCover extends StatelessWidget {
+  const _CompactCover({
+    required this.controller,
+    required this.current,
+    required this.video,
+  });
+
+  final RoomController controller;
+  final QueueEntry current;
+  final bool video;
+
+  /// The song stands this high over the foot of the cover.
+  static const _overlap = 34.0;
+
+  /// The song's line: the title and the artist.
+  static const _titleHeight = 48.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final sheet = PlayerSheetScope.of(context);
+    return LayoutBuilder(
+      builder: (context, box) {
+        final title = Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: PlayerTitleRow(
+            controller: controller,
+            current: current,
+            dense: true,
+          ),
+        );
+        if (video) {
+          // The picture keeps its shape across the width; the song is under it
+          return Stack(
+            children: [
+              Column(
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: box.maxHeight * 16 / 9,
+                        ),
+                        child: PlayerCoverArt(
+                          controller: controller,
+                          current: current,
+                          size: box.maxWidth,
+                        ),
+                      ),
+                    ),
+                  ),
+                  title,
+                ],
+              ),
+              Positioned(
+                top: 8,
+                right: 10,
+                child: ModeToggle(controller: controller, onPicture: true),
+              ),
+            ],
+          );
+        }
+        final height = max(0.0, box.maxHeight - _titleHeight + _overlap);
+        return Stack(
+          children: [
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: height,
+              child: ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (rect) => const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF000000),
+                    Color(0xFF000000),
+                    Color(0x00000000),
+                  ],
+                  stops: [0, 0.52, 1],
+                ).createShader(rect),
+                child: CoverSlot(
+                  controller: sheet,
+                  child: Artwork(
+                    key: sheet.pageCover,
+                    url: current.thumb,
+                    size: height,
+                    width: box.maxWidth,
+                    radius: 0,
+                    sharp: true,
+                    crossfade: true,
+                  ),
+                ),
+              ),
+            ),
+            // Audio or Video, on the picture
+            Positioned(
+              top: 8,
+              right: 10,
+              child: ModeToggle(controller: controller, onPicture: true),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: max(0.0, height - _overlap),
+              child: title,
+            ),
+          ],
         );
       },
     );

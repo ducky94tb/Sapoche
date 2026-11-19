@@ -1,0 +1,5 @@
+The player stays beside the page when the phone is on its side
+- Turn the phone on its side (or open Sapoche on a tablet or a computer) and the page you are on and the player now sit side by side, like two screens. The player is always there while a song is on, so you can browse, search and look at lyrics or the queue without covering anything.
+- On a phone on its side the player is a compact column made for each style: Classic, Cards and Full cover each keep their own look. Lyrics and the queue open inside it, and the cover and the song shrink to a line above them.
+- The status bar hides while an Android phone is on its side, to give the page and the player the room.
+- Turning the phone back keeps what you had open, the lyrics or the queue included.

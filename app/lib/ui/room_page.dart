@@ -611,8 +611,10 @@ class _NowCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    // In a wide window the player bar under the pages has the same button, so the card is only the song
-                    if (HomeShell.layoutOf(context) != ShellLayout.sidebar) ...[
+                    // In a wide window the player bar under the pages has the same button, and so has the player beside
+                    // them, so the card is only the song
+                    if (HomeShell.layoutOf(context) != ShellLayout.sidebar &&
+                        !HomeShell.isDocked(context)) ...[
                       const SizedBox(width: 8),
                       ListenableBuilder(
                         listenable: controller.playState,

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sapoche/data/backend.dart';
 import 'package:sapoche/data/models.dart';
 import 'package:sapoche/strings.dart';
+import 'package:sapoche/ui/now_playing_page.dart';
 import 'package:sapoche/data/room_controller.dart';
 import 'package:sapoche/ui/player/video_controls.dart';
 import 'package:sapoche/ui/widgets/like_button.dart';
@@ -258,7 +259,7 @@ void main() {
     });
 
     videoTest(
-      'the player on its side on a tablet keeps the picture in the left half, over the controls',
+      'the player on its side on a tablet keeps the picture in the card beside the pages, over the controls',
       (tester) async {
         await openVideo(
           tester,
@@ -276,9 +277,10 @@ void main() {
           ),
         );
         final bar = tester.getRect(find.byType(PlaybackBar));
-        // The picture is in the left half, over the strip of the controls, which is as wide as the window and along the
-        // bottom; the queue is in the right half
-        expect(video.center.dx, lessThan(640));
+        final card = tester.getRect(find.byType(NowPlayingPage));
+        // The picture is in the card of the player, at the right, over the seek bar; the pages are at the left
+        expect(card.left, greaterThan(640));
+        expect(card.contains(video.center), isTrue);
         expect(video.bottom, lessThanOrEqualTo(bar.top));
         expect(video.width / video.height, closeTo(9 / 16, 0.01));
         expect(video.bottom, lessThanOrEqualTo(800.5));

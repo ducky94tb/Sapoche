@@ -212,10 +212,19 @@ class PlayerTitleRow extends StatelessWidget {
     required this.current,
     this.wrapLines = 1,
     this.showMore = true,
+    this.dense = false,
+    this.extra,
   });
 
   final RoomController controller;
   final QueueEntry current;
+
+  /// The small player of a phone on its side: the title and the artist a size smaller, and the "…" with more in it
+  /// (there is no row of icons to hold them).
+  final bool dense;
+
+  /// Something between the song and its heart: Audio or Video, in the small player.
+  final Widget? extra;
 
   /// Whether the "…" of the song stands after the heart (the style of cards has it in the header instead).
   final bool showMore;
@@ -236,20 +245,34 @@ class PlayerTitleRow extends StatelessWidget {
             children: [
               MarqueeText(
                 current.title,
-                style: look.compactTitle
+                style: dense
+                    ? theme.titleMedium?.copyWith(
+                        fontSize: look.star ? 17 : 16,
+                        fontWeight: FontWeight.w700,
+                      )
+                    : look.compactTitle
                     ? theme.headlineSmall?.copyWith(fontSize: 18)
                     : theme.headlineSmall,
                 rounds: MarqueeText.playerRounds,
                 wrapLines: wrapLines,
               ),
-              const SizedBox(height: 2),
-              _ArtistLine(controller: controller, current: current),
+              SizedBox(height: dense ? 0 : 2),
+              _ArtistLine(
+                controller: controller,
+                current: current,
+                dense: dense,
+              ),
             ],
           ),
         ),
-        LikeButton(track: current, size: 26, star: look.star),
+        ?extra,
+        LikeButton(track: current, size: dense ? 22 : 26, star: look.star),
         if (showMore)
-          PlayerMoreButton(controller: controller, current: current),
+          PlayerMoreButton(
+            controller: controller,
+            current: current,
+            compact: dense,
+          ),
       ],
     );
   }
@@ -258,10 +281,15 @@ class PlayerTitleRow extends StatelessWidget {
 /// The artist of the song, and after it, small and still, how many watched it ("1.8B views"). It comes after a request
 /// of its own, once the song has sound, so it only narrows the line when it arrives and nothing moves down.
 class _ArtistLine extends StatefulWidget {
-  const _ArtistLine({required this.controller, required this.current});
+  const _ArtistLine({
+    required this.controller,
+    required this.current,
+    this.dense = false,
+  });
 
   final RoomController controller;
   final QueueEntry current;
+  final bool dense;
 
   @override
   State<_ArtistLine> createState() => _ArtistLineState();
@@ -329,13 +357,17 @@ class _ArtistLineState extends State<_ArtistLine> {
           ? p.textSecondary
           : p.link,
       fontWeight: FontWeight.w500,
+      fontSize: widget.dense ? 13 : null,
     );
     final seen = AppScope.of(context).music.seenViews(track.videoId);
     final views = _views;
     final count =
         seen ??
         (views == null ? null : formatViews(views.count, plays: views.plays));
-    final tail = theme.titleMedium?.copyWith(color: p.textSecondary);
+    final tail = theme.titleMedium?.copyWith(
+      color: p.textSecondary,
+      fontSize: widget.dense ? 13 : null,
+    );
     Widget artist(String name) {
       final line = MarqueeText(
         name,
@@ -383,10 +415,14 @@ class PlayerMoreButton extends StatelessWidget {
     super.key,
     required this.controller,
     required this.current,
+    this.compact = false,
   });
 
   final RoomController controller;
   final QueueEntry current;
+
+  /// The small player has no row of icons: the comments, where the sound goes and the sleep timer are in the menu.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -396,15 +432,24 @@ class PlayerMoreButton extends StatelessWidget {
         : snapshot.nameOf(current.addedBy);
     // The style of cards has no button for the sleep timer: it is in the "…" of the song
     final look = PlayerLookScope.of(context);
-    final extra = look.style == PlayerStyle.spotify
-        ? [MenuLine('sleep', Icons.bedtime_outlined, S.sleepTimer)]
-        : const <MenuLine>[];
+    final extra = [
+      if (compact)
+        MenuLine('comments', Icons.comment_outlined, S.youtubeComments),
+      if (compact && !kIsWeb)
+        MenuLine('output', Icons.speaker_rounded, S.playOn),
+      if (compact || look.style == PlayerStyle.spotify)
+        MenuLine('sleep', Icons.bedtime_outlined, S.sleepTimer),
+    ];
     return TrackMenu(
       track: current,
       addedBy: who.isEmpty ? null : who,
       extra: extra,
       onExtra: (value) => switch (value) {
         'sleep' => showSleepSheet(context, controller),
+        'output' => controller.pickOutput(),
+        'comments' => PlayerLookScope.panelOf(
+          context,
+        )?.call(NowPlayingPanel.comments),
         _ => null,
       },
     );
@@ -568,6 +613,141 @@ class PlayerToolbar extends StatelessWidget {
       },
     );
   }
+}
+
+/// Lyrics or the queue as a button at the end of the row of buttons of the small player: lit while its panel is open, and
+/// a second touch on it goes back to the cover.
+class PanelButton extends StatelessWidget {
+  const PanelButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.target,
+    required this.panel,
+    required this.onPanel,
+  });
+
+  final IconData icon;
+  final String label;
+  final NowPlayingPanel target;
+  final NowPlayingPanel panel;
+  final ValueChanged<NowPlayingPanel> onPanel;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final on = panel == target;
+    return IconButton(
+      onPressed: () => onPanel(target),
+      tooltip: label,
+      isSelected: on,
+      icon: Icon(icon, size: 24),
+      style: IconButton.styleFrom(
+        foregroundColor: on ? p.onPrimary : _toolTint(p),
+        backgroundColor: on ? p.primary : Colors.transparent,
+        fixedSize: const Size(44, 44),
+      ),
+    );
+  }
+}
+
+/// The row of buttons of the small player of a phone on its side: previous, play, next, and what the style puts at either
+/// end of them (Lyrics and Up next, or shuffle and repeat). 52 high, the discs a little smaller than the upright player's.
+class CompactTransport extends StatelessWidget {
+  const CompactTransport({
+    super.key,
+    required this.controller,
+    required this.leading,
+    required this.trailing,
+  });
+
+  final RoomController controller;
+  final Widget leading;
+  final Widget trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final look = PlayerLookScope.of(context);
+    final bare = look.disc == PlayDisc.bare;
+    return SizedBox(
+      height: 52,
+      child: ListenableBuilder(
+        listenable: controller.playState,
+        builder: (context, _) => Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            leading,
+            SkipButton(
+              forward: false,
+              onPressed: controller.prev,
+              size: bare ? 32 : 28,
+              fast: look.rewindGlyphs,
+            ),
+            PlayPauseButton(
+              playing: controller.isPlaying,
+              starting: controller.isStarting,
+              onPressed: controller.togglePlay,
+              size: bare ? 52 : 50,
+              filled: !bare,
+              white: look.disc == PlayDisc.white,
+            ),
+            SkipButton(
+              forward: true,
+              onPressed: controller.next,
+              size: bare ? 32 : 28,
+              fast: look.rewindGlyphs,
+            ),
+            trailing,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The cover, or the picture, in the place the small player keeps for it: as large as the place allows, left out when
+/// what is left is under 96 (a cover that small shows nothing). A picture is as wide as the place and 16 to 9.
+class CompactCover extends StatelessWidget {
+  const CompactCover({
+    super.key,
+    required this.controller,
+    required this.current,
+    this.maxSide = 480,
+  });
+
+  final RoomController controller;
+  final QueueEntry current;
+  final double maxSide;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      if (controller.snapshot.video) {
+        if (box.maxHeight < 54) return const SizedBox.shrink();
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: box.maxHeight * 16 / 9),
+            child: PlayerCoverArt(
+              controller: controller,
+              current: current,
+              size: box.maxWidth,
+            ),
+          ),
+        );
+      }
+      // A little room under it for its shadow, where it has one
+      final shadow = PlayerLookScope.of(context).coverShrinks ? 10.0 : 0.0;
+      final side = min(box.maxHeight - shadow, min(box.maxWidth, maxSide));
+      if (side < 96) return const SizedBox.shrink();
+      return Center(
+        child: PlayerCoverArt(
+          controller: controller,
+          current: current,
+          size: side,
+        ),
+      );
+    },
+  );
 }
 
 /// The device the sound comes out of, under the row of buttons: the headphones or speaker it goes to when it is not the
@@ -885,12 +1065,18 @@ class PlayerGrabber extends StatelessWidget {
 
 /// Who is listening and whether this phone is in step with them, with the ways to react and to write to them.
 class RoomStrip extends StatelessWidget {
-  const RoomStrip({super.key, required this.controller});
+  const RoomStrip({super.key, required this.controller, this.compact = false});
 
   final RoomController controller;
 
+  /// A strip of 32 for the small player of a phone on its side, which has no height to spare.
+  final bool compact;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      compact ? SizedBox(height: 32, child: _row(context)) : _row(context);
+
+  Widget _row(BuildContext context) {
     final snapshot = controller.snapshot;
     return Row(
       children: [
@@ -900,10 +1086,14 @@ class RoomStrip extends StatelessWidget {
           onTap: () => showMembersSheet(context),
           child: Padding(
             // 30 high faces and 9 above and below: the 48 a finger needs
-            padding: const EdgeInsets.symmetric(vertical: 9),
+            padding: EdgeInsets.symmetric(vertical: compact ? 3 : 9),
             child: Semantics(
               label: S.listening(snapshot.listeningCount),
-              child: AvatarStack(members: snapshot.members, size: 30, max: 3),
+              child: AvatarStack(
+                members: snapshot.members,
+                size: compact ? 26 : 30,
+                max: 3,
+              ),
             ),
           ),
         ),

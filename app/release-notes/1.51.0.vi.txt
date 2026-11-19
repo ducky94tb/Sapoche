@@ -1,0 +1,5 @@
+Player nằm cạnh trang khi xoay ngang điện thoại
+- Xoay ngang điện thoại (hoặc mở Sapoche trên tablet, máy tính) thì trang đang xem và player nằm cạnh nhau, như hai màn hình. Có bài đang phát là player luôn ở đó, nên bạn lướt trang, tìm bài, xem lời hay hàng chờ mà không phải che gì.
+- Trên điện thoại nằm ngang, player là một cột gọn làm riêng cho từng kiểu: Cổ điển, Thẻ và Tràn bìa mỗi kiểu giữ nét của mình. Lời và hàng chờ mở ngay trong đó, bìa và tên bài thu thành một dòng phía trên.
+- Thanh trạng thái ẩn đi khi điện thoại Android nằm ngang, để trang và player có thêm chỗ.
+- Xoay lại thì những gì bạn đang mở, kể cả lời hay hàng chờ, vẫn còn đó.

@@ -16,6 +16,7 @@ class PlaybackBar extends StatefulWidget {
     super.key,
     required this.controller,
     this.compact = false,
+    this.inline = false,
     this.middle,
   });
 
@@ -23,6 +24,10 @@ class PlaybackBar extends StatefulWidget {
 
   /// One low line with the times on either side, for the player bar of a wide screen.
   final bool compact;
+
+  /// One line with the times on either side like [compact], but with the bar of the player's look (its thumb) and 26 high,
+  /// for the small player of a phone on its side.
+  final bool inline;
 
   /// Between the two times, in the line under the bar (the quality of the sound).
   final Widget? middle;
@@ -73,9 +78,10 @@ class _PlaybackBarState extends State<PlaybackBar> {
         (duration > 0 ? (_c.positionMs() / duration).clamp(0.0, 1.0) : 0.0);
     final shownMs = (fraction * duration).round();
 
-    final compact = widget.compact;
+    final inline = widget.inline;
+    final compact = widget.compact || inline;
     // A thin line with a round thumb, where the look of the player asks for it (not in the compact bar of a wide window)
-    final thin = !compact && PlayerLookScope.of(context).thinBar;
+    final thin = (!compact || inline) && PlayerLookScope.of(context).thinBar;
     // A screen reader reads it as a slider and moves it ten seconds at a time
     int step(int by) => (shownMs + by).clamp(0, duration);
     final bar = LayoutBuilder(
@@ -105,11 +111,11 @@ class _PlaybackBarState extends State<PlaybackBar> {
             // The line is 4 to 10 high; the place that answers a touch and a drag is the full 48. Not in the bar of a
             // wide window (`compact`), which is a fixed height with the buttons above it: 20, as it was, nor on a
             // phone on its side
-            height: compact ? 20 : barTouchHeight(context, 28),
+            height: inline ? 26 : (compact ? 20 : barTouchHeight(context, 28)),
             child: Center(
               child: TweenAnimationBuilder<double>(
                 tween: Tween(
-                  end: compact || thin
+                  end: (compact && !inline) || thin
                       ? (dragging ? 6 : 4)
                       : (dragging ? 10 : 5),
                 ),
@@ -149,9 +155,9 @@ class _PlaybackBarState extends State<PlaybackBar> {
       return Row(
         children: [
           elapsed,
-          const SizedBox(width: 10),
+          SizedBox(width: inline ? 8 : 10),
           Expanded(child: bar),
-          const SizedBox(width: 10),
+          SizedBox(width: inline ? 8 : 10),
           left,
         ],
       );

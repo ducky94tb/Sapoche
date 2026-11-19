@@ -5,6 +5,7 @@ import 'package:sapoche/data/music_models.dart';
 import 'package:sapoche/strings.dart';
 import 'package:sapoche/ui/collection_screen.dart';
 import 'package:sapoche/ui/home_shell.dart';
+import 'package:sapoche/ui/now_playing_page.dart';
 import 'package:sapoche/ui/settings_page.dart';
 import 'package:sapoche/ui/widgets/ambient_backdrop.dart';
 import 'package:sapoche/ui/widgets/player_backdrop.dart';
@@ -93,7 +94,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
           // The picture behind it fills the window, the notch included
-          final backdrop = tester.getRect(find.byType(PlayerBackdrop));
+          final backdrop = tester.getRect(find.byType(PlayerBackdrop).first);
           expect(backdrop.left, 0);
           expect(backdrop.right, 844);
           // And the words and the buttons are beside the notch, not under it
@@ -101,8 +102,14 @@ void main() {
             tester.getRect(find.byTooltip('Back')).left,
             greaterThanOrEqualTo(left),
           );
+          // (the page has what the player beside it leaves, a column: the tracks are under the cover)
           expect(
-            tester.getRect(find.text('One')).right,
+            tester.getRect(find.text('The Album').first).right,
+            lessThanOrEqualTo(844 - right),
+          );
+          // The player beside the pages is clear of the notch too
+          expect(
+            tester.getRect(find.byType(NowPlayingPage)).right,
             lessThanOrEqualTo(844 - right),
           );
         },

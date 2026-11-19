@@ -24,8 +24,12 @@ class ShotSize {
   final double bottom;
 }
 
-/// A phone turned on its side, for the screens of the player that have a layout of their own there.
-const shotLandscape = [ShotSize('l800', 800, 360)];
+/// A phone turned on its side: wide enough for the player to stand beside the pages (844 by 390), and too narrow for it
+/// (732 by 360), where it is a sheet in its small layout.
+const shotLandscape = [ShotSize('l844', 844, 390), ShotSize('l732', 732, 360)];
+
+/// A tablet and a computer, where the player beside the pages is the upright one of its style.
+const shotDock = [ShotSize('t1180', 1180, 820, dpr: 1), ShotSize('t1024', 1024, 768, dpr: 1)];
 
 const shotSizes = [
   ShotSize('w360', 360, 800),

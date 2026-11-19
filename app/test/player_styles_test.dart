@@ -485,33 +485,71 @@ void main() {
     }
   });
 
-  group('on its side every style keeps the places and the buttons', () {
+  group('on its side every style has the buttons of its look, in a card beside the pages', () {
+    /// What is in the card of the player: the pages beside it have buttons of their own.
+    Finder inCard(Finder finder) =>
+        find.descendant(of: find.byType(NowPlayingPage), matching: finder);
+
     for (final style in PlayerStyle.values) {
       testWidgets('$style', (tester) async {
         await openStyled(tester, style);
         await resize(tester, 844, 390);
         expect(tester.takeException(), isNull);
-        expect(find.byType(ClassicPlayer), findsOneWidget);
-        for (final label in [
-          S.lyrics,
-          S.upNext,
-          S.playOn,
-          S.youtubeComments,
-          S.sleepTimer,
-        ]) {
+        expect(find.byType(NowPlayingPage), findsOneWidget);
+        // No row of icons and no volume: the comments, where the sound goes and the sleep timer are in the "…"
+        for (final label in [S.playOn, S.youtubeComments, S.sleepTimer]) {
           expect(
-            find.byTooltip(label),
-            findsOneWidget,
+            inCard(find.byTooltip(label)),
+            findsNothing,
             reason: '$style $label',
           );
         }
-        // Shuffle and repeat on the face only in the cards
+        expect(inCard(find.byType(VolumeBar)), findsNothing);
+        // The cards have no button for the lyrics or the queue: they are cards, and shuffle and repeat are on the face
+        for (final label in [S.lyrics, S.upNext]) {
+          expect(
+            inCard(find.byTooltip(label)),
+            style == PlayerStyle.spotify ? findsNothing : findsOneWidget,
+            reason: '$style $label',
+          );
+        }
         expect(
-          tip(S.shuffle),
+          inCard(tip(S.shuffle)),
           style == PlayerStyle.spotify ? findsOneWidget : findsNothing,
         );
       });
     }
+
+    testWidgets(
+      'the cards: a touch on the lyrics card opens the lyrics, and the small cover goes back',
+      (tester) async {
+        await openStyled(tester, PlayerStyle.spotify);
+        await resize(tester, 844, 390);
+        // The cards are under the cover and the song: only the top edge of the first shows until the column is scrolled
+        await tester.drag(
+          find.descendant(
+            of: find.byType(NowPlayingPage),
+            matching: find.byType(SingleChildScrollView),
+          ),
+          const Offset(0, -150),
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NowPlayingPage),
+            matching: find.text(S.lyrics),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.byType(LyricsView), findsOneWidget);
+        await tester.tap(find.bySemanticsLabel(S.showCover));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.byType(LyricsView), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 
   group('the lyrics run along with the song', () {

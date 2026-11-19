@@ -20,14 +20,16 @@ class PlayerMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    // A panel that is short (the small player of a phone on its side) has less room round the note
+    final short = MediaQuery.sizeOf(context).height < 480;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(short ? 8 : 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 36, color: p.textTertiary),
-            const SizedBox(height: 10),
+            Icon(icon, size: short ? 28 : 36, color: p.textTertiary),
+            SizedBox(height: short ? 6 : 10),
             Text(
               text,
               textAlign: TextAlign.center,

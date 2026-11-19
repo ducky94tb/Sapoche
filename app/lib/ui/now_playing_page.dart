@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,15 +10,18 @@ import 'player/classic_player.dart';
 import 'player/look.dart';
 import 'player/parts.dart';
 import 'player/spotify_player.dart';
-import 'player/video_controls.dart';
 import 'player_sheet.dart';
 import 'scope.dart';
 import 'widgets/flat_backdrop.dart';
 import 'widgets/player_backdrop.dart';
 import 'widgets/reactions.dart';
 
+/// The full player. [docked] is the one that stands beside the pages of a window wider than it is tall, a card of its
+/// own: it is always there, so it has no handle to pull it down and no way out, and it is laid out for its own size.
 class NowPlayingPage extends StatelessWidget {
-  const NowPlayingPage({super.key});
+  const NowPlayingPage({super.key, this.docked = false});
+
+  final bool docked;
 
   @override
   Widget build(BuildContext context) {
@@ -32,51 +34,77 @@ class NowPlayingPage extends StatelessWidget {
         final dark = Theme.of(context).brightness == Brightness.dark;
         // Icons in the status bar and the navigation bar that show on the backdrop, light or dark like the app
         final icons = dark ? Brightness.light : Brightness.dark;
-        final page = AnnotatedRegion<SystemUiOverlayStyle>(
+        // Beside the pages the status bar is theirs
+        if (docked) return _PlayerPage(style: style, docked: true);
+        return AnnotatedRegion<SystemUiOverlayStyle>(
           value: SystemUiOverlayStyle(
             statusBarIconBrightness: icons,
             systemNavigationBarIconBrightness: icons,
           ),
-          child: _PlayerPage(style: style),
+          child: _PlayerPage(style: style, docked: false),
         );
-        return page;
       },
     );
   }
 }
 
 class _PlayerPage extends StatelessWidget {
-  const _PlayerPage({required this.style});
+  const _PlayerPage({required this.style, required this.docked});
 
   final PlayerStyle style;
+  final bool docked;
+
+  /// The corners of the card the docked player is.
+  static const cardRadius = 26.0;
 
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.roomOf(context);
     final sheet = PlayerSheetScope.of(context);
+    final body = ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final current = controller.snapshot.current;
+        if (current == null) {
+          // The queue emptied while the sheet was open
+          if (!docked) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => sheet.close());
+          }
+          return const SizedBox.shrink();
+        }
+        return _Body(
+          controller: controller,
+          current: current,
+          style: style,
+          docked: docked,
+        );
+      },
+    );
+    if (docked) {
+      // A card of its own size: what is inside it reads that size, with no notch or bar of the window's
+      return LayoutBuilder(
+        builder: (context, box) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            size: box.biggest,
+            padding: EdgeInsets.zero,
+            viewPadding: EdgeInsets.zero,
+            viewInsets: EdgeInsets.zero,
+          ),
+          child: Material(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(cardRadius),
+            ),
+            child: body,
+          ),
+        ),
+      );
+    }
     return PlayerPull(
       child: KeyedSubtree(
         key: sheet.pageRoot,
-        child: Scaffold(
-          body: ListenableBuilder(
-            listenable: controller,
-            builder: (context, _) {
-              final current = controller.snapshot.current;
-              if (current == null) {
-                // The queue emptied while the sheet was open
-                WidgetsBinding.instance.addPostFrameCallback(
-                  (_) => sheet.close(),
-                );
-                return const SizedBox.shrink();
-              }
-              return _Body(
-                controller: controller,
-                current: current,
-                style: style,
-              );
-            },
-          ),
-        ),
+        child: Scaffold(body: body),
       ),
     );
   }
@@ -87,28 +115,20 @@ class _Body extends StatefulWidget {
     required this.controller,
     required this.current,
     required this.style,
+    required this.docked,
   });
 
   final RoomController controller;
   final QueueEntry current;
   final PlayerStyle style;
+  final bool docked;
 
   @override
   State<_Body> createState() => _BodyState();
 }
 
 class _BodyState extends State<_Body> {
-  /// Opens on the panel the player bar of a wide screen was asked for, if it was.
-  late NowPlayingPanel _panel = switch (PlayerSheetScope.of(context)
-      .takePanel()) {
-    PlayerPanel.lyrics => NowPlayingPanel.lyrics,
-    PlayerPanel.upNext => NowPlayingPanel.upNext,
-    null => NowPlayingPanel.cover,
-  };
-
   RoomController get _c => widget.controller;
-
-  PlayerSheetController? _sheet;
 
   ThemeData? _baseTheme;
   ThemeData? _coverTheme;
@@ -126,121 +146,96 @@ class _BodyState extends State<_Body> {
     return _coverTheme!;
   }
 
-  /// Back with lyrics or the queue shown goes to the cover first; the player closes on the next one.
-  bool _stepBack() {
-    if (_panel == NowPlayingPanel.cover) return false;
-    setState(() => _panel = NowPlayingPanel.cover);
-    return true;
+  /// A second touch on the button of the panel that is open goes back to the cover. The panel is the sheet's, so that it
+  /// stays through the turning of the phone, when the player is a sheet and then a card beside the pages.
+  void _show(NowPlayingPanel panel) {
+    final shown = PlayerSheetScope.of(context).panel;
+    shown.value = shown.value == panel ? NowPlayingPanel.cover : panel;
   }
 
-  @override
-  void dispose() {
-    if (_sheet?.stepBack == _stepBack) _sheet?.stepBack = null;
-    super.dispose();
-  }
-
-  /// A second touch on the button of the panel that is open goes back to the cover.
-  void _show(NowPlayingPanel panel) =>
-      setState(() => _panel = _panel == panel ? NowPlayingPanel.cover : panel);
-
-  /// Whether the screen was on its side at the last look, to see the phone being turned.
-  bool? _wasLandscape;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _sheet = PlayerSheetScope.of(context)..stepBack = _stepBack;
-    final media = MediaQuery.of(context);
-    final landscape = media.orientation == Orientation.landscape;
-    final turned = _wasLandscape == false && landscape;
-    _wasLandscape = landscape;
-    // A phone turned on its side while the picture plays shows it across the whole screen, as video apps do. A tablet
-    // has room for the picture beside the controls.
-    if (turned &&
-        !kIsWeb &&
-        _c.snapshot.video &&
-        media.size.shortestSide < 600 &&
-        PlayerSheetScope.of(context).position.value == 1 &&
-        !VideoFullScreen.open.value) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) openVideoFullScreen(context, _c, turned: true);
-      });
-    }
-  }
+  void _choose(NowPlayingPanel panel) =>
+      PlayerSheetScope.of(context).panel.value = panel;
 
   @override
   Widget build(BuildContext context) {
     final look = PlayerLook.of(widget.style);
+    final docked = widget.docked;
+    final shown = PlayerSheetScope.of(context).panel;
     // The full cover runs up under the status bar, whose icons are then on the picture: light ones
     final bleed =
         widget.style == PlayerStyle.appleMusic &&
+        !docked &&
         MediaQuery.orientationOf(context) == Orientation.portrait;
-    final onPicture =
-        bleed && _panel == NowPlayingPanel.cover && !_c.snapshot.video;
-    void choose(NowPlayingPanel panel) => setState(() => _panel = panel);
-    Widget player() => switch (widget.style) {
+    Widget player(NowPlayingPanel panel) => switch (widget.style) {
       PlayerStyle.classic => ClassicPlayer(
         controller: _c,
         current: widget.current,
-        panel: _panel,
+        panel: panel,
         onPanel: _show,
-        onChoose: choose,
+        onChoose: _choose,
       ),
       PlayerStyle.spotify => SpotifyPlayer(
         controller: _c,
         current: widget.current,
-        panel: _panel,
+        panel: panel,
         onPanel: _show,
-        onChoose: choose,
+        onChoose: _choose,
       ),
       PlayerStyle.appleMusic => AppleMusicPlayer(
         controller: _c,
         current: widget.current,
-        panel: _panel,
+        panel: panel,
         onPanel: _show,
-        onChoose: choose,
+        onChoose: _choose,
       ),
     };
-    final page = PlayerLookScope(
-      look: look,
-      onPanel: choose,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // The colours drift while the song plays, as Apple Music's do
-          if (look.flatBackdrop)
-            FlatBackdrop(coverUrl: widget.current.thumb)
-          else
-            ListenableBuilder(
-              listenable: _c.playState,
-              builder: (context, _) => PlayerBackdrop(
-                coverUrl: widget.current.thumb,
-                moving: _c.isPlaying,
-                // The full cover melts into the colours: in the light theme they are kept strong, not pale
-                vivid: widget.style == PlayerStyle.appleMusic,
+    return ValueListenableBuilder<NowPlayingPanel>(
+      valueListenable: shown,
+      builder: (context, panel, _) {
+        final onPicture =
+            bleed && panel == NowPlayingPanel.cover && !_c.snapshot.video;
+        final page = PlayerLookScope(
+          look: look,
+          onPanel: _choose,
+          docked: docked,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // The colours drift while the song plays, as Apple Music's do
+              if (look.flatBackdrop)
+                FlatBackdrop(coverUrl: widget.current.thumb)
+              else
+                ListenableBuilder(
+                  listenable: _c.playState,
+                  builder: (context, _) => PlayerBackdrop(
+                    coverUrl: widget.current.thumb,
+                    moving: _c.isPlaying,
+                    // The full cover melts into the colours: in the light theme they are kept strong, not pale
+                    vivid: widget.style == PlayerStyle.appleMusic,
+                  ),
+                ),
+              // The safe area keeps the player clear of a notch at the side. Reactions in the room fly up over all of
+              // it. What is on the colours of the cover is in the colours made for it (`Palette.onCover`), not in the
+              // greys of a plain page
+              Theme(
+                data: _onCoverTheme(context),
+                child: ReactionShower(
+                  controller: _c,
+                  child: SafeArea(top: !bleed, child: player(panel)),
+                ),
               ),
-            ),
-          // On its side the phone has no height for one column: the cover goes beside the controls instead. The
-          // safe area also keeps both clear of a notch at the side. Reactions in the room fly up over all of it.
-          // What is on the colours of the cover is in the colours made for it (`Palette.onCover`), not in the greys
-          // of a plain page
-          Theme(
-            data: _onCoverTheme(context),
-            child: ReactionShower(
-              controller: _c,
-              child: SafeArea(top: !bleed, child: player()),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+        return onPicture
+            ? AnnotatedRegion<SystemUiOverlayStyle>(
+                value: const SystemUiOverlayStyle(
+                  statusBarIconBrightness: Brightness.light,
+                ),
+                child: page,
+              )
+            : page;
+      },
     );
-    return onPicture
-        ? AnnotatedRegion<SystemUiOverlayStyle>(
-            value: const SystemUiOverlayStyle(
-              statusBarIconBrightness: Brightness.light,
-            ),
-            child: page,
-          )
-        : page;
   }
 }

@@ -155,10 +155,14 @@ class PlayerLookScope extends InheritedWidget {
     super.key,
     required this.look,
     required this.onPanel,
+    this.docked = false,
     required super.child,
   });
 
   final PlayerLook look;
+
+  /// The player is the card that stands beside the pages, which is always there: no handle to pull it down, no way out.
+  final bool docked;
 
   /// Shows that panel, whatever is open.
   final ValueChanged<NowPlayingPanel> onPanel;
@@ -167,9 +171,14 @@ class PlayerLookScope extends InheritedWidget {
       context.dependOnInheritedWidgetOfExactType<PlayerLookScope>()?.look ??
       PlayerLook.classic;
 
+  static bool dockedOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<PlayerLookScope>()?.docked ??
+      false;
+
   static ValueChanged<NowPlayingPanel>? panelOf(BuildContext context) =>
       context.getInheritedWidgetOfExactType<PlayerLookScope>()?.onPanel;
 
   @override
-  bool updateShouldNotify(PlayerLookScope old) => look != old.look;
+  bool updateShouldNotify(PlayerLookScope old) =>
+      look != old.look || docked != old.docked;
 }

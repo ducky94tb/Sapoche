@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sapoche/data/backend.dart';
@@ -8,11 +9,13 @@ import 'package:sapoche/ui/home_shell.dart';
 import 'package:sapoche/ui/now_playing_page.dart';
 import 'package:sapoche/ui/player/lyrics_view.dart';
 import 'package:sapoche/ui/player/up_next_view.dart';
+import 'package:sapoche/ui/player/video_controls.dart' show VideoFullScreen;
 import 'package:sapoche/ui/player_sheet.dart';
 import 'package:sapoche/ui/widgets/artwork.dart';
 import 'package:sapoche/ui/widgets/like_button.dart';
 import 'package:sapoche/ui/widgets/marquee_text.dart';
 import 'package:sapoche/ui/widgets/mini_player.dart';
+import 'package:sapoche/ui/widgets/player_bar.dart';
 import 'package:sapoche/ui/widgets/playback_bar.dart';
 import 'package:sapoche/ui/widgets/transport.dart';
 import 'package:sapoche/ui/widgets/video_view.dart';
@@ -43,136 +46,152 @@ Rect inside(WidgetTester tester, double width, double height, Finder finder) {
 }
 
 void main() {
-  group('the player on its side', () {
-    // iPhone 14 Pro, iPhone SE and two short Android screens, then an upright phone as the control
-    for (final (width, height) in [
-      (844.0, 390.0),
-      (667.0, 375.0),
-      (800.0, 360.0),
-      (390.0, 844.0),
+  group('the player beside the pages', () {
+    // A phone on its side, then a tablet and a computer: the player is a card at the right, as tall as the rail at the left
+    for (final (width, height, dock) in [
+      (844.0, 390.0, 337.6),
+      (915.0, 412.0, 360.0),
+      (1024.0, 768.0, 360.0),
+      (1180.0, 820.0, 377.6),
+      (1280.0, 800.0, 409.6),
+      (1440.0, 900.0, 440.0),
     ]) {
-      testWidgets('${width}x$height: nothing overlaps or leaves the screen', (
-        tester,
-      ) async {
-        await openPlayer(tester, snapshot: sampleRoom());
-        await resize(tester, width, height);
-        expect(tester.takeException(), isNull);
-
-        final cover = inside(tester, width, height, find.byType(CoverSlot));
-        final bar = inside(tester, width, height, find.byType(PlaybackBar));
-        final lyrics = inside(tester, width, height, find.byTooltip(S.lyrics));
-        inside(tester, width, height, find.byTooltip(S.upNext));
-        expect(cover.overlaps(bar), isFalse, reason: 'cover and seek bar');
-        expect(cover.overlaps(lyrics), isFalse, reason: 'cover and toolbar');
-        expect(
-          bar.bottom,
-          lessThan(lyrics.top + 1),
-          reason: 'bar above toolbar',
-        );
-      });
-    }
-
-    testWidgets('the cover is on the left and the controls on the right', (
-      tester,
-    ) async {
-      await openPlayer(tester, snapshot: sampleRoom());
-      await resize(tester, 844, 390);
-      final cover = tester.getRect(find.byType(CoverSlot));
-      final bar = tester.getRect(find.byType(PlaybackBar));
-      expect(cover.right, lessThan(bar.left));
-      // As tall as the screen allows, not the 140 dp a squeezed column left it
-      expect(cover.height, greaterThan(300));
-      expect(find.byTooltip(S.close), findsOneWidget);
-    });
-
-    // The song and the row of icons are where they are with the controls when lyrics or the queue open, as in Apple Music
-    for (final (width, height) in [
-      (844.0, 390.0),
-      (667.0, 375.0),
-      (932.0, 430.0),
-    ]) {
-      testWidgets('${width}x$height: the title and the icons stay put', (
-        tester,
-      ) async {
-        await openPlayer(tester, snapshot: sampleRoom());
-        await resize(tester, width, height);
-        final like = find.descendant(
-          of: find.byType(NowPlayingPage),
-          matching: find.byType(LikeButton),
-        );
-        final title = tester.getRect(like.first);
-        final icons = tester.getRect(find.byTooltip(S.lyrics));
-        final cover = tester.getRect(find.byType(CoverSlot));
-        for (final panel in [S.lyrics, S.upNext]) {
-          await openPanel(tester, panel);
+      testWidgets(
+        '${width}x$height: a card of $dock at the right, nothing leaves it',
+        (tester) async {
+          await openPlayer(tester, snapshot: sampleRoom());
+          await resize(tester, width, height);
           expect(tester.takeException(), isNull);
-          expect(tester.getRect(like.first), title, reason: panel);
+          final card = tester.getRect(find.byType(NowPlayingPage));
+          expect(card.width, closeTo(dock, 0.5));
+          expect(card.right, lessThan(width));
+          expect(card.right, greaterThan(width - 24));
+          expect(card.top, greaterThanOrEqualTo(0));
+          expect(card.bottom, lessThanOrEqualTo(height));
+          // There is no bar or mini player: the player is already there, and it has no way out
+          expect(find.byType(MiniPlayer), findsNothing);
+          expect(find.byType(PlayerBar), findsNothing);
+          expect(find.byTooltip(S.close), findsNothing);
+          for (final finder in [
+            find.byType(PlaybackBar),
+            find.byTooltip(S.lyrics),
+            find.byTooltip(S.upNext),
+            find.byType(CoverSlot),
+          ]) {
+            final r = tester.getRect(finder);
+            expect(card.contains(r.topLeft), isTrue, reason: '$finder');
+            expect(
+              r.right,
+              lessThanOrEqualTo(card.right + 0.5),
+              reason: '$finder',
+            );
+            expect(
+              r.bottom,
+              lessThanOrEqualTo(card.bottom + 0.5),
+              reason: '$finder',
+            );
+          }
+          final cover = tester.getRect(find.byType(CoverSlot));
+          final bar = tester.getRect(find.byType(PlaybackBar));
           expect(
-            tester.getRect(find.byTooltip(S.lyrics)),
-            icons,
-            reason: panel,
+            cover.bottom,
+            lessThan(bar.top + 1),
+            reason: 'cover above the seek bar',
           );
-          expect(tester.getRect(find.byType(CoverSlot)), cover, reason: panel);
-          await openPanel(tester, panel); // back to the controls
-        }
-      });
+          // The pages have what is left of the window
+          final page = tester.getRect(find.byType(Navigator).first);
+          expect(page.right, lessThanOrEqualTo(width));
+        },
+      );
     }
 
-    testWidgets('the volume sits under the buttons, in both positions', (
-      tester,
-    ) async {
-      await openPlayer(tester, snapshot: sampleRoom());
-      for (final (width, height) in [(390.0, 844.0), (844.0, 390.0)]) {
-        await resize(tester, width, height);
+    testWidgets(
+      'on a phone the cover is not smaller than the player leaves it',
+      (tester) async {
+        await openPlayer(tester, snapshot: sampleRoom());
+        await resize(tester, 844, 390);
+        final cover = tester.getRect(find.byType(CoverSlot));
+        expect(cover.height, greaterThan(150));
+        // No volume and no row of icons of their own: the small player has the buttons of a phone on its side
+        expect(find.byType(VolumeBar), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'upright the player is the sheet again, and the same song is on it',
+      (tester) async {
+        await openPlayer(tester, snapshot: sampleRoom());
+        await resize(tester, 844, 390);
+        await resize(tester, 390, 844);
         expect(tester.takeException(), isNull);
-        final bar = inside(tester, width, height, find.byType(VolumeBar));
-        final play = tester.getRect(find.byType(PlayPauseButton).last);
-        final icons = tester.getRect(find.byTooltip(S.lyrics));
-        expect(bar.top, greaterThan(play.bottom - 1), reason: '$width');
-        expect(bar.bottom, lessThan(icons.top + 4), reason: '$width');
-      }
-    });
+        // The sheet fills the screen again
+        expect(
+          tester.getRect(find.byType(NowPlayingPage)),
+          const Rect.fromLTWH(0, 0, 390, 844),
+        );
+      },
+    );
 
-    testWidgets('the room strip fits too', (tester) async {
-      await openPlayer(tester, snapshot: sampleRoom());
-      await resize(tester, 667, 375);
-      expect(tester.takeException(), isNull);
-      final bottom = tester.getRect(find.byTooltip(S.lyrics)).bottom;
-      expect(bottom, lessThan(375));
-    });
+    testWidgets(
+      'a window too narrow for it keeps the sheet, in the small player',
+      (tester) async {
+        await openPlayer(tester, snapshot: sampleRoom());
+        await resize(tester, 667, 375);
+        expect(tester.takeException(), isNull);
+        final cover = inside(tester, 667, 375, find.byType(CoverSlot));
+        final bar = inside(tester, 667, 375, find.byType(PlaybackBar));
+        inside(tester, 667, 375, find.byTooltip(S.lyrics));
+        inside(tester, 667, 375, find.byTooltip(S.upNext));
+        expect(cover.bottom, lessThan(bar.top + 1));
+        expect(find.byType(VolumeBar), findsNothing);
+      },
+    );
 
-    testWidgets('the arrow closes the player', (tester) async {
-      await openPlayer(tester, snapshot: sampleRoom());
-      await resize(tester, 844, 390);
-      await tester.tap(find.byTooltip(S.close));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 600));
-      expect(find.byType(PlaybackBar), findsNothing);
-      expect(find.byType(MiniPlayer), findsOneWidget);
-    });
+    testWidgets(
+      'the lyrics take the place of the cover, under a line with the song',
+      (tester) async {
+        await openPlayer(tester, snapshot: sampleRoom());
+        await resize(tester, 844, 390);
+        await openPanel(tester, S.lyrics);
+        expect(tester.takeException(), isNull);
+        expect(find.byType(LyricsView), findsOneWidget);
+        // The seek bar and the buttons stay where they are; the cover is the small one in the line of the song
+        expect(find.byType(PlaybackBar), findsOneWidget);
+        expect(find.byType(CoverSlot), findsNothing);
+        expect(
+          find.descendant(
+            of: find.byType(NowPlayingPage),
+            matching: find.byType(LikeButton),
+          ),
+          findsOneWidget,
+        );
+        // The same button again goes back to the cover
+        await openPanel(tester, S.lyrics);
+        expect(find.byType(LyricsView), findsNothing);
+        expect(find.byType(CoverSlot), findsOneWidget);
+      },
+    );
 
-    testWidgets('the lyrics take the place of the controls, beside the cover', (
+    testWidgets('the buttons and the seek bar stay put when a panel opens', (
       tester,
     ) async {
       await openPlayer(tester, snapshot: sampleRoom());
       await resize(tester, 844, 390);
-      await openPanel(tester, S.lyrics);
-      expect(tester.takeException(), isNull);
-      expect(find.byType(LyricsView), findsOneWidget);
-      expect(find.byType(PlaybackBar), findsNothing);
-      // The cover stays, with the song above the lyrics and the icons under them, where they are with the controls
-      expect(find.byType(CoverSlot), findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byType(NowPlayingPage),
-          matching: find.byType(LikeButton),
-        ),
-        findsOneWidget,
-      );
-      // The same button again goes back to the controls
-      await openPanel(tester, S.lyrics);
-      expect(find.byType(PlaybackBar), findsOneWidget);
-      expect(find.byType(LyricsView), findsNothing);
+      final bar = tester.getRect(find.byType(PlaybackBar));
+      final lyrics = tester.getRect(find.byTooltip(S.lyrics));
+      final play = tester.getRect(find.byType(PlayPauseButton).last);
+      for (final panel in [S.lyrics, S.upNext]) {
+        await openPanel(tester, panel);
+        expect(tester.takeException(), isNull);
+        expect(tester.getRect(find.byType(PlaybackBar)), bar, reason: panel);
+        expect(tester.getRect(find.byTooltip(S.lyrics)), lyrics, reason: panel);
+        expect(
+          tester.getRect(find.byType(PlayPauseButton).last),
+          play,
+          reason: panel,
+        );
+        await openPanel(tester, panel);
+      }
     });
 
     testWidgets('turning the phone keeps the panel that is open', (
@@ -182,21 +201,24 @@ void main() {
       await openPanel(tester, S.upNext);
       await resize(tester, 844, 390);
       expect(tester.takeException(), isNull);
-      expect(find.byType(PlaybackBar), findsNothing);
       expect(find.byType(UpNextView), findsOneWidget);
       await resize(tester, 390, 844);
       expect(tester.takeException(), isNull);
       expect(find.byType(UpNextView), findsOneWidget);
     });
 
-    testWidgets('a video gets a place of its own beside the controls', (
+    testWidgets('a video is across the card, over the seek bar', (
       tester,
     ) async {
       await openPlayer(tester, snapshot: sampleRoom(video: true));
       await resize(tester, 844, 390);
       expect(tester.takeException(), isNull);
+      final card = tester.getRect(find.byType(NowPlayingPage));
       final bar = inside(tester, 844, 390, find.byType(PlaybackBar));
-      expect(bar.left, greaterThan(844 * 0.45));
+      final picture = tester.getRect(find.byType(VideoView));
+      expect(card.contains(picture.topLeft), isTrue);
+      expect(picture.bottom, lessThan(bar.top + 1));
+      expect(picture.width, greaterThan(200));
     });
 
     testWidgets(
@@ -260,11 +282,10 @@ void main() {
     testWidgets('scrolls a long title and artist instead of cutting them', (
       tester,
     ) async {
-      await openPlayer(tester, snapshot: sampleRoom());
-      // The close arrow is only in the layout on its side
-      await resize(tester, 844, 390);
-      await tester.tap(find.byTooltip(S.close));
-      await tester.pump();
+      final (backend, _) = await pumpApp(tester);
+      backend.emit(StateEvent(sampleRoom()));
+      // Too narrow for the player to stand beside the pages: the mini player is there
+      await resize(tester, 660, 360);
       await tester.pump(const Duration(milliseconds: 700));
       expect(
         find.descendant(
@@ -277,86 +298,150 @@ void main() {
   });
 
   group('the bars on their side', () {
-    testWidgets('are a rail of icons up the left, and the mini player floats alone', (
-      tester,
-    ) async {
-      await openPlayer(tester, snapshot: sampleRoom());
-      await resize(tester, 844, 390);
-      await tester.tap(find.byTooltip(S.close));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 700));
-      expect(tester.takeException(), isNull);
-      final context = tester.element(find.byType(HomeShell));
-      expect(HomeShell.layoutOf(context), ShellLayout.rail);
-      expect(HomeShell.compactOf(context), isTrue);
-      // The four places and Settings, named by their tooltips, in a column on the left that fits the window
-      final rail = [
-        for (final name in [S.tabHome, S.tabSearch, S.tabLibrary, S.tabRoom])
-          tester.getRect(find.byTooltip(name)),
-      ];
-      for (final r in rail) {
-        expect(r.right, lessThan(90));
-        expect(r.bottom, lessThan(390));
-      }
-      expect(rail.first.top, lessThan(rail.last.top));
-      expect(tester.getRect(find.byTooltip(S.settingsTitle)).bottom, lessThan(390));
-      // The mini player is beside the rail, not under it, and no wider than a phone's was long
-      final mini = tester.getRect(find.byType(MiniPlayer));
-      expect(mini.left, greaterThan(rail.first.right));
-      expect(mini.width, lessThanOrEqualTo(400));
-      expect(mini.bottom, lessThan(390));
-    });
-
-    for (final size in [const Size(390, 844), const Size(844, 390)]) {
-      testWidgets('the play and next buttons of the mini player are alike and level at $size', (
-        tester,
-      ) async {
+    testWidgets(
+      'are a rail of icons up the left, and the mini player floats alone',
+      (tester) async {
         final (backend, _) = await pumpApp(tester);
-        tester.view.physicalSize = size * 2;
         backend.emit(StateEvent(sampleRoom()));
+        // Too narrow for the player to stand beside the pages: the mini player is there
+        await resize(tester, 660, 360);
         await tester.pump(const Duration(milliseconds: 700));
-        await tester.pump(const Duration(milliseconds: 700));
-        final mini = find.byType(MiniPlayer);
-        final play = tester.getRect(
-          find.descendant(of: mini, matching: find.byType(PlayPauseButton)),
-        );
-        final next = tester.getRect(
-          find.descendant(of: mini, matching: find.byType(SkipButton)),
-        );
-        expect(next.center.dy, closeTo(play.center.dy, 0.5), reason: '$size');
-        expect(next.size, play.size, reason: '$size');
-        final glyphs = [
-          for (final button in [PlayPauseButton, SkipButton])
-            tester.getSize(
-              find.descendant(
-                of: find.descendant(
-                  of: mini,
-                  matching: find.byType(button),
-                ),
-                matching: find.byType(Icon),
-              ),
-            ),
+        expect(tester.takeException(), isNull);
+        final context = tester.element(find.byType(HomeShell));
+        expect(HomeShell.layoutOf(context), ShellLayout.rail);
+        expect(HomeShell.compactOf(context), isTrue);
+        // The four places and Settings, named by their tooltips, in a column on the left that fits the window
+        final rail = [
+          for (final name in [S.tabHome, S.tabSearch, S.tabLibrary, S.tabRoom])
+            tester.getRect(find.byTooltip(name)),
         ];
-        expect(glyphs.first, glyphs.last, reason: '$size');
-      });
+        for (final r in rail) {
+          expect(r.right, lessThan(90));
+          expect(r.bottom, lessThan(360));
+        }
+        expect(rail.first.top, lessThan(rail.last.top));
+        expect(
+          tester.getRect(find.byTooltip(S.settingsTitle)).bottom,
+          lessThan(360),
+        );
+        // The mini player is beside the rail, not under it, and no wider than a phone's was long
+        final mini = tester.getRect(find.byType(MiniPlayer));
+        expect(mini.left, greaterThan(rail.first.right));
+        expect(mini.width, lessThanOrEqualTo(400));
+        expect(mini.bottom, lessThan(360));
+      },
+    );
+
+    for (final size in [const Size(390, 844), const Size(660, 360)]) {
+      testWidgets(
+        'the play and next buttons of the mini player are alike and level at $size',
+        (tester) async {
+          final (backend, _) = await pumpApp(tester);
+          tester.view.physicalSize = size * 2;
+          backend.emit(StateEvent(sampleRoom()));
+          await tester.pump(const Duration(milliseconds: 700));
+          await tester.pump(const Duration(milliseconds: 700));
+          final mini = find.byType(MiniPlayer);
+          final play = tester.getRect(
+            find.descendant(of: mini, matching: find.byType(PlayPauseButton)),
+          );
+          final next = tester.getRect(
+            find.descendant(of: mini, matching: find.byType(SkipButton)),
+          );
+          expect(next.center.dy, closeTo(play.center.dy, 0.5), reason: '$size');
+          expect(next.size, play.size, reason: '$size');
+          final glyphs = [
+            for (final button in [PlayPauseButton, SkipButton])
+              tester.getSize(
+                find.descendant(
+                  of: find.descendant(of: mini, matching: find.byType(button)),
+                  matching: find.byType(Icon),
+                ),
+              ),
+          ];
+          expect(glyphs.first, glyphs.last, reason: '$size');
+        },
+      );
     }
 
     testWidgets('are lower, and lists clear them', (tester) async {
-      await openPlayer(tester, snapshot: sampleRoom());
-      await resize(tester, 844, 390);
-      await tester.tap(find.byTooltip(S.close));
-      await tester.pump();
+      final (backend, _) = await pumpApp(tester);
+      backend.emit(StateEvent(sampleRoom()));
+      // Too narrow for the player to stand beside the pages: the mini player is there
+      await resize(tester, 660, 360);
       await tester.pump(const Duration(milliseconds: 700));
       expect(tester.takeException(), isNull);
       expect(tester.getSize(find.byType(MiniPlayer)).height, 40);
       final context = tester.element(find.byType(HomeShell));
       expect(HomeShell.bottomInsetOf(context), lessThan(176));
       // Nothing of the bars is out of the window
-      expect(tester.getRect(find.byType(MiniPlayer)).bottom, lessThan(390));
+      expect(tester.getRect(find.byType(MiniPlayer)).bottom, lessThan(360));
       // And upright they are what they were
       await resize(tester, 390, 844);
       expect(tester.getSize(find.byType(MiniPlayer)).height, 46);
     });
+  });
+
+  group('the status bar', () {
+    testWidgets(
+      'is hidden while a phone is on its side, and comes back upright',
+      (tester) async {
+        // A test before this one may have left a full screen open: its flag is a global
+        VideoFullScreen.open.value = false;
+        final calls = <String>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method.startsWith('SystemChrome.setEnabledSystemUI')) {
+              calls.add('${call.method} ${call.arguments}');
+            }
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
+        await pumpApp(tester);
+        await tester.pump();
+        expect(
+          calls.where((c) => c.contains('bottom')),
+          isEmpty,
+          reason: 'upright it is as it was',
+        );
+        await resize(tester, 844, 390);
+        // Only the top is hidden: the navigation bar of the system stays
+        expect(calls.last, contains('SystemUiOverlay.bottom'));
+        expect(calls.last, isNot(contains('top')));
+        await resize(tester, 390, 844);
+        expect(calls.last, contains('SystemUiMode.edgeToEdge'));
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
+
+    testWidgets('a tablet, which has the height, keeps it', (tester) async {
+      final calls = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method.startsWith('SystemChrome.setEnabledSystemUI')) {
+            calls.add('${call.method} ${call.arguments}');
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      await pumpApp(tester);
+      await resize(tester, 1180, 820);
+      expect(calls.where((c) => c.contains('bottom')), isEmpty);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
   });
 
   group('the version', () {

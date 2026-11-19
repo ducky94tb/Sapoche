@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -19,6 +20,8 @@ import '../theme/theme.dart';
 import 'chat_sheet.dart';
 import 'home_page.dart';
 import 'library_page.dart';
+import 'now_playing_page.dart';
+import 'player/video_controls.dart' show VideoFullScreen, openVideoFullScreen;
 import 'player_sheet.dart';
 import 'room_page.dart';
 import 'rooms_sheet.dart';
@@ -55,18 +58,73 @@ enum ShellLayout {
   sidebar,
 }
 
+/// The window the home screen is laid out for, whole, and how much of it the docked player takes. The pages beside the
+/// docked player see a [MediaQuery] of the room they have; what is decided for the window (rail or sidebar, the size
+/// of a card of a row) reads this, so that it does not change with the player.
+class ShellWindow extends InheritedWidget {
+  const ShellWindow({
+    super.key,
+    required this.size,
+    required this.dock,
+    required super.child,
+  });
+
+  final Size size;
+
+  /// Width of the docked player, 0 with none.
+  final double dock;
+
+  static ShellWindow? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ShellWindow>();
+
+  @override
+  bool updateShouldNotify(ShellWindow old) =>
+      size != old.size || dock != old.dock;
+}
+
 /// Tabs plus the floating mini player. Lists scroll behind both bars, which blur them.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
+  /// The window as the layout sees it: the whole of it, also from a page that has a narrower [MediaQuery] beside the
+  /// docked player.
+  static Size windowOf(BuildContext context) =>
+      ShellWindow.maybeOf(context)?.size ?? MediaQuery.sizeOf(context);
+
+  /// How wide the player is that stands beside the pages of a window wider than it is tall (0 for a window that is not),
+  /// when a song is playing: a quarter more than a third of a tablet's width, and on a phone, which has little height,
+  /// enough for the column of controls.
+  static double dockWidthFor(Size size) {
+    if (size.width <= size.height || size.width < 700) return 0;
+    return size.height < 480
+        ? (size.width * 0.40).clamp(300.0, 360.0)
+        : (size.width * 0.32).clamp(360.0, 440.0);
+  }
+
+  /// The width of the docked player in this window, 0 with none (no song, or a window that is not wide).
+  static double dockOf(BuildContext context) =>
+      ShellWindow.maybeOf(context)?.dock ?? 0;
+
+  /// Whether the player stands beside the pages, as a second screen.
+  static bool isDocked(BuildContext context) => dockOf(context) > 0;
+
   /// Whether the screen is wider than it is tall, where the bars are lower to leave room for the page.
   static bool isWide(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
+    final size = windowOf(context);
     return size.width > size.height;
   }
 
-  static ShellLayout layoutOf(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
+  /// The least the pages keep when a sidebar and the docked player share a window: narrower than this the tabs go to a
+  /// rail.
+  static const _leastPage = 560.0;
+
+  /// The room beside the pages that a sidebar takes (its width and the gaps at either side).
+  static const _sidebarSpan = 12 + 256 + 12;
+
+  static ShellLayout layoutOf(BuildContext context) =>
+      layoutFor(windowOf(context), dockOf(context));
+
+  static ShellLayout layoutFor(Size size, double dock) {
     // A phone on its side is wide but short: two bars stacked along its foot would take a quarter of what height it
     // has, so the tabs go up the side, as a rail of icons, and the mini player floats alone
     if (size.height < 480) {
@@ -75,13 +133,17 @@ class HomeShell extends StatefulWidget {
           : ShellLayout.bars;
     }
     if (size.width < 600) return ShellLayout.bars;
-    return size.width < 840 ? ShellLayout.rail : ShellLayout.sidebar;
+    if (size.width < 840) return ShellLayout.rail;
+    // Beside the docked player the pages need room of their own: a sidebar that leaves them less is a rail
+    if (dock > 0 && size.width - dock - 24 - _sidebarSpan < _leastPage) {
+      return ShellLayout.rail;
+    }
+    return ShellLayout.sidebar;
   }
 
   /// The rail of a phone on its side: icons only, and lower bars all round.
   static bool compactOf(BuildContext context) =>
-      layoutOf(context) == ShellLayout.rail &&
-      MediaQuery.sizeOf(context).height < 480;
+      layoutOf(context) == ShellLayout.rail && windowOf(context).height < 480;
 
   /// Whether the pages end below the status bar, as on a phone, instead of scrolling up under a strip of glass there as
   /// they do on a tablet: a phone on its side has no height to give that strip.
@@ -93,20 +155,23 @@ class HomeShell extends StatefulWidget {
   /// little room: made for the open bars, the end of every page was a long empty band under the folded ones. Scrolled
   /// back up, the open mini player covers the last rows, as glass that shows them.
   static double bottomInsetOf(BuildContext context) =>
-      switch (layoutOf(context)) {
-        ShellLayout.bars =>
-          math.max(_systemBottomOf(context), _barsBottom) +
-              MiniPlayer.heightOf(context) +
-              16,
-        ShellLayout.rail =>
-          compactOf(context)
-              ? math.max(_systemBottomOf(context), 0) +
-                    MiniPlayer.heightOf(context) +
-                    _Side.compactBottom +
-                    16
-              : 120,
-        ShellLayout.sidebar => 112,
-      };
+      // With the player beside the pages there is no mini player or bar over their foot
+      isDocked(context)
+      ? math.max(_systemBottomOf(context), 0) + 24
+      : switch (layoutOf(context)) {
+          ShellLayout.bars =>
+            math.max(_systemBottomOf(context), _barsBottom) +
+                MiniPlayer.heightOf(context) +
+                16,
+          ShellLayout.rail =>
+            compactOf(context)
+                ? math.max(_systemBottomOf(context), 0) +
+                      MiniPlayer.heightOf(context) +
+                      _Side.compactBottom +
+                      16
+                : 120,
+          ShellLayout.sidebar => 112,
+        };
 
   /// Like [bottomInsetOf], but with the mini player open above the tabs: the room a page needs under its last line when
   /// that line must be seen with the bars as they are, because the page is too short to scroll and so never folds them.
@@ -238,6 +303,7 @@ class _HomeShellState extends State<HomeShell>
     super.didChangeDependencies();
     if (_messages != null) return;
     final room = _watched = AppScope.roomOf(context);
+    _hasSong = room.snapshot.current != null;
     _messages = room.messages.listen((text) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -284,9 +350,10 @@ class _HomeShellState extends State<HomeShell>
         );
     });
     HardwareKeyboard.instance.addHandler(_onKey);
+    VideoFullScreen.open.addListener(_fullScreenChanged);
     TabNavigation._active = () => _current;
     TabNavigation._closePlayer = () {
-      if (_sheet.isOpen) _sheet.close();
+      if (_sheet.isOpen && !_sheet.docked.value) _sheet.close();
     };
     TabNavigation._search = _search;
     room.invite.addListener(_onInvite);
@@ -305,11 +372,17 @@ class _HomeShellState extends State<HomeShell>
     WidgetsBinding.instance.addObserver(this);
     _scheduleNudge();
     if (kIsWeb) {
-      _versionTimer = Timer.periodic(const Duration(minutes: 30), (_) => _checkVersion());
+      _versionTimer = Timer.periodic(
+        const Duration(minutes: 30),
+        (_) => _checkVersion(),
+      );
       Timer(const Duration(seconds: 30), _checkVersion);
     }
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      _versionTimer = Timer.periodic(const Duration(hours: 12), (_) => _checkRelease());
+      _versionTimer = Timer.periodic(
+        const Duration(hours: 12),
+        (_) => _checkRelease(),
+      );
       Timer(const Duration(seconds: 20), _checkRelease);
     }
   }
@@ -323,7 +396,9 @@ class _HomeShellState extends State<HomeShell>
       installed: installed,
       fetch: () async {
         final reply = await http.get(
-          Uri.parse('https://api.github.com/repos/tranviethungpv/Sapoche/releases/latest'),
+          Uri.parse(
+            'https://api.github.com/repos/tranviethungpv/Sapoche/releases/latest',
+          ),
           headers: const {'Accept': 'application/vnd.github+json'},
         );
         return reply.statusCode == 200 ? reply.body : null;
@@ -333,7 +408,8 @@ class _HomeShellState extends State<HomeShell>
     final settings = AppScope.of(context).settings;
     final now = DateTime.now();
     final last = settings.updateSheetShown(offer.version);
-    if ((last != null && now.difference(last) < UpdateNudge.every) || !_quietMoment()) {
+    if ((last != null && now.difference(last) < UpdateNudge.every) ||
+        !_quietMoment()) {
       return;
     }
     settings.updateSheetWasShown(offer.version, now);
@@ -343,8 +419,12 @@ class _HomeShellState extends State<HomeShell>
   /// Nothing is in the middle of being done: not over the player, a page of its own, a dialog or a keyboard.
   bool _quietMoment() {
     final focused = FocusManager.instance.primaryFocus?.context;
-    final typing = focused?.widget is EditableText || focused?.findAncestorWidgetOfExactType<EditableText>() != null;
-    return !(_sheet.isOpen || typing || ModalRoute.of(context)?.isCurrent == false);
+    final typing =
+        focused?.widget is EditableText ||
+        focused?.findAncestorWidgetOfExactType<EditableText>() != null;
+    return !(_sheet.isOpen ||
+        typing ||
+        ModalRoute.of(context)?.isCurrent == false);
   }
 
   /// A tab left open keeps the version it loaded with: from time to time the server's `version.json` is asked, and a newer
@@ -355,7 +435,11 @@ class _HomeShellState extends State<HomeShell>
     final newer = await VersionCheck(
       loaded: '${info.version}+${info.buildNumber}',
       fetch: () async {
-        final reply = await http.get(Uri.base.resolve('version.json?t=${DateTime.now().millisecondsSinceEpoch}'));
+        final reply = await http.get(
+          Uri.base.resolve(
+            'version.json?t=${DateTime.now().millisecondsSinceEpoch}',
+          ),
+        );
         return reply.statusCode == 200 ? reply.body : null;
       },
     ).newer();
@@ -391,7 +475,13 @@ class _HomeShellState extends State<HomeShell>
     final version = info.version;
     if (version == null) return;
     final now = DateTime.now();
-    if (!UpdateNudge.due(info, lastShown: model.settings.updateSheetShown(version), now: now)) return;
+    if (!UpdateNudge.due(
+      info,
+      lastShown: model.settings.updateSheetShown(version),
+      now: now,
+    )) {
+      return;
+    }
     if (!_quietMoment()) return;
     model.settings.updateSheetWasShown(version, now);
     showUpdateSheet(context, model.update);
@@ -405,6 +495,10 @@ class _HomeShellState extends State<HomeShell>
     _update?.removeListener(_scheduleNudge);
     _sheet.removeListener(_scheduleNudge);
     HardwareKeyboard.instance.removeHandler(_onKey);
+    VideoFullScreen.open.removeListener(_fullScreenChanged);
+    if (_statusIs == true) {
+      unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    }
     TabNavigation._active = null;
     TabNavigation._closePlayer = null;
     TabNavigation._search = null;
@@ -447,12 +541,18 @@ class _HomeShellState extends State<HomeShell>
   }
 
   bool _inRoom = false;
+  bool _hasSong = false;
 
-  /// Entering or leaving a room renames the fourth tab, in the rail and the sidebar as well as the capsule.
+  /// Entering or leaving a room renames the fourth tab, in the rail and the sidebar as well as the capsule. A first song
+  /// or the last one gone brings the docked player or takes it away.
   void _watchRoom() {
     final now = _watched?.snapshot.inRoom ?? false;
-    if (now == _inRoom || !mounted) return;
-    setState(() => _inRoom = now);
+    final song = _watched?.snapshot.current != null;
+    if ((now == _inRoom && song == _hasSong) || !mounted) return;
+    setState(() {
+      _inRoom = now;
+      _hasSong = song;
+    });
   }
 
   var _askedForKey = false;
@@ -600,7 +700,8 @@ class _HomeShellState extends State<HomeShell>
         _search();
       case LogicalKeyboardKey.keyF when ctrl && once:
         _search();
-      case LogicalKeyboardKey.escape when once && _sheet.isOpen:
+      case LogicalKeyboardKey.escape
+          when once && _sheet.isOpen && !_sheet.docked.value:
         _sheet.close();
       default:
         return false;
@@ -647,36 +748,101 @@ class _HomeShellState extends State<HomeShell>
     return false;
   }
 
+  /// Whether the window was on its side at the last look, to see the phone being turned.
+  bool? _wasLandscape;
+
+  /// What the sheet is told once the frame is built: whether the player stands beside the pages.
+  bool _dockWanted = false;
+
+  /// Whether the status bar of the system is hidden as things are: a phone on its side has no height to spare. A swipe
+  /// from the top edge brings it back for a moment. An iPhone does it by itself, and a browser has none.
+  bool _statusWanted = false;
+  bool? _statusIs;
+
+  void _applyStatus() {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    // The full screen of a picture has its own say over the bars, and puts them as they were when it is left
+    if (VideoFullScreen.open.value || _statusIs == _statusWanted) return;
+    _statusIs = _statusWanted;
+    unawaited(
+      _statusWanted
+          ? SystemChrome.setEnabledSystemUIMode(
+              SystemUiMode.manual,
+              overlays: [SystemUiOverlay.bottom],
+            )
+          : SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
+    );
+  }
+
+  void _fullScreenChanged() {
+    // Left again: the bars come back as the picture's own code set them, which is not what this screen wants
+    if (!VideoFullScreen.open.value) {
+      _statusIs = null;
+      _applyStatus();
+    }
+  }
+
+  /// A phone turned on its side while the picture plays and the player is open shows the picture across the whole
+  /// screen, as video apps do. A tablet has room for the picture in the player beside the pages.
+  void _watchTurn(Size window, RoomController room) {
+    final landscape = window.width > window.height;
+    final turned = _wasLandscape == false && landscape;
+    _wasLandscape = landscape;
+    if (turned &&
+        !kIsWeb &&
+        room.snapshot.video &&
+        window.shortestSide < 600 &&
+        _sheet.position.value == 1 &&
+        !VideoFullScreen.open.value) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) openVideoFullScreen(context, room, turned: true);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.roomOf(context);
-    final layout = HomeShell.layoutOf(context);
+    final window = MediaQuery.sizeOf(context);
+    // The player stands beside the pages in a window that is wider than it is tall, while a song is on
+    final dock = _hasSong ? HomeShell.dockWidthFor(window) : 0.0;
+    final docked = dock > 0;
+    final layout = HomeShell.layoutFor(window, dock);
+    _watchTurn(window, controller);
+    _statusWanted = window.height < 480 && window.width > window.height;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _applyStatus());
+    _dockWanted = docked;
+    if (_sheet.docked.value != docked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _sheet.setDocked(_dockWanted);
+      });
+    }
     final pages = NotificationListener<ScrollNotification>(
       onNotification: _onScroll,
       child: FadeTransition(
         opacity: _pageFadeIn,
         child: IndexedStack(
-        index: _tab,
-        // A tab that is not showing keeps its state but not its animations
-        children: [
-          for (final (i, page) in [
-            const HomePage(),
-            SearchPage(focusNode: _searchFocus, back: _searchBack),
-            LibraryPage(requests: _libraryRequests),
-            RoomPage(onAddSongs: _search),
-          ].indexed)
-            TickerMode(
-              enabled: i == _tab,
-              child: Navigator(
-                key: _navigators[i],
-                observers: [_watchers[i]],
-                onGenerateRoute: (_) => MaterialPageRoute<void>(
-                  builder: (_) => PageWidth(child: page),
+          index: _tab,
+          // A tab that is not showing keeps its state but not its animations
+          children: [
+            for (final (i, page) in [
+              const HomePage(),
+              SearchPage(focusNode: _searchFocus, back: _searchBack),
+              LibraryPage(requests: _libraryRequests),
+              RoomPage(onAddSongs: _search),
+            ].indexed)
+              TickerMode(
+                enabled: i == _tab,
+                child: Navigator(
+                  key: _navigators[i],
+                  observers: [_watchers[i]],
+                  onGenerateRoute: (_) => MaterialPageRoute<void>(
+                    builder: (_) => PageWidth(child: page),
+                  ),
                 ),
               ),
-            ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
     final home = Scaffold(
@@ -707,6 +873,7 @@ class _HomeShellState extends State<HomeShell>
                       listenable: _stack,
                       builder: (context, _) => _Side(
                         layout: layout,
+                        dock: dock,
                         controller: controller,
                         index: _tab,
                         where: _watchers[_tab].top,
@@ -733,50 +900,78 @@ class _HomeShellState extends State<HomeShell>
             )
           : null,
     );
-    return PlayerSheetScope(
-      controller: _sheet,
-      // Back steps out one layer at a time: a panel of the player, the player, a page of the tab, the words and results
-      // of Search, then any other tab back to Home; only from Home does it leave the screen
-      child: ListenableBuilder(
-        listenable: Listenable.merge([_sheet, _stack, _searchBack]),
-        builder: (context, stack) => PopScope(
-          canPop: !_sheet.isOpen && !(_current?.canPop() ?? false) && _tab == 0,
-          onPopInvokedWithResult: (didPop, _) {
-            if (didPop) return;
-            if (_sheet.isOpen) {
-              _sheet.back();
-            } else if (_current?.canPop() ?? false) {
-              _current?.maybePop();
-            } else if (_tab == 1 && _searchBack.value) {
-              _searchBack.clear?.call();
-            } else {
-              _select(0);
-            }
-          },
-          child: stack!,
-        ),
-        // Around the sheet as well, for the picture of the mini player it draws while it opens
-        child: BackdropGroup(
-          backdropKey: _backdrop,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Nothing to draw behind a fully open player
-              AnimatedBuilder(
-                animation: _sheet.position,
-                child: home,
-                // Hidden behind the full player: not drawn, and its small animations stand still too
-                builder: (context, home) => TickerMode(
-                  enabled: _sheet.position.value != 1,
-                  child: Offstage(
-                    offstage: _sheet.position.value == 1,
-                    child: home,
-                  ),
+    // A toast floats over the pages, clear of the player beside them, with no mini player to lift it over
+    final theme = Theme.of(context);
+    final shown = docked
+        ? Theme(
+            data: theme.copyWith(
+              snackBarTheme: theme.snackBarTheme.copyWith(
+                width: null,
+                insetPadding: EdgeInsets.fromLTRB(
+                  15,
+                  5,
+                  15 + dock + 32,
+                  10 + MediaQuery.viewPaddingOf(context).bottom,
                 ),
               ),
-              PlayerSheetLayer(controller: _sheet, folded: _drop),
-              if (kIsWeb) VideoFrameHost(sheet: _sheet),
-            ],
+            ),
+            child: home,
+          )
+        : home;
+    return ShellWindow(
+      size: window,
+      dock: dock,
+      child: PlayerSheetScope(
+        controller: _sheet,
+        // Back steps out one layer at a time: a panel of the player, the player, a page of the tab, the words and results
+        // of Search, then any other tab back to Home; only from Home does it leave the screen
+        child: ListenableBuilder(
+          listenable: Listenable.merge([_sheet, _stack, _searchBack]),
+          builder: (context, stack) => PopScope(
+            // Beside the pages the player is not a layer to go back out of: Back is the pages'
+            canPop:
+                !(_sheet.isOpen && !docked) &&
+                !(_current?.canPop() ?? false) &&
+                _tab == 0,
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop) return;
+              if (_sheet.isOpen && !docked) {
+                _sheet.back();
+              } else if (_current?.canPop() ?? false) {
+                _current?.maybePop();
+              } else if (_tab == 1 && _searchBack.value) {
+                _searchBack.clear?.call();
+              } else {
+                _select(0);
+              }
+            },
+            child: stack!,
+          ),
+          // Around the sheet as well, for the picture of the mini player it draws while it opens
+          child: BackdropGroup(
+            backdropKey: _backdrop,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Nothing to draw behind a fully open player
+                AnimatedBuilder(
+                  animation: _sheet.position,
+                  child: shown,
+                  // Hidden behind the full player: not drawn, and its small animations stand still too. Not when the
+                  // player stands beside the pages: they show
+                  builder: (context, home) {
+                    final covered = _sheet.position.value == 1 && !docked;
+                    return TickerMode(
+                      enabled: !covered,
+                      child: Offstage(offstage: covered, child: home),
+                    );
+                  },
+                ),
+                if (!docked)
+                  PlayerSheetLayer(controller: _sheet, folded: _drop),
+                if (kIsWeb) VideoFrameHost(sheet: _sheet),
+              ],
+            ),
           ),
         ),
       ),
@@ -784,10 +979,12 @@ class _HomeShellState extends State<HomeShell>
   }
 }
 
-/// The pages of a large window beside a rail or a sidebar, with the player floating over their bottom.
+/// The pages of a large window beside a rail or a sidebar, with the player floating over their bottom, or, in a window
+/// that is wider than it is tall, standing beside them on the right.
 class _Side extends StatelessWidget {
   const _Side({
     required this.layout,
+    required this.dock,
     required this.controller,
     required this.index,
     required this.where,
@@ -798,6 +995,9 @@ class _Side extends StatelessWidget {
   });
 
   final ShellLayout layout;
+
+  /// Width of the player that stands beside the pages, 0 with none.
+  final double dock;
   final RoomController controller;
   final int index;
 
@@ -833,24 +1033,34 @@ class _Side extends StatelessWidget {
             : rail
             ? 16
             : _gap);
+    // The player beside the pages: its width, and the space between it and the window's edge and the pages, which is the
+    // one the rail has
+    final edgeSide = rail ? edge : _gap;
+    final slot = dock > 0 ? dock + 2 * edgeSide : 0.0;
     return LayoutBuilder(
       builder: (context, box) {
-        final content = box.maxWidth - inset - right;
+        final content = box.maxWidth - inset - right - slot;
         final mini = (content - 32).clamp(0.0, compact ? 400.0 : 460.0);
+        // The pages are laid out for what is left of the window: what they read of its size is that
+        final media = MediaQuery.of(context)
+            .removePadding(removeLeft: true, removeRight: true);
+        final pages = MediaQuery(
+          data: slot > 0
+              ? media.copyWith(
+                  size: Size(media.size.width - slot, media.size.height),
+                )
+              : media,
+          child: child,
+        );
         return Stack(
           children: [
             // The pages take the whole window, and keep clear of the rail or the sidebar themselves
             Positioned.fill(
               child: SideInset(
                 left: inset,
-                right: right,
+                right: right + slot,
                 // What the pages are inset by is said once: a safe area inside a page is not to take it again
-                child: MediaQuery.removePadding(
-                  context: context,
-                  removeLeft: true,
-                  removeRight: true,
-                  child: child,
-                ),
+                child: pages,
               ),
             ),
             if (rail)
@@ -879,24 +1089,35 @@ class _Side extends StatelessWidget {
                   onLibrary: onLibrary,
                 ),
               ),
-            // The mini player floats in the middle of the pages, the player bar runs along them
-            Positioned(
-              left: rail ? inset + (content - mini) / 2 : inset,
-              right: rail ? null : right + _gap,
-              width: rail ? mini : null,
-              bottom: bottom,
-              child: rail
-                  ? MiniPlayer(controller: controller)
-                  // A wide window can be wider than the song and its buttons need: the bar stays a capsule in the
-                  // middle of the pages instead of running across all of them
-                  : Align(
-                      heightFactor: 1,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 740),
-                        child: PlayerBar(controller: controller),
+            // The player beside the pages: a card with its own colours, as tall as the rail
+            if (dock > 0)
+              Positioned(
+                right: right + edgeSide,
+                top: padding.top + edgeSide,
+                bottom: bottom,
+                width: dock,
+                child: const NowPlayingPage(docked: true),
+              ),
+            // The mini player floats in the middle of the pages, the player bar runs along them. Not with the player
+            // beside them, which has all of it
+            if (dock == 0)
+              Positioned(
+                left: rail ? inset + (content - mini) / 2 : inset,
+                right: rail ? null : right + _gap,
+                width: rail ? mini : null,
+                bottom: bottom,
+                child: rail
+                    ? MiniPlayer(controller: controller)
+                    // A wide window can be wider than the song and its buttons need: the bar stays a capsule in the
+                    // middle of the pages instead of running across all of them
+                    : Align(
+                        heightFactor: 1,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 740),
+                          child: PlayerBar(controller: controller),
+                        ),
                       ),
-                    ),
-            ),
+              ),
           ],
         );
       },
@@ -943,7 +1164,9 @@ class _Rail extends StatelessWidget {
             padding: EdgeInsets.all(compact ? 6 : 8),
             child: Column(
               children: [
-                for (final (tab, icon, label) in _items(HomeShell.listenLabelOf(context)))
+                for (final (tab, icon, label) in _items(
+                  HomeShell.listenLabelOf(context),
+                ))
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Material(
@@ -1257,9 +1480,8 @@ class _SideRow extends StatelessWidget {
                   style: leading == null
                       ? Theme.of(context).textTheme.titleSmall
                             ?.copyWith(color: color)
-                      : Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: color,
-                        ),
+                      : Theme.of(context).textTheme.bodyMedium
+                            ?.copyWith(color: color),
                 ),
               ),
             ],
@@ -1409,10 +1631,7 @@ class _Bars extends StatelessWidget {
                             valueListenable: hideMini,
                             builder: (context, hidden, child) =>
                                 AnimatedOpacity(
-                                  duration: Motion.of(
-                                    context,
-                                    Motion.medium,
-                                  ),
+                                  duration: Motion.of(context, Motion.medium),
                                   // Folded, the capsule sits between the tab and Search, where nothing else is
                                   opacity: hidden && drop == 0 ? 0 : 1,
                                   child: IgnorePointer(
@@ -1580,7 +1799,9 @@ class _Tabs extends StatelessWidget {
                                             ? p.link
                                             : p.textSecondary,
                                       ),
-                                      duration: const Duration(milliseconds: 200),
+                                      duration: const Duration(
+                                        milliseconds: 200,
+                                      ),
                                       builder: (context, color, _) => Text(
                                         label,
                                         style: Theme.of(context)
@@ -1612,7 +1833,10 @@ class _Tabs extends StatelessWidget {
                                               // A longer word (Vietnamese, large text) shrinks to the room in the
                                               // lit pill instead of touching its edge
                                               Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                    ),
                                                 child: FittedBox(
                                                   fit: BoxFit.scaleDown,
                                                   child: name,

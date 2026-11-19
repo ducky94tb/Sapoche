@@ -93,10 +93,16 @@ class _VideoFrameHostState extends State<VideoFrameHost> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([widget.sheet.position, VideoFrame._pageShape]),
+    listenable: Listenable.merge([
+      widget.sheet.position,
+      widget.sheet.docked,
+      VideoFrame._pageShape,
+    ]),
     builder: (context, _) {
-      // The picture shows with the player's page as soon as it starts to open, and is hidden when it is closed
-      final closed = widget.sheet.position.value == 0;
+      // The picture shows with the player's page as soon as it starts to open, and is hidden when it is closed. The
+      // player that stands beside the pages is never closed
+      final closed =
+          widget.sheet.position.value == 0 && !widget.sheet.docked.value;
       final shape = closed ? VideoFrame._gone : VideoFrame._pageShape.value;
       final gone = shape.size == const Size(1, 1);
       lookOfVideoFrame(hidden: gone);

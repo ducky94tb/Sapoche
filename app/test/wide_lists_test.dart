@@ -108,7 +108,8 @@ void main() {
     });
 
     testWidgets('a row without an album is not stretched across the window', (tester) async {
-      final backend = await pumpAt(tester, 1280, 800);
+      // Taller than it is wide: a window on its side gives the pages less, with the player beside them
+      final backend = await pumpAt(tester, 1400, 1500);
       backend.emit(StateEvent(sampleRoom(songs: 3)));
       await tester.pumpAndSettle();
       await tester.tap(find.text(S.tabRoom).first);
@@ -160,38 +161,31 @@ void main() {
   });
 
   group('the player in a wide window', () {
-    Future<void> openPlayer(WidgetTester tester) async {
+    testWidgets('stands beside the pages, with the lyrics when asked, and the queue when asked', (tester) async {
       await pumpAt(tester, 1280, 800);
-      final bar = find.byType(PlayerBar);
-      await tester.tapAt(tester.getTopLeft(bar) + const Offset(40, 30));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 700));
-    }
-
-    testWidgets('has the queue beside the picture, and touching its button again leaves it there', (tester) async {
-      await openPlayer(tester);
-      expect(find.byType(UpNextView), findsOneWidget);
-      await tester.tap(find.byTooltip(S.upNext));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.byType(UpNextView), findsOneWidget);
-    });
-
-    testWidgets('has the lyrics when asked, and the queue back when asked', (tester) async {
-      await openPlayer(tester);
+      expect(find.byType(PlayerBar), findsNothing);
       await tester.tap(find.byTooltip(S.lyrics));
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.byType(LyricsView), findsOneWidget);
       expect(find.byType(UpNextView), findsNothing);
       await tester.tap(find.byTooltip(S.upNext));
       await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
       expect(find.byType(UpNextView), findsOneWidget);
       expect(find.byType(LyricsView), findsNothing);
+      // The same button again goes back to the cover
+      await tester.tap(find.byTooltip(S.upNext));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(UpNextView), findsNothing);
     });
   });
 
   testWidgets('the last row of a long list, scrolled to the end, is above the player bar in a wide window', (tester) async {
     final (backend, _) = await pumpApp(tester);
-    await resize(tester, 1280, 800);
+    // Taller than it is wide: a window on its side has the player beside the pages, with no bar
+    await resize(tester, 1400, 1500);
     backend.emit(StateEvent(sampleRoom(songs: 16)));
     backend.emit(const PositionEvent(PlayerPosition(playing: true, positionMs: 4000, durationMs: 200000)));
     await tester.pumpAndSettle();
