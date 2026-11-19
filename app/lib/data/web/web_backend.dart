@@ -12,6 +12,7 @@ import '../music_models.dart';
 import 'backend_defaults.dart';
 import 'chat_cipher.dart';
 import 'clocks.dart';
+import 'crossfade.dart';
 import 'group_session.dart';
 import 'library_store.dart';
 import 'listen_tracker.dart';
@@ -50,6 +51,17 @@ abstract interface class MediaControls {
 /// [Backend] for a browser: the room connection and the sync of the app, in Dart, and the YouTube player of the page
 /// in place of the native player. What the phones do in Kotlin and Swift (the personal queue, the library, YouTube
 /// Music pages) comes to it step by step, see [BackendDefaults] for what it still leaves out.
+/// What the soft change between songs last saw of the song that plays.
+class _Seen {
+  const _Seen(this.id, this.positionMs, this.durationMs, this.playing, this.atMs);
+
+  final String id;
+  final int positionMs;
+  final int durationMs;
+  final bool playing;
+  final int atMs;
+}
+
 class WebBackend extends BackendDefaults {
   WebBackend({
     required this.player,
@@ -276,6 +288,7 @@ class WebBackend extends BackendDefaults {
     shareTaste: _shareTasteOn,
     configured: _server.isNotEmpty,
     hasKey: _key.isNotEmpty,
+    crossfadeSeconds: _crossfadeSeconds,
     // The browser would not give the stored library back: this one lasts until the page closes
     libraryLost: _library.disk == null,
   );
@@ -1517,7 +1530,10 @@ class WebBackend extends BackendDefaults {
   late final SleepTimer _sleep = SleepTimer(
     wallClock: () => DateTime.now().millisecondsSinceEpoch,
     stop: _stopForSleep,
-    fade: player.setVolume,
+    fade: (level) {
+      _sleepFade = level;
+      _applyVolume();
+    },
     pauseAtSongEnd: player.pauseAtEnd,
     onChanged: (state) => _events.add(SleepEvent(state)),
   );
@@ -1543,6 +1559,72 @@ class WebBackend extends BackendDefaults {
     }
     if (!session.isSolo) session.goSolo();
     session.soloPause();
+  }
+
+  // ------------------------------------------------------------------ soft change between songs
+
+  static const _keyCrossfade = 'web.crossfade';
+
+  /// The seconds of the soft change between songs (see [Crossfade]), 0 for none; the person's choice.
+  int get _crossfadeSeconds => (prefs.getInt(_keyCrossfade) ?? 0).clamp(0, Crossfade.maxSeconds);
+
+  @override
+  Future<void> setCrossfade(int seconds) async {
+    await prefs.setInt(_keyCrossfade, seconds.clamp(0, Crossfade.maxSeconds));
+    _crossfadeStep();
+  }
+
+  /// The volume of the frame is the sleep timer's fade times the share the soft change allows.
+  double _sleepFade = 1;
+  double _ramp = 1;
+
+  void _applyVolume() => player.setVolume(_sleepFade * _ramp);
+
+  _Seen? _seen;
+
+  /// The song that plays came by itself, so it fades in; one that was chosen starts as it is.
+  var _startedByItself = false;
+  Timer? _crossfadeTimer;
+
+  /// Looks at the song that plays and sets the volume of the soft change. Runs with the position every second, and by
+  /// itself every 100 ms only inside a fade, or once when the end of the song gets to one.
+  void _crossfadeStep() {
+    _crossfadeTimer?.cancel();
+    _crossfadeTimer = null;
+    final seconds = _crossfadeSeconds;
+    final item = _playingNow();
+    if (seconds <= 0) _seen = null;
+    if (seconds <= 0 || item == null || _video) {
+      _setRamp(1);
+      return;
+    }
+    final now = _now();
+    final position = player.positionMs();
+    final duration = player.durationMs() > 0 ? player.durationMs() : item.durMs;
+    final playing = player.isPlaying();
+    final before = _seen;
+    if (before != null && before.id != item.id) {
+      // Neither the player nor the sessions say how a song was left; the one that played to its end is known by where it was
+      _startedByItself =
+          before.playing && Crossfade.endedItself(before.positionMs, before.durationMs, now - before.atMs);
+    }
+    _seen = _Seen(item.id, position, duration, playing, now);
+    final hasNext = _session?.hasSuccessor ?? _local.hasSuccessor;
+    _setRamp(Crossfade.ramp(position, duration, seconds, fadeIn: _startedByItself, fadeOut: hasNext));
+    if (!Crossfade.applies(duration, seconds)) return;
+    final outAt = duration - seconds * 1000;
+    final inside = (_startedByItself && position < seconds * 500) || (hasNext && position >= outAt);
+    if (inside) {
+      _crossfadeTimer = Timer(const Duration(milliseconds: 100), _crossfadeStep);
+    } else if (hasNext && playing) {
+      _crossfadeTimer = Timer(Duration(milliseconds: max(outAt - position, 1)), _crossfadeStep);
+    }
+  }
+
+  void _setRamp(double level) {
+    if (level == _ramp) return;
+    _ramp = level;
+    _applyVolume();
   }
 
   // ------------------------------------------------------------------ picture quality
@@ -1871,6 +1953,7 @@ class WebBackend extends BackendDefaults {
     final item = _playingNow();
     final playing = player.isPlaying();
     _watchListening(item, playing);
+    _crossfadeStep();
     if (!_events.hasListener) return;
     _tellBrowser(item, playing);
     // After a restart nothing is loaded yet, and the song shows where it will resume

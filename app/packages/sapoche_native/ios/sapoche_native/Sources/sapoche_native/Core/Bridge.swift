@@ -497,6 +497,7 @@ final class Bridge {
                 "device": platform.deviceModel, "trimMs": controller.trimMs, "videoHeight": videoHeight,
                 "server": settings.server, "autoplay": controller.autoplayOn, "shareTaste": controller.shareTasteOn, "configured": settings.isSet, "key": !settings.key.isEmpty,
                 "audioQuality": audioQuality.rawValue, "normalizeVolume": controller.normalizeVolumeOn,
+                "crossfadeSeconds": controller.crossfadeSeconds,
             ]
             // Only a name the person chose: the phone's own name would be shown to everybody in the room
             if let name = prefs.string(Self.keyRoomName) { profile["name"] = name }
@@ -536,6 +537,9 @@ final class Bridge {
             return nil
         case "setNormalizeVolume":
             controller.normalizeVolumeOn = bool("on")
+            return nil
+        case "setCrossfade":
+            controller.crossfadeSeconds = int("seconds")
             return nil
         case "forYou":
             return try await suggestions.forYou().map { $0.toMap() }

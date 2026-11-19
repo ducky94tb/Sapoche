@@ -596,6 +596,9 @@ class FakeBackend implements Backend {
   @override
   Future<void> setNormalizeVolume(bool on) => _record('normalizeVolume $on');
 
+  @override
+  Future<void> setCrossfade(int seconds) => _record('crossfade $seconds');
+
   SongRadio radioResult = const SongRadio();
   RelatedPage relatedResult = const RelatedPage();
   ArtistPage artistResult = const ArtistPage(id: 'UC1', name: 'Artist');

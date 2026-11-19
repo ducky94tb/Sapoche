@@ -3093,6 +3093,25 @@ void main() {
       expect(tester.widget<SwitchListTile>(switchKey).value, isFalse);
     });
 
+    testWidgets('the slider of the soft change between songs starts at off and tells the native side', (
+      tester,
+    ) async {
+      final (backend, _) = await pumpApp(tester);
+      backend.emit(const StateEvent(RoomSnapshot()));
+      await tester.pumpAndSettle();
+      await openTopic(tester, 'playback');
+
+      final sliderKey = find.byKey(const ValueKey('crossfade-slider'));
+      await tester.ensureVisible(sliderKey);
+      expect(tester.widget<Slider>(sliderKey).value, 0);
+      expect(find.text('Off'), findsWidgets);
+      final box = tester.getRect(sliderKey);
+      // The right end of the track is 12 s
+      await tester.tapAt(Offset(box.right - 24, box.center.dy));
+      await tester.pumpAndSettle();
+      expect(backend.calls, contains('crossfade 12'));
+    });
+
     testWidgets('the autoplay switch in settings tells the native side', (
       tester,
     ) async {

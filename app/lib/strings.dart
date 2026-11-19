@@ -1137,6 +1137,15 @@ abstract final class S {
     'Bài to được hạ xuống đúng mức YouTube vẫn phát, để các bài nghe to bằng nhau. Bài nhỏ giữ nguyên. Tắt đi để nghe bài đúng như lúc được thu. Bài từ tệp trên máy không bị đổi.',
   );
 
+  static String get crossfade => _t('Soft song change', 'Chuyển bài mềm');
+  static String get crossfadeOff => _t('Off', 'Tắt');
+  static String crossfadeSeconds(int seconds) =>
+      _t('$seconds s', '$seconds giây');
+  static String get crossfadeHelp => _t(
+    'The end of a song fades out and the start of the next one fades in. Songs never overlap, so everyone in a room stays in step. It does not apply when you press Next or choose a song, to songs shorter than three times this long, or while the video is shown.',
+    'Cuối bài nhỏ dần, đầu bài kế to dần. Hai bài không chồng lên nhau nên cả phòng vẫn cùng nhịp. Không áp dụng khi bấm Next hoặc chọn bài, với bài ngắn hơn ba lần thời gian này, hay khi đang hiện video.',
+  );
+
   // Picture
   static String get modeAudio => _t('Audio', 'Âm thanh');
   static String get modeVideo => _t('Video', 'Video');

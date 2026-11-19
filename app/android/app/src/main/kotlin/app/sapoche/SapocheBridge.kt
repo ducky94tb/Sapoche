@@ -10,6 +10,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.sapoche.core.AudioQuality
+import app.sapoche.core.Crossfade
 import app.sapoche.core.TrackInfo
 import app.sapoche.core.YoutubeLinks
 import app.sapoche.sync.ChatCipher
@@ -449,6 +450,7 @@ class SapocheBridge(
                 "shareTaste" to prefs.getBoolean("share_taste", true),
                 "audioQuality" to SapocheApp.audioQuality.level,
                 "normalizeVolume" to prefs.getBoolean("normalize_volume", true),
+                "crossfadeSeconds" to prefs.getInt("crossfade_seconds", 0),
             )
             "setupLink" -> return Config.setupLink()
             // The server of this build is the one built in; only the key of a build for the public is taken from the link
@@ -518,6 +520,11 @@ class SapocheBridge(
             }
             "setNormalizeVolume" -> {
                 prefs.edit().putBoolean("normalize_volume", call.argument<Boolean>("on") == true).apply()
+                return null
+            }
+            "setCrossfade" -> {
+                val seconds = (call.argument<Number>("seconds") ?: 0).toInt().coerceIn(0, Crossfade.MAX_SECONDS)
+                prefs.edit().putInt("crossfade_seconds", seconds).apply()
                 return null
             }
             "forYou" -> return SapocheApp.suggestions.forYou().map { it.toMap() }

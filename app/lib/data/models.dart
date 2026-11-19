@@ -1182,6 +1182,7 @@ class Profile {
     this.hasKey = true,
     this.audioQuality = AudioQuality.max,
     this.normalizeVolume = true,
+    this.crossfadeSeconds = 0,
     this.libraryLost = false,
   });
 
@@ -1205,6 +1206,9 @@ class Profile {
   /// Loud songs are turned down to the level of the others. A browser has nothing to say in it: YouTube's player does it.
   final bool normalizeVolume;
 
+  /// Seconds of the soft change between songs (the end of a song fades out, the start of the next fades in), 0 for none.
+  final int crossfadeSeconds;
+
   /// The address of the room server is known. On Android it is built into the app; on iOS the person enters it.
   final bool configured;
 
@@ -1226,6 +1230,7 @@ class Profile {
     hasKey: hasKey,
     audioQuality: audioQuality,
     normalizeVolume: normalizeVolume,
+    crossfadeSeconds: crossfadeSeconds,
     libraryLost: libraryLost,
   );
 
@@ -1240,6 +1245,7 @@ class Profile {
     hasKey: hasKey,
     audioQuality: audioQuality,
     normalizeVolume: normalizeVolume,
+    crossfadeSeconds: crossfadeSeconds,
     libraryLost: libraryLost,
   );
 
@@ -1254,6 +1260,7 @@ class Profile {
     hasKey: hasKey,
     audioQuality: value,
     normalizeVolume: normalizeVolume,
+    crossfadeSeconds: crossfadeSeconds,
     libraryLost: libraryLost,
   );
 
@@ -1268,6 +1275,22 @@ class Profile {
     hasKey: hasKey,
     audioQuality: audioQuality,
     normalizeVolume: value,
+    crossfadeSeconds: crossfadeSeconds,
+    libraryLost: libraryLost,
+  );
+
+  Profile withCrossfadeSeconds(int value) => Profile(
+    name: name,
+    device: device,
+    trimMs: trimMs,
+    server: server,
+    autoplay: autoplay,
+    shareTaste: shareTaste,
+    configured: configured,
+    hasKey: hasKey,
+    audioQuality: audioQuality,
+    normalizeVolume: normalizeVolume,
+    crossfadeSeconds: value,
     libraryLost: libraryLost,
   );
 
@@ -1282,9 +1305,13 @@ class Profile {
     hasKey: map['key'] as bool? ?? true,
     audioQuality: AudioQuality.of((map['audioQuality'] as num?)?.toInt()),
     normalizeVolume: map['normalizeVolume'] as bool? ?? true,
+    crossfadeSeconds: (map['crossfadeSeconds'] as num?)?.toInt() ?? 0,
     libraryLost: map['libraryLost'] as bool? ?? false,
   );
 }
+
+/// The longest soft change between songs, in seconds (the setting; `Crossfade` in each core clamps to the same).
+const maxCrossfadeSeconds = 12;
 
 /// What the sleep timer is set to.
 enum SleepMode { off, time, song }

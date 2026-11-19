@@ -329,6 +329,12 @@ void main() {
     () {
       expect(Profile.fromMap({'name': 'Anna'}).audioQuality, AudioQuality.max);
       expect(Profile.fromMap({'name': 'Anna'}).normalizeVolume, isTrue);
+      expect(Profile.fromMap({'name': 'Anna'}).crossfadeSeconds, 0);
+      expect(Profile.fromMap({'crossfadeSeconds': 6}).crossfadeSeconds, 6);
+      expect(
+        const Profile(crossfadeSeconds: 6).withAutoplay(false).crossfadeSeconds,
+        6,
+      );
       expect(
         Profile.fromMap({'normalizeVolume': false}).normalizeVolume,
         isFalse,

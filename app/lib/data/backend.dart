@@ -458,6 +458,10 @@ abstract class Backend {
   /// song that plays. A browser does nothing: YouTube's player does it by itself.
   Future<void> setNormalizeVolume(bool on);
 
+  /// The seconds (0 for none, up to 12) of the soft change between songs: the end of a song fades out and the start of the
+  /// next one fades in, when it came by itself. The songs do not overlap, so a room stays in step.
+  Future<void> setCrossfade(int seconds);
+
   /// The person's playlists, the one changed last first.
   Future<List<SavedPlaylist>> playlists();
   Future<List<Track>> playlistTracks(int id);
@@ -1141,6 +1145,10 @@ class NativeBackend implements Backend {
   @override
   Future<void> setNormalizeVolume(bool on) =>
       _call('setNormalizeVolume', {'on': on});
+
+  @override
+  Future<void> setCrossfade(int seconds) =>
+      _call('setCrossfade', {'seconds': seconds});
 
   @override
   Future<SongRadio> musicNext(String videoId) async => SongRadio.fromMap(

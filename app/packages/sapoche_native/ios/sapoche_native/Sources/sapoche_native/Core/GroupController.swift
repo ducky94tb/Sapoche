@@ -719,7 +719,11 @@ final class GroupController {
     }
 
     /// The picture is on screen; when it is not, it is neither downloaded nor decoded.
-    func setVideoVisible(_ visible: Bool) { engine.setVideoVisible(visible) }
+    func setVideoVisible(_ visible: Bool) {
+        pictureVisible = visible
+        engine.setVideoVisible(visible)
+        applyVolume()
+    }
 
     /// The tallest picture asked for changed.
     func videoQualityChanged() { engine.videoQualityChanged() }
@@ -1204,7 +1208,86 @@ final class GroupController {
         applyVolume()
     }
 
-    /// The player's volume is the song's own factor (from its loudness) times the fade of the sleep timer.
+    /// The seconds of the soft change between songs (see [Crossfade]), 0 for none; the person's choice.
+    var crossfadeSeconds: Int {
+        get { min(max(Int(prefs.int64(Self.keyCrossfade, default: 0)), 0), Crossfade.maxSeconds) }
+        set {
+            prefs.set(Int64(min(max(newValue, 0), Crossfade.maxSeconds)), for: Self.keyCrossfade)
+            applyVolume()
+        }
+    }
+
+    /// What the song that plays was like when the soft change last looked at it.
+    private struct Seen {
+        let id: String
+        let positionMs: Int64
+        let durationMs: Int64
+        let playing: Bool
+        let atMs: Int64
+    }
+
+    private var seen: Seen?
+
+    /// The song that plays came by itself, so it fades in; one that was chosen starts as it is.
+    private var startedByItself = false
+    private var crossfadeJob: Job?
+    private var pictureVisible = false
+
+    /// The share of the volume the soft change allows at the position of the song that plays.
+    private func crossfadeRamp() -> Float {
+        let seconds = crossfadeSeconds
+        guard seconds > 0 else {
+            seen = nil
+            return 1
+        }
+        guard let item = engine.loadedItem else { return 1 }
+        let info = engine.playerInfo()
+        let now = time.nowMs()
+        let duration = item.durMs > 0 ? item.durMs : info.durationMs
+        if let before = seen, before.id != item.id {
+            // Neither the engine nor the sessions say how a song was left; the one that played to its end is known by where it was
+            startedByItself = before.playing && Crossfade.endedItself(
+                lastPositionMs: before.positionMs, durationMs: before.durationMs, elapsedMs: now - before.atMs)
+        }
+        seen = Seen(id: item.id, positionMs: info.positionMs, durationMs: duration, playing: info.playing, atMs: now)
+        if videoMode && pictureVisible { return 1 }
+        return Crossfade.ramp(
+            positionMs: info.positionMs, durationMs: duration, seconds: seconds, fadeIn: startedByItself, fadeOut: hasSuccessor)
+    }
+
+    private var hasSuccessor: Bool { session?.hasSuccessor ?? local.hasSuccessor }
+
+    /// Runs the clock only while a soft change is on: 30 times a second inside it, and once at the moment the end of the
+    /// song gets to it. Outside, nothing runs.
+    private func scheduleCrossfadeTick() {
+        crossfadeJob?.cancel()
+        crossfadeJob = nil
+        let seconds = crossfadeSeconds
+        guard seconds > 0, let seen, seen.playing, !(videoMode && pictureVisible),
+              Crossfade.applies(durationMs: seen.durationMs, seconds: seconds) else { return }
+        let outAt = seen.durationMs - Int64(seconds) * 1000
+        let delay: Int64
+        if startedByItself && seen.positionMs < Int64(seconds) * 500 {
+            delay = Self.crossfadeTickMs
+        } else if !hasSuccessor {
+            return
+        } else if seen.positionMs >= outAt {
+            delay = Self.crossfadeTickMs
+        } else {
+            delay = max(outAt - seen.positionMs, 1)
+        }
+        crossfadeJob = ownScope.launch { [weak self] in
+            guard let self else { return }
+            try await self.time.sleep(ms: delay)
+            self.applyVolume()
+        }
+    }
+
+    private static let crossfadeTickMs: Int64 = 33
+    private static let keyCrossfade = "crossfade_seconds"
+
+    /// The player's volume is the song's own factor (from its loudness) times the fade of the sleep timer times the soft
+    /// change between songs.
     private func applyVolume() {
         let id = engine.loadedItem?.videoId
         var gain: Float = 1
@@ -1220,7 +1303,8 @@ final class GroupController {
                 }
             }
         }
-        let volume = fade * gain
+        let volume = fade * gain * crossfadeRamp()
+        scheduleCrossfadeTick()
         if volume == appliedVolume { return }
         appliedVolume = volume
         engine.setVolume(volume)

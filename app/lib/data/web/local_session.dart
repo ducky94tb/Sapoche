@@ -218,6 +218,9 @@ class LocalSession {
 
   /// Item handed to the player as the gapless successor of the loaded one.
   QueueEntry? _preloaded;
+
+  /// A song follows the one loaded, handed to the player to play with no gap.
+  bool get hasSuccessor => _preloaded != null;
   Job? _job;
 
   /// Reloads used on the current item; stops endless retry loops on a broken stream.

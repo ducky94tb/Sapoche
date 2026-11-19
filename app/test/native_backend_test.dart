@@ -75,6 +75,19 @@ void main() {
     },
   );
 
+  test('the seconds of the soft change cross as a number, and come back in the profile', () async {
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(control, (call) async {
+      calls.add(call);
+      return call.method == 'profile' ? {'crossfadeSeconds': 8} : null;
+    });
+    final backend = NativeBackend();
+    await backend.setCrossfade(8);
+    expect(calls.single.method, 'setCrossfade');
+    expect(calls.single.arguments, {'seconds': 8});
+    expect((await backend.profile()).crossfadeSeconds, 8);
+  });
+
   test('everyone who listens shares one platform subscription', () async {
     var listens = 0;
     messenger.setMockStreamHandler(

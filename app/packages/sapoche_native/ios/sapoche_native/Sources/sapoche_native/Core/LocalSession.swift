@@ -142,6 +142,9 @@ final class LocalSession {
 
     /// Item handed to the player as the gapless successor of the loaded one.
     private var preloaded: QueueItem?
+
+    /// A song follows the one loaded, handed to the player to play with no gap.
+    var hasSuccessor: Bool { preloaded != nil }
     private var job: Job?
 
     /// Reloads used on the current item; stops endless retry loops on a broken stream.

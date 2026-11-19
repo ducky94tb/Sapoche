@@ -234,6 +234,9 @@ class ExoPlayerPort(private val player: ExoPlayer) : PlayerPort {
         return videoOn && loaded != null && !SapocheMediaSourceFactory.isVideo(current)
     }
 
+    /** The picture is loaded and on screen. */
+    val pictureShown: Boolean get() = videoOn && videoVisible
+
     /** Whether the picture is on screen. Off, the picture stream is neither downloaded nor decoded. */
     fun setVideoVisible(visible: Boolean) {
         if (videoVisible == visible) return
@@ -298,6 +301,8 @@ class ExoPlayerPort(private val player: ExoPlayer) : PlayerPort {
             MediaMetadata.Builder()
                 .setTitle(item.title)
                 .setArtist(item.artist)
+                // The soft change between songs needs the length of the song that follows before it is loaded
+                .setDurationMs(item.durMs.takeIf { it > 0 })
                 .apply {
                     // The system draws pictures from addresses it knows how to read, which the one of a song from a file is
                     // not: the picture itself goes along, when it has been read

@@ -794,6 +794,13 @@ void main() {
     },
   );
 
+  test('the soft change between songs is off until set, and the seconds go to the native side', () async {
+    expect(controller.crossfadeSeconds, 0);
+    await controller.setCrossfade(6);
+    expect(controller.crossfadeSeconds, 6);
+    expect(backend.calls.last, 'crossfade 6');
+  });
+
   test('the sleep timer follows what the native side reports', () async {
     expect(controller.sleep.on, isFalse);
     await controller.setSleep(SleepMode.time, minutes: 30);

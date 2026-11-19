@@ -1444,6 +1444,15 @@ class RoomController extends ChangeNotifier {
     return _run(() => _backend.setNormalizeVolume(on));
   }
 
+  /// Seconds of the soft change between songs, 0 for none.
+  int get crossfadeSeconds => _profile.crossfadeSeconds;
+
+  Future<void> setCrossfade(int seconds) {
+    _profile = _profile.withCrossfadeSeconds(seconds);
+    notifyListeners();
+    return _run(() => _backend.setCrossfade(seconds));
+  }
+
   /// What YouTube would complete a half-typed search to.
   Future<List<String>> suggest(String query) async {
     try {

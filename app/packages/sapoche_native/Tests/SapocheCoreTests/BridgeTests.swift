@@ -364,6 +364,10 @@ final class BridgeTests: XCTestCase {
     func testTheVolumeBalanceIsOnUntilTheSwitchSaysOtherwise() async throws {
         var profile = try await result("profile", as: [String: Any].self)
         XCTAssertEqual(profile["normalizeVolume"] as? Bool, true)
+        XCTAssertEqual(profile["crossfadeSeconds"] as? Int, 0)
+        _ = try await call("setCrossfade", ["seconds": 8])
+        profile = try await result("profile", as: [String: Any].self)
+        XCTAssertEqual(profile["crossfadeSeconds"] as? Int, 8)
         _ = try await call("setNormalizeVolume", ["on": false])
         profile = try await result("profile", as: [String: Any].self)
         XCTAssertEqual(profile["normalizeVolume"] as? Bool, false)
@@ -1395,6 +1399,54 @@ final class GroupControllerTests: XCTestCase {
         XCTAssertEqual(engine.volume, 1)
         controller.normalizeVolumeOn = true
         XCTAssertEqual(engine.volume, 0.4704, accuracy: 0.0001)
+    }
+
+    func testASoftChangeFadesTheEndOfASongAndTheStartOfTheNextOneThatCameByItself() async {
+        controller.requestAddMany([song(1), song(2)], playNext: false)
+        await time.advance(100)
+        controller.requestPlay()
+        await time.advance(100)
+        XCTAssertTrue(engine.playing)
+        XCTAssertEqual(controller.crossfadeSeconds, 0, "off unless the person turns it on")
+        controller.crossfadeSeconds = 6
+        await time.advance(100)
+        XCTAssertEqual(engine.volume, 1, "far from both ends")
+        engine.nudge(195_500 - engine.position)
+        engine.onChange?() // a seek is told, as the real player does
+        await time.advance(10)
+        XCTAssertEqual(engine.volume, 0.8536, accuracy: 0.02, "4.5 s before the end")
+        await time.advance(3_000)
+        XCTAssertEqual(engine.volume, 0.1464, accuracy: 0.02, "1.5 s before the end")
+        await time.advance(1_500)
+        engine.autoAdvance()
+        engine.onChange?()
+        XCTAssertEqual(engine.loaded?.videoId, "video000002")
+        XCTAssertEqual(engine.volume, 0, accuracy: 0.02, "the next song starts silent")
+        await time.advance(1_500)
+        XCTAssertEqual(engine.volume, 0.5, accuracy: 0.05, "half of the fade in")
+        await time.advance(1_600)
+        XCTAssertEqual(engine.volume, 1)
+    }
+
+    func testASongThatIsChosenStartsAtFullAndTheLastSongOfTheQueueEndsAtFull() async {
+        controller.requestAddMany([song(1), song(2)], playNext: false)
+        await time.advance(100)
+        controller.requestPlay()
+        await time.advance(100)
+        controller.crossfadeSeconds = 6
+        engine.nudge(197_000 - engine.position)
+        engine.onChange?()
+        await time.advance(10)
+        XCTAssertLessThan(engine.volume, 0.6)
+        controller.requestNext()
+        await time.advance(100)
+        engine.onChange?()
+        XCTAssertEqual(engine.loaded?.videoId, "video000002")
+        XCTAssertEqual(engine.volume, 1, "a press on Next is no soft change")
+        engine.nudge(199_000 - engine.position)
+        engine.onChange?()
+        await time.advance(10)
+        XCTAssertEqual(engine.volume, 1, "nothing follows the last song")
     }
 
     func testTheFadeOfTheSleepTimerIsTakenOfTheSongsOwnVolumeNotOfFull() async {

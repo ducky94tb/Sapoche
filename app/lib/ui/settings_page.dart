@@ -732,12 +732,17 @@ class _SettingsPageState extends State<SettingsPage> {
     ),
     // The sound of a browser is YouTube's own, which picks it by itself; the picture is asked for by the size it is laid out at
     if (kIsWeb)
-      _Group(footer: S.webQualityHelp, children: const [])
+      _Group(
+        title: S.soundSection,
+        footer: '${S.webQualityHelp}\n\n${S.crossfadeHelp}',
+        children: [_CrossfadeRow(controller: model.room)],
+      )
     else
       _Group(
         title: S.soundSection,
         // What the switch under the qualities would say at length is here, as the other pages say theirs
-        footer: '${S.audioQualityHelp}\n\n${S.normalizeVolumeHelp}',
+        footer:
+            '${S.audioQualityHelp}\n\n${S.normalizeVolumeHelp}\n\n${S.crossfadeHelp}',
         children: [
           ListenableBuilder(
             listenable: model.room,
@@ -786,6 +791,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
           ),
+          _CrossfadeRow(controller: model.room),
         ],
       ),
     _Group(
@@ -1753,6 +1759,68 @@ class _Row extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// How long the soft change between songs is, from off to [maxCrossfadeSeconds] seconds.
+class _CrossfadeRow extends StatefulWidget {
+  const _CrossfadeRow({required this.controller});
+
+  final RoomController controller;
+
+  @override
+  State<_CrossfadeRow> createState() => _CrossfadeRowState();
+}
+
+class _CrossfadeRowState extends State<_CrossfadeRow> {
+  double? _dragging;
+
+  static String _label(int seconds) =>
+      seconds == 0 ? S.crossfadeOff : S.crossfadeSeconds(seconds);
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final theme = Theme.of(context).textTheme;
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        final saved = widget.controller.crossfadeSeconds;
+        final value = (_dragging ?? saved.toDouble()).clamp(
+          0.0,
+          maxCrossfadeSeconds.toDouble(),
+        );
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 6),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: Text(S.crossfade, style: theme.bodyLarge)),
+                  Text(
+                    _label(value.round()),
+                    style: theme.bodyLarge?.copyWith(color: p.textSecondary),
+                  ),
+                ],
+              ),
+              Slider(
+                key: const ValueKey('crossfade-slider'),
+                value: value,
+                max: maxCrossfadeSeconds.toDouble(),
+                divisions: maxCrossfadeSeconds,
+                label: _label(value.round()),
+                semanticFormatterCallback: (v) => _label(v.round()),
+                onChanged: (v) => setState(() => _dragging = v),
+                onChangeEnd: (v) {
+                  widget.controller.setCrossfade(v.round());
+                  setState(() => _dragging = null);
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

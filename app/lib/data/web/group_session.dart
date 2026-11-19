@@ -210,6 +210,9 @@ class GroupSession {
   /// Item currently handed to the player as the gapless successor of the loaded one.
   QueueEntry? _preloaded;
 
+  /// A song follows the one loaded, handed to the player to play with no gap.
+  bool get hasSuccessor => _preloaded != null;
+
   /// The room advanced before this device did; adopt its start time once the local player follows.
   _PendingAdopt? _pendingAdopt;
   Job? _advanceJob;

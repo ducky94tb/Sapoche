@@ -131,11 +131,16 @@ class GroupController(
     private class OwedFill(val epoch: Long, val songs: List<TrackRef>, val title: String)
 
     /** Songs of different loudness are played at one level, unless the person turned that off. */
-    private val balance = VolumeBalance(exo, SapocheApp.loudness, ownScope) { prefs.getBoolean(KEY_NORMALIZE, true) }
+    private val balance = VolumeBalance(
+        exo, SapocheApp.loudness, ownScope,
+        on = { prefs.getBoolean(KEY_NORMALIZE, true) },
+        crossfade = { prefs.getInt(KEY_CROSSFADE, 0) },
+        pictureShown = { port.pictureShown },
+    )
 
     /** The screen turns the evening out on or off by writing the choice; the song that plays follows at once. (Kept in a field: preferences hold their listeners weakly.) */
     private val normalizeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == KEY_NORMALIZE) balance.changed()
+        if (key == KEY_NORMALIZE || key == KEY_CROSSFADE) balance.changed()
     }.also { prefs.registerOnSharedPreferenceChangeListener(it) }
 
     /** Stops this device after a while, or when the song is over; the fade is a share of the song's own volume. */
@@ -1261,6 +1266,7 @@ class GroupController(
         const val KEY_LAST_ACTIVE = "room_last_active"
         const val KEY_VIDEO = "video_mode"
         const val KEY_NORMALIZE = "normalize_volume"
+        const val KEY_CROSSFADE = "crossfade_seconds"
         const val KEY_AUTOPLAY = "autoplay"
         const val KEY_SHARE_TASTE = "share_taste"
         const val TASTE_PROTOCOL = 19

@@ -172,6 +172,9 @@ final class GroupSession {
     /// Item currently handed to the player as the gapless successor of the loaded one.
     private var preloaded: QueueItem?
 
+    /// A song follows the one loaded, handed to the player to play with no gap.
+    var hasSuccessor: Bool { preloaded != nil }
+
     /// The room advanced before this device did; adopt its start time once the local player follows.
     private struct PendingAdopt {
         let itemId: String
