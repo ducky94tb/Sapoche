@@ -477,6 +477,15 @@ final class Bridge {
 
     // ------------------------------------------------------------------ commands
 
+    /// What the settings page shows of ListenBrainz; [result] says how a connect went (`ok`, `invalid` or `offline`).
+    private func scrobbleMap(_ result: String? = nil) -> [String: Any] {
+        let status = controller.scrobbler?.status() ?? ScrobbleStatus(connected: false, user: nil, nowPlaying: true, pending: 0, reconnect: false)
+        var map: [String: Any] = ["connected": status.connected, "nowPlaying": status.nowPlaying, "pending": status.pending, "reconnect": status.reconnect]
+        if let user = status.user { map["user"] = user }
+        if let result { map["result"] = result }
+        return map
+    }
+
     func handle(_ method: String, _ args: [String: Any]) async throws -> Any? {
         func string(_ key: String) -> String { args[key] as? String ?? "" }
         func bool(_ key: String) -> Bool { args[key] as? Bool == true }
@@ -542,6 +551,17 @@ final class Bridge {
         case "setCrossfade":
             controller.crossfadeSeconds = int("seconds")
             return nil
+        case "scrobbleState":
+            return scrobbleMap()
+        case "scrobbleConnect":
+            guard let scrobbler = controller.scrobbler else { return scrobbleMap("offline") }
+            return scrobbleMap("\(await scrobbler.connect(string("token")))")
+        case "scrobbleDisconnect":
+            controller.scrobbler?.disconnect()
+            return scrobbleMap()
+        case "scrobbleNowPlaying":
+            controller.scrobbler?.setNowPlaying(args["on"] as? Bool ?? true)
+            return scrobbleMap()
         case "setEqualizer":
             controller.setEqualizer(preset: string("preset"), gains: (args["gains"] as? [Any] ?? []).map { JSON($0).int ?? 0 })
             return nil

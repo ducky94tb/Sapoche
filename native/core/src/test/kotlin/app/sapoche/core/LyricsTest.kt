@@ -145,6 +145,15 @@ class LyricsTest {
     }
 
     @Test
+    fun `the credit stays whole and only loses the channel suffix`() {
+        assertEquals("Simon & Garfunkel", SongNames.credit("Simon & Garfunkel"))
+        assertEquals("A, B & C", SongNames.credit(" A, B & C "))
+        assertEquals("Rick Astley", SongNames.credit("Rick Astley - Topic"))
+        assertEquals("Adele", SongNames.credit("Adele VEVO"))
+        assertEquals("VEVO", SongNames.credit("VEVO"), "never leaves nothing")
+    }
+
+    @Test
     fun `the first artist is the main one`() {
         assertEquals("Sơn Tùng M-TP", SongNames.artist("Sơn Tùng M-TP"))
         assertEquals("Rick Astley", SongNames.artist("Rick Astley - Topic"))

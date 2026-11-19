@@ -3144,6 +3144,60 @@ void main() {
       expect(backend.calls.last, 'equalizer off 0,0,0,0,0,0');
     });
 
+    testWidgets('ListenBrainz is connected by pasting a token, shows whose it is, and goes again on disconnect', (
+      tester,
+    ) async {
+      final (backend, _) = await pumpApp(tester);
+      backend.emit(const StateEvent(RoomSnapshot()));
+      await tester.pumpAndSettle();
+      await openTopic(tester, 'scrobble');
+
+      expect(find.text('Not connected'), findsOneWidget);
+      expect(find.byKey(const ValueKey('scrobble-user')), findsNothing);
+
+      backend.scrobbleAnswer = 'invalid';
+      await tester.tap(find.byKey(const ValueKey('scrobble-paste')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '  secret-token  ');
+      await tester.tap(find.text(S.save));
+      await tester.pumpAndSettle();
+      expect(backend.calls, contains('scrobbleConnect secret-token'));
+      expect(find.textContaining('That token is not valid'), findsOneWidget);
+      expect(find.text('Not connected'), findsOneWidget);
+
+      backend.scrobbleAnswer = 'ok';
+      await tester.tap(find.byKey(const ValueKey('scrobble-paste')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'good-token');
+      await tester.tap(find.text(S.save));
+      await tester.pumpAndSettle();
+      expect(find.text('tvh'), findsOneWidget);
+      expect(find.text('Connected as tvh'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('scrobble-now-playing')));
+      await tester.pumpAndSettle();
+      expect(backend.calls.last, 'scrobbleNowPlaying false');
+
+      await tester.tap(find.byKey(const ValueKey('scrobble-disconnect')));
+      await tester.pumpAndSettle();
+      expect(backend.calls.last, 'scrobbleDisconnect');
+      expect(find.text('Not connected'), findsOneWidget);
+    });
+
+    testWidgets('listens waiting to be sent are shown, and a refused token asks for a new one', (tester) async {
+      final (backend, _) = await pumpApp(tester);
+      backend.scrobble = const ScrobbleState(connected: true, user: 'tvh', pending: 3, reconnect: true);
+      backend.emit(const StateEvent(RoomSnapshot()));
+      await tester.pumpAndSettle();
+      await openTopic(tester, 'scrobble');
+
+      expect(find.text('Waiting to be sent: 3'), findsOneWidget);
+      expect(find.textContaining('refused the token'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('scrobble-user')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsOneWidget);
+    });
+
     testWidgets('the autoplay switch in settings tells the native side', (
       tester,
     ) async {

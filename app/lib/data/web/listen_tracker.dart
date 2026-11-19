@@ -5,7 +5,12 @@
 ///
 /// It keeps no clock and no timer: the caller passes the time in. Dart counterpart of `ListenTracker.kt`.
 class ListenTracker {
-  ListenTracker({this.skipped, required this.heard});
+  ListenTracker({
+    this.skipped,
+    required this.heard,
+    this.heardAfterMs = heardMs,
+    this.minDurationMs = 0,
+  });
 
   /// Called once for a song left after a few seconds, before it counted, with its id and length: the person did not
   /// want it.
@@ -13,6 +18,12 @@ class ListenTracker {
 
   /// Called once per song, with its id and the length last reported (0 if unknown).
   final void Function(String id, int durationMs) heard;
+
+  /// The playing time after which a song counts; a song shorter than twice this counts at half of it.
+  final int heardAfterMs;
+
+  /// A song of this length or less never counts (0: every song can). A song of unknown length is not held back.
+  final int minDurationMs;
 
   String? _id;
   int _durationMs = 0;
@@ -60,7 +71,7 @@ class ListenTracker {
   /// How long until the song counts if it keeps playing, or null when that is not going to happen.
   int? msUntilHeard(int now) {
     final since = _playingSince;
-    if (since == null || _id == null || _counted) return null;
+    if (since == null || _id == null || _counted || _tooShort()) return null;
     final left = _threshold() - _playedMs - (now - since);
     return left < 0 ? 0 : left;
   }
@@ -68,12 +79,14 @@ class ListenTracker {
   /// Counts the song if it has been played long enough by [now].
   void check(int now) {
     final current = _id;
-    if (current == null || _counted) return;
+    if (current == null || _counted || _tooShort()) return;
     final since = _playingSince;
     if (_playedMs + (since == null ? 0 : now - since) < _threshold()) return;
     _counted = true;
     heard(current, _durationMs);
   }
 
-  int _threshold() => _durationMs > 0 && _durationMs ~/ 2 < heardMs ? _durationMs ~/ 2 : heardMs;
+  int _threshold() => _durationMs > 0 && _durationMs ~/ 2 < heardAfterMs ? _durationMs ~/ 2 : heardAfterMs;
+
+  bool _tooShort() => _durationMs > 0 && _durationMs <= minDurationMs;
 }

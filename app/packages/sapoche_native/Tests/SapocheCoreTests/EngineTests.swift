@@ -35,6 +35,46 @@ final class ListenTrackerTests: XCTestCase {
         XCTAssertTrue(heard.isEmpty)
     }
 
+    // The mark of a scrobble: half the song or four minutes, and never a song of thirty seconds or less
+    private func scrobble() -> ListenTracker {
+        ListenTracker(heard: { [unowned self] id, duration in self.heard.append((id, duration)) }, heardAfterMs: 240_000, minDurationMs: 30_000)
+    }
+
+    func testAScrobbleDoesNotCountASongOfThirtySeconds() {
+        let tracker = scrobble()
+        tracker.begin(songId: "jingle", durationMs: 30_000, now: 0)
+        tracker.setPlaying(true, now: 0)
+        XCTAssertNil(tracker.msUntilHeard(0))
+        tracker.check(60_000)
+        XCTAssertTrue(heard.isEmpty)
+        tracker.begin(songId: "clip", durationMs: 31_000, now: 70_000)
+        tracker.setPlaying(true, now: 70_000)
+        tracker.check(85_500)
+        XCTAssertEqual(heard.map(\.0), ["clip"])
+    }
+
+    func testAScrobbleCountsASixMinuteSongAtThreeMinutesAndATenMinuteOneAtFour() {
+        let tracker = scrobble()
+        tracker.begin(songId: "six", durationMs: 360_000, now: 0)
+        tracker.setPlaying(true, now: 0)
+        XCTAssertEqual(tracker.msUntilHeard(0), 180_000)
+        tracker.check(179_999)
+        XCTAssertTrue(heard.isEmpty)
+        tracker.check(180_000)
+        tracker.begin(songId: "ten", durationMs: 600_000, now: 200_000)
+        tracker.setPlaying(true, now: 200_000)
+        XCTAssertEqual(tracker.msUntilHeard(200_000), 240_000)
+        tracker.check(440_000)
+        XCTAssertEqual(heard.map(\.0), ["six", "ten"])
+    }
+
+    func testAScrobbleWaitsForTheLengthOfASongItDoesNotKnow() {
+        let tracker = scrobble()
+        tracker.begin(songId: "live", durationMs: 0, now: 0)
+        tracker.setPlaying(true, now: 0)
+        XCTAssertEqual(tracker.msUntilHeard(0), 240_000)
+    }
+
     func testASongThatWasHeardIsNotSkippedAndNorIsOneLeftAtOnceOrNeverPlayed() {
         var skipped: [String] = []
         let watcher = watching { skipped.append($0) }

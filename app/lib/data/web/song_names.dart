@@ -26,6 +26,12 @@ abstract final class SongNames {
     return text.isEmpty ? raw.trim() : text;
   }
 
+  /// The whole credit as another service should get it: "A, B & C" stays whole; only "- Topic", "VEVO" or "Official" is taken off.
+  static String credit(String raw) {
+    final credit = raw.trim().replaceAll(_channelSuffix, '').trim();
+    return credit.isEmpty ? raw.trim() : credit;
+  }
+
   /// The first artist of a credit like "A, B & C", without "- Topic", "VEVO" or "Official".
   static String artist(String raw) {
     final first = raw.trim().replaceAll(_channelSuffix, '').split(_artistSplit).first;

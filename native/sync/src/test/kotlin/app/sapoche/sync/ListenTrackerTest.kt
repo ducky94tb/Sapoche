@@ -149,4 +149,42 @@ class ListenTrackerTest {
         watching.begin("b", 200_000, now = 600_000)
         assertEquals(emptyList(), skipped, "two seconds of playing is a glitch, however long it sat paused")
     }
+
+    // The mark of a scrobble: half the song or four minutes, and never a song of thirty seconds or less
+    private val scrobble = ListenTracker(heardAfterMs = 240_000, minDurationMs = 30_000) { id, durationMs -> heard += id to durationMs }
+
+    @Test
+    fun `a scrobble does not count a song of thirty seconds`() {
+        scrobble.begin("jingle", 30_000, now = 0)
+        scrobble.setPlaying(true, now = 0)
+        assertNull(scrobble.msUntilHeard(0))
+        scrobble.check(60_000)
+        assertEquals(emptyList(), heard)
+        scrobble.begin("clip", 31_000, now = 70_000)
+        scrobble.setPlaying(true, now = 70_000)
+        scrobble.check(85_500)
+        assertEquals(listOf("clip" to 31_000L), heard)
+    }
+
+    @Test
+    fun `a scrobble counts a six minute song at three minutes and a ten minute one at four`() {
+        scrobble.begin("six", 360_000, now = 0)
+        scrobble.setPlaying(true, now = 0)
+        assertEquals(180_000L, scrobble.msUntilHeard(0))
+        scrobble.check(179_999)
+        assertEquals(emptyList(), heard)
+        scrobble.check(180_000)
+        scrobble.begin("ten", 600_000, now = 200_000)
+        scrobble.setPlaying(true, now = 200_000)
+        assertEquals(240_000L, scrobble.msUntilHeard(200_000))
+        scrobble.check(440_000)
+        assertEquals(listOf("six", "ten"), heard.map { it.first })
+    }
+
+    @Test
+    fun `a scrobble waits for the length of a song it does not know`() {
+        scrobble.begin("live", 0, now = 0)
+        scrobble.setPlaying(true, now = 0)
+        assertEquals(240_000L, scrobble.msUntilHeard(0))
+    }
 }

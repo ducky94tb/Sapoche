@@ -603,6 +603,14 @@ final class LyricsTests: XCTestCase {
         XCTAssertEqual(SongNames.title("A - B", artist: "Someone else"), "A - B")
     }
 
+    func testTheCreditStaysWholeAndOnlyLosesTheChannelSuffix() {
+        XCTAssertEqual(SongNames.credit("Simon & Garfunkel"), "Simon & Garfunkel")
+        XCTAssertEqual(SongNames.credit(" A, B & C "), "A, B & C")
+        XCTAssertEqual(SongNames.credit("Rick Astley - Topic"), "Rick Astley")
+        XCTAssertEqual(SongNames.credit("Adele VEVO"), "Adele")
+        XCTAssertEqual(SongNames.credit("VEVO"), "VEVO", "never leaves nothing")
+    }
+
     func testTheFirstArtistIsTheMainOne() {
         XCTAssertEqual(SongNames.artist("Sơn Tùng M-TP"), "Sơn Tùng M-TP")
         XCTAssertEqual(SongNames.artist("Rick Astley - Topic"), "Rick Astley")

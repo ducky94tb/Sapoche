@@ -1467,6 +1467,26 @@ class RoomController extends ChangeNotifier {
 
   Future<void> openSystemEqualizer() => _run(_backend.openSystemEqualizer);
 
+  /// ListenBrainz: see [Backend.scrobbleState]. A failure of the backend is reported as a connect that could not reach it.
+  Future<ScrobbleState> scrobbleState() => _scrobble(_backend.scrobbleState);
+
+  Future<ScrobbleState> scrobbleConnect(String token) =>
+      _scrobble(() => _backend.scrobbleConnect(token));
+
+  Future<ScrobbleState> scrobbleDisconnect() =>
+      _scrobble(_backend.scrobbleDisconnect);
+
+  Future<ScrobbleState> scrobbleNowPlaying(bool on) =>
+      _scrobble(() => _backend.scrobbleNowPlaying(on));
+
+  Future<ScrobbleState> _scrobble(Future<ScrobbleState> Function() ask) async {
+    try {
+      return await ask();
+    } on Object {
+      return const ScrobbleState(result: 'offline');
+    }
+  }
+
   /// What YouTube would complete a half-typed search to.
   Future<List<String>> suggest(String query) async {
     try {

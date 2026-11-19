@@ -127,6 +127,8 @@ final class GroupController {
     private let awake: (@escaping () async -> Void) async -> Void
     /// The secrets of the rooms with end-to-end encrypted chat.
     let secrets: RoomSecretStore
+    /// Sends what plays to ListenBrainz when the person connected it; nil where there is nowhere to keep a token.
+    let scrobbler: Scrobbler?
     private let sockets: SocketFactory?
     private let clock = ClockSync()
     private let writer = DispatchQueue(label: "sapoche.queue-writer")
@@ -346,9 +348,11 @@ final class GroupController {
          moreLike: @escaping ([String], Set<String>, Int) async throws -> [TrackRef] = { _, _, _ in [] },
          tasteOffer: @escaping () async throws -> [TrackRef] = { [] },
          secrets: RoomSecretStore = MemorySecrets(),
+         scrobbler: Scrobbler? = nil,
          awake: @escaping (@escaping () async -> Void) async -> Void = { await $0() }) {
         self.engine = engine
         self.secrets = secrets
+        self.scrobbler = scrobbler
         self.prefs = prefs
         self.queueFile = queueFile
         self.config = config
@@ -392,7 +396,8 @@ final class GroupController {
         recorder = ListenRecorder(
             engine: engine, time: self.time, scope: ownScope, record: recordListen, recordSkip: recordSkip,
             sourceOf: { [weak self] in self?.listenSource($0) ?? ListenSource.chosen },
-            leftByOther: { [weak self] in self?.leftByOther() ?? false }
+            leftByOther: { [weak self] in self?.leftByOther() ?? false },
+            scrobbler: scrobbler
         )
         local.attach()
         engine.setVideoMode(videoMode)
@@ -1436,6 +1441,7 @@ final class ListenRecorder {
     private let recordSkip: (TrackRef, String) -> Void
     private let sourceOf: (QueueItem) -> String
     private let leftByOther: () -> Bool
+    private let scrobbler: Scrobbler?
     private var tracker: ListenTracker!
 
     /// The song being followed; kept whole so its details are not read from a player that has moved on.
@@ -1449,7 +1455,8 @@ final class ListenRecorder {
     /// another member of the room, which is not a skip of this person's.
     init(engine: PlayerEngine, time: TimeSource, scope: Scope, record: @escaping (TrackRef, String) -> Void,
          recordSkip: @escaping (TrackRef, String) -> Void = { _, _ in },
-         sourceOf: @escaping (QueueItem) -> String = { _ in ListenSource.chosen }, leftByOther: @escaping () -> Bool = { false }) {
+         sourceOf: @escaping (QueueItem) -> String = { _ in ListenSource.chosen }, leftByOther: @escaping () -> Bool = { false },
+         scrobbler: Scrobbler? = nil) {
         self.engine = engine
         self.time = time
         self.scope = scope
@@ -1457,6 +1464,7 @@ final class ListenRecorder {
         self.recordSkip = recordSkip
         self.sourceOf = sourceOf
         self.leftByOther = leftByOther
+        self.scrobbler = scrobbler
         tracker = ListenTracker(
             heard: { [weak self] id, durationMs in self?.heard(id, durationMs) },
             skipped: { [weak self] id, durationMs in self?.skipped(id, durationMs) }
@@ -1479,6 +1487,8 @@ final class ListenRecorder {
             tracker.setPlaying(info.playing, now: time.nowMs())
         }
         schedule()
+        scrobbler?.watch(item.map { TrackRef(videoId: $0.videoId, title: $0.title, artist: $0.artist, thumb: $0.thumb, durMs: info.durationMs) },
+                         playing: info.playing, durationMs: info.durationMs)
     }
 
     private func schedule() {

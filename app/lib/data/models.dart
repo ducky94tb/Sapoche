@@ -1379,6 +1379,36 @@ class EqSettings {
   int get hashCode => Object.hash(preset, Object.hashAll(gains));
 }
 
+/// What the settings show of ListenBrainz, where the songs this phone plays can be sent: whether a token was pasted and
+/// whose it is, whether "playing now" goes too, how many listens wait to be sent, and whether the token was refused and a
+/// new one is needed. [result] is only set by a connect: `ok`, `invalid` (the token is wrong) or `offline`.
+class ScrobbleState {
+  const ScrobbleState({
+    this.connected = false,
+    this.user,
+    this.nowPlaying = true,
+    this.pending = 0,
+    this.reconnect = false,
+    this.result,
+  });
+
+  final bool connected;
+  final String? user;
+  final bool nowPlaying;
+  final int pending;
+  final bool reconnect;
+  final String? result;
+
+  factory ScrobbleState.fromMap(Map<Object?, Object?> map) => ScrobbleState(
+    connected: map['connected'] as bool? ?? false,
+    user: map['user'] as String?,
+    nowPlaying: map['nowPlaying'] as bool? ?? true,
+    pending: (map['pending'] as num?)?.toInt() ?? 0,
+    reconnect: map['reconnect'] as bool? ?? false,
+    result: map['result'] as String?,
+  );
+}
+
 const eqBands = 6;
 const minEqGain = -12;
 const maxEqGain = 12;

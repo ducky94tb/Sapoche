@@ -25,6 +25,8 @@ import 'player_port.dart';
 import 'queues.dart';
 import 'room_client.dart';
 import 'room_socket.dart';
+import 'scrobbler.dart';
+import 'song_names.dart';
 import 'sleep_timer.dart';
 import 'suggestion_feed.dart';
 import 'taste.dart';
@@ -1919,6 +1921,64 @@ class WebBackend extends BackendDefaults {
       _listens.setPlaying(playing, now);
       _listens.check(now);
     }
+    _scrobbler.watch(
+      item == null
+          ? null
+          : Track(
+              videoId: item.videoId,
+              title: item.title,
+              artist: item.artist,
+              thumb: item.thumb,
+              durMs: item.durMs,
+            ),
+      playing,
+      player.durationMs(),
+    );
+  }
+
+  /// Sends what plays to ListenBrainz once the person pasted a token: the page asks it straight, which lets any page.
+  late final _scrobbler = Scrobbler(
+    storage: _PrefsScrobbleStorage(prefs),
+    http: listenBrainzHttp(_http),
+    namer: (t) => (
+      SongNames.title(t.title, artist: t.artist),
+      SongNames.credit(t.artist),
+    ),
+    version: appVersion ?? '',
+    mono: _now,
+    wall: () => DateTime.now().millisecondsSinceEpoch,
+    log: (m) => _note(m),
+  )..resume();
+
+  @override
+  Future<ScrobbleState> scrobbleState() async => _scrobbleState();
+
+  ScrobbleState _scrobbleState([String? result]) {
+    final s = _scrobbler.status();
+    return ScrobbleState(
+      connected: s.connected,
+      user: s.user,
+      nowPlaying: s.nowPlaying,
+      pending: s.pending,
+      reconnect: s.reconnect,
+      result: result,
+    );
+  }
+
+  @override
+  Future<ScrobbleState> scrobbleConnect(String token) async =>
+      _scrobbleState((await _scrobbler.connect(token)).name);
+
+  @override
+  Future<ScrobbleState> scrobbleDisconnect() async {
+    _scrobbler.disconnect();
+    return _scrobbleState();
+  }
+
+  @override
+  Future<ScrobbleState> scrobbleNowPlaying(bool on) async {
+    _scrobbler.setNowPlaying(on);
+    return _scrobbleState();
   }
 
   /// A song was left after a few seconds, before it counted: the person did not want it, which the taste takes in. Not
@@ -1981,3 +2041,28 @@ class WebBackend extends BackendDefaults {
   }
 }
 
+/// The token and the queue of the scrobbler, in the browser's storage for this page.
+class _PrefsScrobbleStorage implements ScrobbleStorage {
+  _PrefsScrobbleStorage(this._prefs);
+
+  final SharedPreferences _prefs;
+
+  static const _keyToken = 'scrobble_token';
+  static const _keyState = 'scrobble_state';
+
+  @override
+  String? get token => _prefs.getString(_keyToken);
+
+  @override
+  set token(String? value) => unawaited(
+    value == null
+        ? _prefs.remove(_keyToken)
+        : _prefs.setString(_keyToken, value),
+  );
+
+  @override
+  String? loadState() => _prefs.getString(_keyState);
+
+  @override
+  void saveState(String text) => unawaited(_prefs.setString(_keyState, text));
+}

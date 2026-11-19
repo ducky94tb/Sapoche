@@ -24,6 +24,9 @@ object SongNames {
         return text.ifEmpty { raw.trim() }
     }
 
+    /** The whole credit as another service should get it: "A, B & C" stays whole; only "- Topic", "VEVO" or "Official" is taken off. */
+    fun credit(raw: String): String = CHANNEL_SUFFIX.replace(raw.trim(), "").trim().ifEmpty { raw.trim() }
+
     /** The first artist of a credit like "A, B & C", without "- Topic", "VEVO" or "Official". */
     fun artist(raw: String): String {
         val first = ARTIST_SPLIT.split(CHANNEL_SUFFIX.replace(raw.trim(), "")).first()

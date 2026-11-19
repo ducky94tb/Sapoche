@@ -333,7 +333,7 @@ final shotScreens = <ShotScreen>[
     await _openSettings(t);
     await _settle(t);
   }),
-  for (final topic in ['appearance', 'playback', 'suggestions', 'storage'])
+  for (final topic in ['appearance', 'playback', 'suggestions', 'storage', 'scrobble'])
     ShotScreen('settings-$topic', (t, b) async {
       await _state(t, b, const RoomSnapshot());
       await t.tap(find.text(S.tabHome));
@@ -343,6 +343,17 @@ final shotScreens = <ShotScreen>[
       await t.tap(find.byKey(ValueKey('settings-$topic')));
       await _settle(t);
     }),
+  ShotScreen('settings-scrobble-connected', prepare: (b) {
+    b.scrobble = const ScrobbleState(connected: true, user: 'tvh', pending: 3);
+  }, (t, b) async {
+    await _state(t, b, const RoomSnapshot());
+    await t.tap(find.text(S.tabHome));
+    await _settle(t);
+    await _openSettings(t);
+    await _settle(t);
+    await t.tap(find.byKey(const ValueKey('settings-scrobble')));
+    await _settle(t);
+  }),
   ShotScreen('settings-equalizer', (t, b) async {
     await _state(t, b, const RoomSnapshot());
     await t.tap(find.text(S.tabHome));

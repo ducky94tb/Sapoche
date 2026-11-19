@@ -239,6 +239,11 @@ final class ListenTracker {
 
     /// Called once for a song left after a few seconds, before it counted, with its id and length: the person did not want it.
     private let skipped: (_ id: String, _ durationMs: Int64) -> Void
+    /// The playing time after which a song counts; a song shorter than twice this counts at half of it.
+    private let heardAfterMs: Int64
+
+    /// A song of this length or less never counts (0: every song can). A song of unknown length is not held back.
+    private let minDurationMs: Int64
     private var id: String?
     private var durationMs: Int64 = 0
     private var playedMs: Int64 = 0
@@ -246,9 +251,12 @@ final class ListenTracker {
     private var counted = false
 
     init(heard: @escaping (_ id: String, _ durationMs: Int64) -> Void,
-         skipped: @escaping (_ id: String, _ durationMs: Int64) -> Void = { _, _ in }) {
+         skipped: @escaping (_ id: String, _ durationMs: Int64) -> Void = { _, _ in },
+         heardAfterMs: Int64 = ListenTracker.heardMs, minDurationMs: Int64 = 0) {
         self.heard = heard
         self.skipped = skipped
+        self.heardAfterMs = heardAfterMs
+        self.minDurationMs = minDurationMs
     }
 
     /// A different song is now loaded, or with nil nothing is.
@@ -282,13 +290,13 @@ final class ListenTracker {
 
     /// How long until the song counts if it keeps playing, or nil when that is not going to happen.
     func msUntilHeard(_ now: Int64) -> Int64? {
-        guard let since = playingSince, id != nil, !counted else { return nil }
+        guard let since = playingSince, id != nil, !counted, !tooShort() else { return nil }
         return max(threshold() - playedMs - (now - since), 0)
     }
 
     /// Counts the song if it has been played long enough by [now].
     func check(_ now: Int64) {
-        guard let current = id, !counted else { return }
+        guard let current = id, !counted, !tooShort() else { return }
         let total = playedMs + (playingSince.map { now - $0 } ?? 0)
         if total < threshold() { return }
         counted = true
@@ -296,8 +304,10 @@ final class ListenTracker {
     }
 
     private func threshold() -> Int64 {
-        durationMs > 0 ? min(Self.heardMs, durationMs / 2) : Self.heardMs
+        durationMs > 0 ? min(heardAfterMs, durationMs / 2) : heardAfterMs
     }
+
+    private func tooShort() -> Bool { durationMs > 0 && durationMs <= minDurationMs }
 }
 
 /// What the sleep timer is set to.

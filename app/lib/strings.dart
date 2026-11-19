@@ -1176,6 +1176,46 @@ abstract final class S {
     'Trên iPhone chỉ có với bài phát từ tệp trên máy (đã tải, hoặc đã lưu). Bài mở đầu khi chưa lưu và video phát không qua bộ chỉnh âm.',
   );
 
+  // ListenBrainz
+  static String get scrobbleTitle => 'ListenBrainz';
+  static String get scrobbleNotConnected => _t('Not connected', 'Chưa kết nối');
+  static String scrobbleConnectedAs(String user) =>
+      _t('Connected as $user', 'Đã kết nối: $user');
+  static String get scrobbleHelp => _t(
+    'Sends the songs you listen to on this phone to your ListenBrainz account, so they show up in your listening history there. Nothing is sent until you connect. Only the song goes out, nothing about the room or who is in it. Your listens may be public on ListenBrainz.',
+    'Gửi các bài bạn nghe trên điện thoại này lên tài khoản ListenBrainz của bạn, để chúng hiện trong lịch sử nghe ở đó. Chưa kết nối thì không gửi gì. Chỉ bài hát được gửi đi, không có gì về phòng hay người trong phòng. Lượt nghe của bạn có thể công khai trên ListenBrainz.',
+  );
+  static String get scrobbleGetToken =>
+      _t('Open ListenBrainz to get your token', 'Mở ListenBrainz để lấy token');
+  static String get scrobbleEnterToken =>
+      _t('Paste your token', 'Dán token của bạn');
+  static String get scrobbleTokenHint => _t('User token', 'Token người dùng');
+  static String get scrobbleBadToken => _t(
+    'That token is not valid. Copy it again from your ListenBrainz settings.',
+    'Token không hợp lệ. Hãy sao chép lại từ trang cài đặt ListenBrainz của bạn.',
+  );
+  static String get scrobbleOffline => _t(
+    'Could not reach ListenBrainz. Check the connection and try again.',
+    'Không nối được tới ListenBrainz. Hãy kiểm tra kết nối rồi thử lại.',
+  );
+  static String get scrobbleReconnect => _t(
+    'ListenBrainz refused the token. Paste it again to go on.',
+    'ListenBrainz từ chối token. Hãy dán lại để tiếp tục.',
+  );
+  static String scrobblePending(int n) =>
+      _t('Waiting to be sent: $n', 'Đang chờ gửi: $n');
+  static String get scrobbleNowPlaying =>
+      _t('Show what I am playing', 'Hiện bài đang nghe');
+  static String get scrobbleNowPlayingHelp => _t(
+    'The song that plays now shows on your ListenBrainz page a few seconds after it starts.',
+    'Bài đang phát hiện trên trang ListenBrainz của bạn vài giây sau khi bắt đầu.',
+  );
+  static String get scrobbleDisconnect => _t('Disconnect', 'Ngắt kết nối');
+  static String scrobbleDisconnectQuestion(int pending) => _t(
+    '$pending listens have not been sent yet and will be dropped. Disconnect anyway?',
+    '$pending lượt nghe chưa được gửi và sẽ bị bỏ. Vẫn ngắt kết nối?',
+  );
+
   // Picture
   static String get modeAudio => _t('Audio', 'Âm thanh');
   static String get modeVideo => _t('Video', 'Video');

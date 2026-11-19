@@ -1,6 +1,7 @@
 package app.sapoche
 
 import android.app.Application
+import android.os.SystemClock
 import app.sapoche.core.PictureInfo
 import app.sapoche.core.AudioQuality
 import app.sapoche.core.Eq
@@ -14,9 +15,12 @@ import app.sapoche.core.NewPipeResolver
 import app.sapoche.core.PrefetchedVisitors
 import app.sapoche.core.Probe
 import app.sapoche.core.QuickFirstResolver
+import app.sapoche.core.SongNames
 import app.sapoche.core.StreamHosts
 import app.sapoche.core.UpdateClient
 import app.sapoche.core.VideoPicker
+import app.sapoche.sync.ListenBrainzHttp
+import app.sapoche.sync.Scrobbler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -58,6 +62,11 @@ class SapocheApp : Application() {
         }
         val music = MusicClient(region = ::phoneRegion)
         musicFeed = MusicFeed(music, LyricsClient(), LyricsStore(File(cacheDir, "lyrics")))
+        scrobbler = Scrobbler(
+            AndroidScrobbleStorage(this), ListenBrainzHttp(), CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+            namer = { SongNames.title(it.title, it.artist) to SongNames.credit(it.artist) },
+            version = BuildConfig.VERSION_NAME, mono = SystemClock::elapsedRealtime, wall = System::currentTimeMillis,
+        ) { EventLog.d("scrobble", it) }.also { it.resume() }
         suggestions = SuggestionFeed(library, resolver, musicFeed) { EventLog.d("suggest", it) }
         roomKeys = RoomKeys(this)
         chatNotifier = ChatNotifier(this)
@@ -197,6 +206,10 @@ class SapocheApp : Application() {
 
         /** What the full player shows about a song: the radio, related songs, lyrics, the artist. */
         lateinit var musicFeed: MusicFeed
+            private set
+
+        /** Sends what this phone plays to ListenBrainz, when the person connected it; main thread only. */
+        lateinit var scrobbler: Scrobbler
             private set
 
         /** Songs to offer and to carry on with. */

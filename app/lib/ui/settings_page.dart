@@ -1,9 +1,11 @@
+import 'dart:async' show Timer;
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/app_settings.dart';
 import '../data/browser_storage.dart';
@@ -183,6 +185,13 @@ class _SettingsPageState extends State<SettingsPage> {
               label: S.suggestionsTitle,
               onTap: () =>
                   _open(context, () => S.suggestionsTitle, _suggestions),
+            ),
+            _NavRow(
+              selected: _shows(_scrobble),
+              key: const ValueKey('settings-scrobble'),
+              icon: Icons.podcasts_rounded,
+              label: S.scrobbleTitle,
+              onTap: () => _open(context, () => S.scrobbleTitle, _scrobble),
             ),
           ],
         ),
@@ -867,6 +876,10 @@ class _SettingsPageState extends State<SettingsPage> {
     _BackupGroup(library: model.library),
   ];
 
+  static List<Widget> _scrobble(BuildContext context, AppModel model) => [
+    _ScrobbleGroup(room: model.room),
+  ];
+
   static List<Widget> _server(BuildContext context, AppModel model) => [
     _ServerGroup(room: model.room),
   ];
@@ -914,6 +927,181 @@ class _VersionLabelState extends State<_VersionLabel> {
       );
     },
   );
+}
+
+/// ListenBrainz: pasting the token of the account connects it, and from then on the songs this phone plays are sent.
+class _ScrobbleGroup extends StatefulWidget {
+  const _ScrobbleGroup({required this.room});
+
+  final RoomController room;
+
+  @override
+  State<_ScrobbleGroup> createState() => _ScrobbleGroupState();
+}
+
+class _ScrobbleGroupState extends State<_ScrobbleGroup> {
+  ScrobbleState _state = const ScrobbleState();
+  Timer? _refresh;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    // The listens waiting to be sent go down while the page is open
+    _refresh = Timer.periodic(const Duration(seconds: 5), (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _refresh?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final state = await widget.room.scrobbleState();
+    if (mounted) setState(() => _state = state);
+  }
+
+  void _say(String text) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(text)));
+
+  Future<void> _connect() async {
+    final token = await showTextDialog(
+      context,
+      title: S.scrobbleEnterToken,
+      hint: S.scrobbleTokenHint,
+      maxLength: 80,
+      capitalization: TextCapitalization.none,
+    );
+    if (token == null || token.trim().isEmpty) return;
+    final state = await widget.room.scrobbleConnect(token);
+    if (!mounted) return;
+    setState(() => _state = state);
+    _say(switch (state.result) {
+      'ok' => S.scrobbleConnectedAs(state.user ?? ''),
+      'invalid' => S.scrobbleBadToken,
+      _ => S.scrobbleOffline,
+    });
+  }
+
+  Future<void> _disconnect() async {
+    if (_state.pending > 0) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          content: Text(S.scrobbleDisconnectQuestion(_state.pending)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(S.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(S.scrobbleDisconnect),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    final state = await widget.room.scrobbleDisconnect();
+    if (mounted) setState(() => _state = state);
+  }
+
+  Future<void> _setNowPlaying(bool on) async {
+    setState(
+      () => _state = ScrobbleState(
+        connected: _state.connected,
+        user: _state.user,
+        nowPlaying: on,
+        pending: _state.pending,
+        reconnect: _state.reconnect,
+      ),
+    );
+    final state = await widget.room.scrobbleNowPlaying(on);
+    if (mounted) setState(() => _state = state);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final icon = Icon(Icons.edit_outlined, size: 18, color: p.textSecondary);
+    if (!_state.connected) {
+      return _Group(
+        footer: S.scrobbleHelp,
+        children: [
+          _Row(
+            key: const ValueKey('scrobble-get-token'),
+            label: S.scrobbleGetToken,
+            trailing: Icon(
+              Icons.open_in_new_rounded,
+              size: 18,
+              color: p.textSecondary,
+            ),
+            onTap: () => launchUrl(
+              Uri.parse('https://listenbrainz.org/settings/'),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
+          _Row(
+            key: const ValueKey('scrobble-paste'),
+            label: S.scrobbleEnterToken,
+            value: S.scrobbleNotConnected,
+            trailing: icon,
+            onTap: _connect,
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Group(
+          footer: _state.reconnect ? S.scrobbleReconnect : null,
+          children: [
+            _Row(
+              key: const ValueKey('scrobble-user'),
+              label: S.scrobbleTitle,
+              value: _state.user,
+              leading: Icon(
+                _state.reconnect
+                    ? Icons.error_outline_rounded
+                    : Icons.check_circle_outline_rounded,
+                color: _state.reconnect ? p.error : p.primary,
+              ),
+              trailing: _state.reconnect ? icon : null,
+              onTap: _state.reconnect ? _connect : null,
+            ),
+            if (_state.pending > 0)
+              _Row(
+                key: const ValueKey('scrobble-pending'),
+                label: S.scrobblePending(_state.pending),
+              ),
+            _Row(
+              key: const ValueKey('scrobble-disconnect'),
+              label: S.scrobbleDisconnect,
+              onTap: _disconnect,
+            ),
+          ],
+        ),
+        _Group(
+          footer: S.scrobbleNowPlayingHelp,
+          children: [
+            Material(
+              type: MaterialType.transparency,
+              child: SwitchListTile(
+                key: const ValueKey('scrobble-now-playing'),
+                title: Text(S.scrobbleNowPlaying),
+                value: _state.nowPlaying,
+                onChanged: _setNowPlaying,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 /// Where the room server is and the key it asks for, for the phones that are not built with them.

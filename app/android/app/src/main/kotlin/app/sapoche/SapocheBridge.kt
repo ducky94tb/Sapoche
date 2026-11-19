@@ -443,6 +443,15 @@ class SapocheBridge(
         return if (intent.resolveActivity(activity.packageManager) != null) intent else null
     }
 
+    /** What the settings page shows of ListenBrainz; [result] says how a connect went (`ok`, `invalid` or `offline`). */
+    private fun scrobbleMap(result: String? = null): Map<String, Any?> {
+        val status = SapocheApp.scrobbler.status()
+        return mapOf(
+            "connected" to status.connected, "user" to status.user, "nowPlaying" to status.nowPlaying,
+            "pending" to status.pending, "reconnect" to status.reconnect, "result" to result,
+        )
+    }
+
     private class CodedException(val code: String, message: String) : Exception(message)
 
     private suspend fun handle(call: MethodCall): Any? {
@@ -548,6 +557,19 @@ class SapocheBridge(
                 SapocheApp.eqGains = gains
                 EventLog.d("eq", "bands ${gains.joinToString(",")}")
                 return null
+            }
+            "scrobbleState" -> return scrobbleMap()
+            "scrobbleConnect" -> {
+                val result = SapocheApp.scrobbler.connect(call.argument<String>("token").orEmpty())
+                return scrobbleMap(result.name.lowercase())
+            }
+            "scrobbleDisconnect" -> {
+                SapocheApp.scrobbler.disconnect()
+                return scrobbleMap()
+            }
+            "scrobbleNowPlaying" -> {
+                SapocheApp.scrobbler.setNowPlaying(call.argument<Boolean>("on") ?: true)
+                return scrobbleMap()
             }
             "openSystemEqualizer" -> {
                 val intent = systemEqualizerIntent() ?: return null

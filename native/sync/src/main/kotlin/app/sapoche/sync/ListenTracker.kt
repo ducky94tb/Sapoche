@@ -13,6 +13,10 @@ package app.sapoche.sync
 class ListenTracker(
     /** Called once for a song left after a few seconds, before it counted, with its id and length: the person did not want it. */
     private val skipped: (id: String, durationMs: Long) -> Unit = { _, _ -> },
+    /** The playing time after which a song counts; a song shorter than twice this counts at half of it. */
+    private val heardAfterMs: Long = HEARD_MS,
+    /** A song of this length or less never counts (0: every song can). A song of unknown length is not held back. */
+    private val minDurationMs: Long = 0,
     /** Called once per song, with its id and the length last reported (0 if unknown). */
     private val heard: (id: String, durationMs: Long) -> Unit,
 ) {
@@ -54,21 +58,23 @@ class ListenTracker(
     /** How long until the song counts if it keeps playing, or null when that is not going to happen. */
     fun msUntilHeard(now: Long): Long? {
         val since = playingSince ?: return null
-        if (id == null || counted) return null
+        if (id == null || counted || tooShort()) return null
         return (threshold() - playedMs - (now - since)).coerceAtLeast(0)
     }
 
     /** Counts the song if it has been played long enough by [now]. */
     fun check(now: Long) {
         val current = id ?: return
-        if (counted) return
+        if (counted || tooShort()) return
         val total = playedMs + (playingSince?.let { now - it } ?: 0)
         if (total < threshold()) return
         counted = true
         heard(current, durationMs)
     }
 
-    private fun threshold() = if (durationMs > 0) minOf(HEARD_MS, durationMs / 2) else HEARD_MS
+    private fun threshold() = if (durationMs > 0) minOf(heardAfterMs, durationMs / 2) else heardAfterMs
+
+    private fun tooShort() = durationMs in 1..minDurationMs
 
     companion object {
         const val HEARD_MS = 30_000L

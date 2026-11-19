@@ -7,6 +7,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import app.sapoche.sync.ListenSource
 import app.sapoche.sync.ListenTracker
+import app.sapoche.sync.Scrobbler
 import app.sapoche.sync.TrackRef
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -24,6 +25,8 @@ class ListenHistory(
     private val sourceOf: (String) -> String = { ListenSource.CHOSEN },
     /** The song now playing was left because another member of the room skipped it: not a skip of this person's. */
     private val leftByOther: () -> Boolean = { false },
+    /** Told what plays, for the listens that go to ListenBrainz when the person connected it. */
+    private val scrobbler: Scrobbler? = null,
     private val log: (String) -> Unit = {},
 ) : Player.Listener {
 
@@ -58,11 +61,13 @@ class ListenHistory(
             item = next
             source = next?.let { sourceOf(it.mediaId) } ?: ListenSource.CHOSEN
         }
+        val duration = player.duration.coerceAtLeast(0)
         if (item != null) {
-            tracker.setDuration(player.duration.coerceAtLeast(0))
+            tracker.setDuration(duration)
             tracker.setPlaying(player.isPlaying, now())
         }
         schedule()
+        scrobbler?.let { it.watch(item?.let { song -> trackOf(song.mediaId, duration) }, player.isPlaying, duration) }
     }
 
     private fun schedule() {

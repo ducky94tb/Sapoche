@@ -1,0 +1,98 @@
+{
+  "version": "1.50.0",
+  "cases": [
+    {
+      "name": "a song from YouTube",
+      "type": "single",
+      "listens": [
+        {"listenedAt": 1700000000, "videoId": "dQw4w9WgXcQ", "title": "Never Gonna Give You Up", "artist": "Rick Astley", "durationMs": 213000}
+      ],
+      "body": {
+        "listen_type": "single",
+        "payload": [
+          {
+            "listened_at": 1700000000,
+            "track_metadata": {
+              "artist_name": "Rick Astley",
+              "track_name": "Never Gonna Give You Up",
+              "additional_info": {
+                "media_player": "Sapoche",
+                "submission_client": "Sapoche",
+                "submission_client_version": "1.50.0",
+                "music_service": "youtube.com",
+                "origin_url": "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+                "duration_ms": 213000
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "several at once, a file of the phone and a song of unknown length",
+      "type": "import",
+      "listens": [
+        {"listenedAt": 1700000100, "videoId": "local:abc123", "title": "Tag Title", "artist": "A, B & C", "durationMs": 180000},
+        {"listenedAt": 1700000400, "videoId": "xyz", "title": "Live Stream \"Quoted\"", "artist": "Sơn Tùng M-TP", "durationMs": 0}
+      ],
+      "body": {
+        "listen_type": "import",
+        "payload": [
+          {
+            "listened_at": 1700000100,
+            "track_metadata": {
+              "artist_name": "A, B & C",
+              "track_name": "Tag Title",
+              "additional_info": {
+                "media_player": "Sapoche",
+                "submission_client": "Sapoche",
+                "submission_client_version": "1.50.0",
+                "duration_ms": 180000
+              }
+            }
+          },
+          {
+            "listened_at": 1700000400,
+            "track_metadata": {
+              "artist_name": "Sơn Tùng M-TP",
+              "track_name": "Live Stream \"Quoted\"",
+              "additional_info": {
+                "media_player": "Sapoche",
+                "submission_client": "Sapoche",
+                "submission_client_version": "1.50.0",
+                "music_service": "youtube.com",
+                "origin_url": "https://music.youtube.com/watch?v=xyz"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "what plays now has no time",
+      "type": "playing_now",
+      "listens": [
+        {"listenedAt": 0, "videoId": "dQw4w9WgXcQ", "title": "Never Gonna Give You Up", "artist": "Rick Astley", "durationMs": 213000}
+      ],
+      "body": {
+        "listen_type": "playing_now",
+        "payload": [
+          {
+            "track_metadata": {
+              "artist_name": "Rick Astley",
+              "track_name": "Never Gonna Give You Up",
+              "additional_info": {
+                "media_player": "Sapoche",
+                "submission_client": "Sapoche",
+                "submission_client_version": "1.50.0",
+                "music_service": "youtube.com",
+                "origin_url": "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+                "duration_ms": 213000
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

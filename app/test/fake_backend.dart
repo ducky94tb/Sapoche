@@ -606,6 +606,47 @@ class FakeBackend implements Backend {
   @override
   Future<void> openSystemEqualizer() => _record('systemEqualizer');
 
+  ScrobbleState scrobble = const ScrobbleState();
+
+  /// What a connect answers: `ok`, `invalid` or `offline`.
+  String scrobbleAnswer = 'ok';
+
+  @override
+  Future<ScrobbleState> scrobbleState() async => scrobble;
+
+  @override
+  Future<ScrobbleState> scrobbleConnect(String token) async {
+    await _record('scrobbleConnect $token');
+    if (scrobbleAnswer == 'ok') {
+      scrobble = const ScrobbleState(connected: true, user: 'tvh');
+    }
+    return ScrobbleState(
+      connected: scrobble.connected,
+      user: scrobble.user,
+      nowPlaying: scrobble.nowPlaying,
+      pending: scrobble.pending,
+      reconnect: scrobble.reconnect,
+      result: scrobbleAnswer,
+    );
+  }
+
+  @override
+  Future<ScrobbleState> scrobbleDisconnect() async {
+    await _record('scrobbleDisconnect');
+    return scrobble = const ScrobbleState();
+  }
+
+  @override
+  Future<ScrobbleState> scrobbleNowPlaying(bool on) async {
+    await _record('scrobbleNowPlaying $on');
+    return scrobble = ScrobbleState(
+      connected: scrobble.connected,
+      user: scrobble.user,
+      nowPlaying: on,
+      pending: scrobble.pending,
+    );
+  }
+
   SongRadio radioResult = const SongRadio();
   RelatedPage relatedResult = const RelatedPage();
   ArtistPage artistResult = const ArtistPage(id: 'UC1', name: 'Artist');

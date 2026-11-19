@@ -139,4 +139,42 @@ void main() {
     watching.begin('b', 200000, 600000);
     expect(skipped, isEmpty);
   });
+
+  // The mark of a scrobble: half the song or four minutes, and never a song of thirty seconds or less
+  ListenTracker scrobble() => ListenTracker(heardAfterMs: 240000, minDurationMs: 30000, heard: (id, ms) => heard.add((id, ms)));
+
+  test('a scrobble does not count a song of thirty seconds', () {
+    final tracker = scrobble();
+    tracker.begin('jingle', 30000, 0);
+    tracker.setPlaying(true, 0);
+    expect(tracker.msUntilHeard(0), isNull);
+    tracker.check(60000);
+    expect(heard, isEmpty);
+    tracker.begin('clip', 31000, 70000);
+    tracker.setPlaying(true, 70000);
+    tracker.check(85500);
+    expect(heard, [('clip', 31000)]);
+  });
+
+  test('a scrobble counts a six minute song at three minutes and a ten minute one at four', () {
+    final tracker = scrobble();
+    tracker.begin('six', 360000, 0);
+    tracker.setPlaying(true, 0);
+    expect(tracker.msUntilHeard(0), 180000);
+    tracker.check(179999);
+    expect(heard, isEmpty);
+    tracker.check(180000);
+    tracker.begin('ten', 600000, 200000);
+    tracker.setPlaying(true, 200000);
+    expect(tracker.msUntilHeard(200000), 240000);
+    tracker.check(440000);
+    expect(heard.map((e) => e.$1), ['six', 'ten']);
+  });
+
+  test('a scrobble waits for the length of a song it does not know', () {
+    final tracker = scrobble();
+    tracker.begin('live', 0, 0);
+    tracker.setPlaying(true, 0);
+    expect(tracker.msUntilHeard(0), 240000);
+  });
 }

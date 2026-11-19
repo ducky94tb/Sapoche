@@ -136,6 +136,7 @@ class PlaybackService : MediaLibraryService() {
             scope,
             sourceOf = { id -> if (::group.isInitialized) group.listenSource(id) else ListenSource.CHOSEN },
             leftByOther = { ::group.isInitialized && group.leftByOther() },
+            scrobbler = SapocheApp.scrobbler,
         ) { EventLog.d("library", it) }.also { it.start() }
 
         group = GroupController(

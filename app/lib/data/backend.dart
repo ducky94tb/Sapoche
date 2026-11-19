@@ -469,6 +469,19 @@ abstract class Backend {
   /// Opens the equalizer that the phone has of its own (Android, see [Profile.systemEqualizer]).
   Future<void> openSystemEqualizer();
 
+  /// ListenBrainz, where the songs this phone plays can be sent (see [ScrobbleState]); off until the person connects it
+  /// with the token of their account, and it sends nothing before. What it sends is the song, never the room.
+  Future<ScrobbleState> scrobbleState();
+
+  /// Checks [token] with ListenBrainz and, when it is good, keeps it ([ScrobbleState.result] says how it went).
+  Future<ScrobbleState> scrobbleConnect(String token);
+
+  /// Forgets the token and the listens that had not been sent.
+  Future<ScrobbleState> scrobbleDisconnect();
+
+  /// Whether the song that plays now is shown on ListenBrainz while it plays.
+  Future<ScrobbleState> scrobbleNowPlaying(bool on);
+
   /// The person's playlists, the one changed last first.
   Future<List<SavedPlaylist>> playlists();
   Future<List<Track>> playlistTracks(int id);
@@ -1163,6 +1176,30 @@ class NativeBackend implements Backend {
 
   @override
   Future<void> openSystemEqualizer() => _call('openSystemEqualizer');
+
+  @override
+  Future<ScrobbleState> scrobbleState() async => ScrobbleState.fromMap(
+    (await _call<Map<Object?, Object?>>('scrobbleState'))!,
+  );
+
+  @override
+  Future<ScrobbleState> scrobbleConnect(String token) async =>
+      ScrobbleState.fromMap(
+        (await _call<Map<Object?, Object?>>('scrobbleConnect', {
+          'token': token,
+        }))!,
+      );
+
+  @override
+  Future<ScrobbleState> scrobbleDisconnect() async => ScrobbleState.fromMap(
+    (await _call<Map<Object?, Object?>>('scrobbleDisconnect'))!,
+  );
+
+  @override
+  Future<ScrobbleState> scrobbleNowPlaying(bool on) async =>
+      ScrobbleState.fromMap(
+        (await _call<Map<Object?, Object?>>('scrobbleNowPlaying', {'on': on}))!,
+      );
 
   @override
   Future<SongRadio> musicNext(String videoId) async => SongRadio.fromMap(

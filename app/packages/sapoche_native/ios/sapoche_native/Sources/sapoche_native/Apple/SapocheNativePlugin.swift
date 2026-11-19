@@ -105,6 +105,14 @@ final class SapocheRuntime {
                                     online: { NetworkState.shared.online }, discard: { files.removeDownload($0) },
                                     onProgress: { batch in Task { @MainActor in SapocheRuntime.shared.bridge.downloadsChanged(batch) } })
 
+        let scrobbler = Scrobbler(
+            storage: AppleScrobbleStorage(folder: support.appendingPathComponent("scrobble", isDirectory: true)),
+            http: ListenBrainzHTTP(), scope: Scope(), time: SystemTime.shared,
+            namer: { (SongNames.title($0.title, artist: $0.artist), SongNames.credit($0.artist)) },
+            version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+            wall: { Int64(Date().timeIntervalSince1970 * 1000) }, log: { EventLog.d("scrobble", $0) }
+        )
+        scrobbler.resume()
         let engine = AVPlayerEngine(library: media, maxVideoHeight: { Int(prefs.int64("video_height") ?? 720) }, log: { EventLog.d("player", $0) })
         self.engine = engine
         let platform = platform
@@ -126,6 +134,7 @@ final class SapocheRuntime {
             moreLike: { seeds, exclude, count in try await suggestions.afterMany(seeds, exclude: exclude, count: count) },
             tasteOffer: { try await suggestions.offer() },
             secrets: KeychainSecrets(),
+            scrobbler: scrobbler,
             // The songs autoplay looks for between two songs are fetched in the background too: iOS suspends the app a few seconds after the sound stops
             awake: { work in await platform.whileInBackground(timeUp: {}, work) }
         )

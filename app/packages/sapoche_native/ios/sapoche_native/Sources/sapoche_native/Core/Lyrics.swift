@@ -167,6 +167,13 @@ enum SongNames {
         return text.isEmpty ? raw.trimmingCharacters(in: .whitespacesAndNewlines) : text
     }
 
+    /// The whole credit as another service should get it: "A, B & C" stays whole; only "- Topic", "VEVO" or "Official" is taken off.
+    static func credit(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let credit = replace(channelSuffix, in: trimmed) { _ in "" }.trimmingCharacters(in: .whitespacesAndNewlines)
+        return credit.isEmpty ? trimmed : credit
+    }
+
     /// The first artist of a credit like "A, B & C", without "- Topic", "VEVO" or "Official".
     static func artist(_ raw: String) -> String {
         let credit = replace(channelSuffix, in: raw.trimmingCharacters(in: .whitespacesAndNewlines)) { _ in "" }

@@ -126,6 +126,14 @@ void main() {
     expect(SongNames.title('A - B', artist: 'Someone else'), 'A - B');
   });
 
+  test('the credit stays whole and only loses the channel suffix', () {
+    expect(SongNames.credit('Simon & Garfunkel'), 'Simon & Garfunkel');
+    expect(SongNames.credit(' A, B & C '), 'A, B & C');
+    expect(SongNames.credit('Rick Astley - Topic'), 'Rick Astley');
+    expect(SongNames.credit('Adele VEVO'), 'Adele');
+    expect(SongNames.credit('VEVO'), 'VEVO', reason: 'never leaves nothing');
+  });
+
   test('the first artist is the main one', () {
     expect(SongNames.artist('Sơn Tùng M-TP'), 'Sơn Tùng M-TP');
     expect(SongNames.artist('Rick Astley - Topic'), 'Rick Astley');
