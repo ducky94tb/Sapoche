@@ -8,7 +8,7 @@ import '../theme/theme.dart';
 import 'chat_sheet.dart';
 import 'home_shell.dart';
 import 'members_sheet.dart' show memberStatus, showMembersSheet;
-import 'now_playing_page.dart' show SyncChip;
+import 'player/parts.dart' show SyncChip;
 import 'player_sheet.dart';
 import 'rooms_sheet.dart';
 import 'scope.dart';

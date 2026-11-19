@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../data/room_controller.dart';
 import '../../format.dart';
 import '../../strings.dart';
+import '../../theme/palette.dart';
 import '../../theme/theme.dart';
+import '../player/look.dart';
 import 'low_rate_timer.dart';
 import 'touch_box.dart';
 
@@ -14,12 +16,16 @@ class PlaybackBar extends StatefulWidget {
     super.key,
     required this.controller,
     this.compact = false,
+    this.middle,
   });
 
   final RoomController controller;
 
   /// One low line with the times on either side, for the player bar of a wide screen.
   final bool compact;
+
+  /// Between the two times, in the line under the bar (the quality of the sound).
+  final Widget? middle;
 
   @override
   State<PlaybackBar> createState() => _PlaybackBarState();
@@ -68,6 +74,8 @@ class _PlaybackBarState extends State<PlaybackBar> {
     final shownMs = (fraction * duration).round();
 
     final compact = widget.compact;
+    // A thin line with a round thumb, where the look of the player asks for it (not in the compact bar of a wide window)
+    final thin = !compact && PlayerLookScope.of(context).thinBar;
     // A screen reader reads it as a slider and moves it ten seconds at a time
     int step(int by) => (shownMs + by).clamp(0, duration);
     final bar = LayoutBuilder(
@@ -101,27 +109,31 @@ class _PlaybackBarState extends State<PlaybackBar> {
             child: Center(
               child: TweenAnimationBuilder<double>(
                 tween: Tween(
-                  end: compact ? (dragging ? 6 : 4) : (dragging ? 10 : 5),
+                  end: compact || thin
+                      ? (dragging ? 6 : 4)
+                      : (dragging ? 10 : 5),
                 ),
                 duration: const Duration(milliseconds: 160),
                 curve: Curves.easeOut,
-                builder: (context, height, _) => ClipRRect(
-                  borderRadius: BorderRadius.circular(height),
-                  child: Stack(
-                    children: [
-                      Container(height: height, color: p.track),
-                      FractionallySizedBox(
-                        widthFactor: fraction,
-                        child: Container(
-                          height: height,
-                          color: dragging
-                              ? p.primary
-                              : p.primary.withValues(alpha: 0.9),
+                builder: (context, height, _) => thin
+                    ? _thinLine(p, height, fraction, box.maxWidth, dragging)
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(height),
+                        child: Stack(
+                          children: [
+                            Container(height: height, color: p.track),
+                            FractionallySizedBox(
+                              widthFactor: fraction,
+                              child: Container(
+                                height: height,
+                                color: dragging
+                                    ? p.primary
+                                    : p.primary.withValues(alpha: 0.9),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
               ),
             ),
           ),
@@ -153,7 +165,49 @@ class _PlaybackBarState extends State<PlaybackBar> {
           offset: Offset(0, -(barTouchHeight(context, 28) - 28) / 2),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [elapsed, left],
+            children: [
+              elapsed,
+              if (widget.middle != null)
+                Expanded(child: Center(child: widget.middle)),
+              left,
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The line of the thin bar: the text colour filling a quiet track, and a round thumb at its end.
+  Widget _thinLine(
+    Palette p,
+    double height,
+    double fraction,
+    double width,
+    bool dragging,
+  ) {
+    final thumb = dragging ? 16.0 : 12.0;
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.centerLeft,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(height),
+          child: Stack(
+            children: [
+              Container(height: height, color: p.track),
+              FractionallySizedBox(
+                widthFactor: fraction,
+                child: Container(height: height, color: p.text),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          left: fraction * width - thumb / 2,
+          child: Container(
+            width: thumb,
+            height: thumb,
+            decoration: BoxDecoration(color: p.text, shape: BoxShape.circle),
           ),
         ),
       ],

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sapoche/data/app_settings.dart';
 import 'package:sapoche/data/comments.dart';
 import 'package:sapoche/strings.dart';
 
@@ -22,6 +23,9 @@ class ShotSize {
   /// The system's own bar under the app (the home indicator), in dp.
   final double bottom;
 }
+
+/// A phone turned on its side, for the screens of the player that have a layout of their own there.
+const shotLandscape = [ShotSize('l800', 800, 360)];
 
 const shotSizes = [
   ShotSize('w360', 360, 800),
@@ -56,6 +60,8 @@ class ShotScreen {
     this.listen = false,
     this.only,
     this.comments,
+    this.style = PlayerStyle.classic,
+    this.windows,
   });
 
   final String id;
@@ -68,17 +74,23 @@ class ShotScreen {
 
   /// What YouTube answers when the screen asks for comments; the comments of [shotComments] when not set.
   final CommentsTransport? comments;
+
+  /// How the full player is drawn on this phone.
+  final PlayerStyle style;
+
+  /// The windows to draw it in when not the usual five.
+  final List<ShotSize>? windows;
 }
 
 /// The combos to draw: `SHOTS_MATRIX=base` (the default: five sizes, light and dark, English), `full` (all of the plan:
 /// also Vietnamese and text at 1.3), `quick` (one phone and one wide window, light, English).
-List<ShotCombo> combos() {
+List<ShotCombo> combos({List<ShotSize>? sizes}) {
   final mode = Platform.environment['SHOTS_MATRIX'] ?? 'base';
   if (mode == 'quick') {
-    return [ShotCombo(shotSizes[1]), ShotCombo(shotSizes[3])];
+    return [for (final size in sizes ?? [shotSizes[1], shotSizes[3]]) ShotCombo(size)];
   }
   return [
-    for (final size in shotSizes)
+    for (final size in sizes ?? shotSizes)
       for (final dark in [false, true])
         for (final vi in mode == 'full' ? [false, true] : [false])
           for (final text in mode == 'full' ? [1.0, 1.3] : [1.0])
@@ -121,7 +133,10 @@ Future<FakeBackend> pumpShot(WidgetTester tester, ShotScreen screen, ShotCombo c
   final (backend, _) = await pumpApp(
     tester,
     mode: combo.dark ? ThemeMode.dark : ThemeMode.light,
-    prefs: {if (combo.vi) 'language': 'vi'},
+    prefs: {
+      if (combo.vi) 'language': 'vi',
+      'player_style': screen.style.name,
+    },
     listen: screen.listen,
     prepare: screen.prepare,
     commentsTransport: screen.comments ?? shotComments,

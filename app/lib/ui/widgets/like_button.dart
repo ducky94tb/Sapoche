@@ -9,10 +9,18 @@ import 'motion.dart';
 
 /// A heart that keeps the song in the liked songs, and lights up when it is there.
 class LikeButton extends StatelessWidget {
-  const LikeButton({super.key, required this.track, this.size = 24});
+  const LikeButton({
+    super.key,
+    required this.track,
+    this.size = 24,
+    this.star = false,
+  });
 
   final Track track;
   final double size;
+
+  /// A star in place of the heart.
+  final bool star;
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +48,11 @@ class LikeButton extends StatelessWidget {
             transitionBuilder: (child, animation) =>
                 ScaleTransition(scale: animation, child: child),
             child: Icon(
-              liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              star
+                  ? (liked ? Icons.star_rounded : Icons.star_border_rounded)
+                  : (liked
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded),
               key: ValueKey(liked),
               size: size,
               color: liked ? p.primary : p.textTertiary,

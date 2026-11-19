@@ -202,7 +202,7 @@ void fillLibrary(FakeBackend b) {
 }
 
 /// Three people in a room, a queue of five and the first song playing.
-RoomSnapshot busyRoom({String phase = 'playing', int index = 0, Link link = Link.connected}) {
+RoomSnapshot busyRoom({String phase = 'playing', int index = 0, Link link = Link.connected, bool video = false}) {
   final base = sampleRoom(phase: phase, index: index, songs: 0);
   return RoomSnapshot(
     room: base.room,
@@ -210,6 +210,7 @@ RoomSnapshot busyRoom({String phase = 'playing', int index = 0, Link link = Link
     you: base.you,
     phase: phase,
     index: index,
+    video: video,
     ownerId: 'me',
     members: const [
       Member(id: 'me', name: 'Anna', ready: true),

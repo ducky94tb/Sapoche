@@ -6,7 +6,7 @@ import '../strings.dart';
 import '../theme/palette.dart';
 import '../theme/theme.dart';
 import 'member_profile_sheet.dart';
-import 'now_playing_page.dart' show syncReading;
+import 'player/parts.dart' show syncReading;
 import 'scope.dart';
 import 'widgets/avatars.dart';
 import 'widgets/motion.dart';

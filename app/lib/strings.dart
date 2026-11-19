@@ -1295,6 +1295,26 @@ abstract final class S {
   static String get themeSystem => _t('System', 'Theo hệ thống');
   static String get themeLight => _t('Light', 'Sáng');
   static String get themeDark => _t('Dark', 'Tối');
+  static String get playerStyle => _t('Player style', 'Kiểu trình phát');
+  static String get playerStyleHelp => _t(
+    'How the full player looks on this phone. The song bar and the small player stay as they are.',
+    'Dáng của trình phát đầy đủ trên máy này. Thanh bài hát và trình phát nhỏ giữ nguyên.',
+  );
+  static String get playerStyleClassic => _t('Classic', 'Cổ điển');
+  static String get playerStyleCards => _t('Cards', 'Thẻ');
+  static String get playerStyleFullCover => _t('Full cover', 'Tràn bìa');
+  static String get playerStyleClassicAbout => _t(
+    'The cover in the middle, colours moving behind it',
+    'Bìa ở giữa, màu trôi phía sau',
+  );
+  static String get playerStyleCardsAbout => _t(
+    'Shuffle and repeat by the play button; lyrics, the artist, the queue and comments in cards below',
+    'Xáo trộn và lặp cạnh nút phát; lời, nghệ sĩ, hàng đợi và bình luận thành thẻ bên dưới',
+  );
+  static String get playerStyleFullCoverAbout => _t(
+    'The cover across the whole width, plain buttons, big lyrics',
+    'Bìa tràn hết bề ngang, nút trơn, lời chữ to',
+  );
   static String get accentColor => _t('Accent colour', 'Màu chủ đạo');
   static String get accentCustom => _t('Custom', 'Tùy chỉnh');
   static String get accentHue => _t('Hue', 'Sắc màu');
@@ -1389,6 +1409,7 @@ abstract final class S {
   static String get otherPerformances =>
       _t('Other performances', 'Các bản trình diễn khác');
   static String get similarArtists => _t('Similar artists', 'Nghệ sĩ tương tự');
+  static String get show => _t('Show', 'Hiện');
   static String get aboutArtist => _t('About the artist', 'Về nghệ sĩ');
   static String get topSongs => _t('Top songs', 'Bài hát hàng đầu');
   static String get fansAlsoLike =>

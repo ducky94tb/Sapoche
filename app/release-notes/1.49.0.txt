@@ -1,0 +1,6 @@
+Choose how the player looks: Cards and Full cover
+- Settings > Appearance > Player style: Classic, Cards (shuffle and repeat by the play button, and lyrics, the artist, the queue and the comments in cards you scroll to) and Full cover (the cover across the whole screen, plain buttons).
+- Full cover is the new default. Pick Classic to keep the player as it was.
+- Both new styles show the line of the lyrics being sung above the seek bar, running along with the song; a long line stands still at first so you can read it, then runs to its end.
+- Both have a button for Audio or Video, the quality of the sound and the device it plays on (Full cover), and work with the picture, in a room and on a screen on its side.
+- Cards follow the light or dark theme; Full cover blurs the picture softly under the status bar so the time and notices stay readable.

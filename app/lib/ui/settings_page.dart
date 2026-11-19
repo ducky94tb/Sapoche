@@ -344,6 +344,48 @@ class _SettingsPageState extends State<SettingsPage> {
       ],
     ),
     _Group(
+      title: S.playerStyle,
+      footer: S.playerStyleHelp,
+      children: [
+        ValueListenableBuilder<PlayerStyle>(
+          valueListenable: model.settings.playerStyleListenable,
+          builder: (context, chosen, _) => Column(
+            children: [
+              for (final (style, label, about) in [
+                (
+                  PlayerStyle.classic,
+                  S.playerStyleClassic,
+                  S.playerStyleClassicAbout,
+                ),
+                (
+                  PlayerStyle.spotify,
+                  S.playerStyleCards,
+                  S.playerStyleCardsAbout,
+                ),
+                (
+                  PlayerStyle.appleMusic,
+                  S.playerStyleFullCover,
+                  S.playerStyleFullCoverAbout,
+                ),
+              ])
+                _Row(
+                  key: ValueKey('player-style-${style.name}'),
+                  label: label,
+                  subtitle: about,
+                  trailing: chosen == style
+                      ? Icon(
+                          Icons.check_rounded,
+                          color: context.palette.primary,
+                        )
+                      : null,
+                  onTap: () => model.settings.playerStyle = style,
+                ),
+            ],
+          ),
+        ),
+      ],
+    ),
+    _Group(
       title: S.accentColor,
       footer: S.accentHelp,
       children: [
@@ -1646,6 +1688,7 @@ class _Row extends StatelessWidget {
   const _Row({
     super.key,
     required this.label,
+    this.subtitle,
     this.value,
     this.leading,
     this.trailing,
@@ -1653,6 +1696,9 @@ class _Row extends StatelessWidget {
   });
 
   final String label;
+
+  /// A line under the label saying what it does.
+  final String? subtitle;
   final String? value;
   final Widget? leading;
   final Widget? trailing;
@@ -1670,10 +1716,24 @@ class _Row extends StatelessWidget {
           children: [
             if (leading != null) ...[leading!, const SizedBox(width: 14)],
             Expanded(
-              child: Text(
-                label,
-                style: theme.bodyLarge?.copyWith(color: p.text),
-              ),
+              child: subtitle == null
+                  ? Text(label, style: theme.bodyLarge?.copyWith(color: p.text))
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          style: theme.bodyLarge?.copyWith(color: p.text),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          style: theme.bodySmall?.copyWith(
+                            color: p.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
             if (value != null)
               // As wide as the words need, up to half the row: a long address must not push the label out

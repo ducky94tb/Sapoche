@@ -48,6 +48,11 @@ class PlayerSheetController extends ChangeNotifier {
   }
 
   final pageCover = GlobalKey();
+
+  /// Whether the cover of the page flies to and from the mini player as the sheet moves. A page whose cover is not a
+  /// square to fly (the full cover, which melts into the colours behind it) turns it off: the cover stays where it is
+  /// and moves with the page, as it looks at rest, instead of a plain square standing in for it.
+  bool coverFlies = true;
   final pageRoot = GlobalKey();
 
   /// True while a finger, or the animation that settles after it, moves the sheet. The value is
@@ -279,7 +284,8 @@ class PlayerSheetLayer extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (controller.inMotion) _CoverFlight(controller: controller),
+              if (controller.inMotion && controller.coverFlies)
+                _CoverFlight(controller: controller),
             ],
           ),
         ),
@@ -376,7 +382,10 @@ class CoverSlot extends StatelessWidget {
     animation: controller.position,
     child: child,
     builder: (context, child) =>
-        Opacity(opacity: controller.inMotion ? 0 : 1, child: child),
+        Opacity(
+          opacity: controller.inMotion && controller.coverFlies ? 0 : 1,
+          child: child,
+        ),
   );
 }
 

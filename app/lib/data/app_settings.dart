@@ -8,6 +8,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'calm.dart';
 import 'shelf_stats.dart';
 
+/// How the full player is drawn: the one Sapoche began with, or one laid out like the players of two other music apps.
+/// The app names them without a brand (`S.playerStyleCards`, `S.playerStyleFullCover`).
+enum PlayerStyle {
+  classic,
+  spotify,
+  appleMusic;
+
+  /// The style of a phone that has not chosen: the full cover.
+  static const defaultStyle = appleMusic;
+}
+
 /// Preferences that only concern how the app looks on this phone.
 class AppSettings extends ChangeNotifier {
   AppSettings._(this._prefs, Random? shelfRandom)
@@ -37,6 +48,22 @@ class AppSettings extends ChangeNotifier {
     _themeMode = mode;
     _prefs.setString(_key, mode.name);
     notifyListeners();
+  }
+
+  /// How the full player is drawn on this phone. Not in the backup: it is a look, like the theme. It has a notifier of
+  /// its own and does not wake [AppSettings]'s listeners: the whole app listens to those (the theme, the language), and
+  /// a change that only the player and one list of Settings care about would build all of it again.
+  PlayerStyle get playerStyle => playerStyleListenable.value;
+
+  late final ValueNotifier<PlayerStyle> playerStyleListenable = ValueNotifier(
+    PlayerStyle.values.asNameMap()[_prefs.getString(_playerStyleKey)] ??
+        PlayerStyle.defaultStyle,
+  );
+
+  set playerStyle(PlayerStyle style) {
+    if (style == playerStyle) return;
+    _prefs.setString(_playerStyleKey, style.name);
+    playerStyleListenable.value = style;
   }
 
   /// The colour the person picked for the app; null keeps the pink it was designed in.
@@ -135,6 +162,7 @@ class AppSettings extends ChangeNotifier {
   static const _languageKey = 'language';
   static const _lightEffectsKey = 'light_effects';
   static const _accentKey = 'accent';
+  static const _playerStyleKey = 'player_style';
   static const _updateSheetKey = 'update_sheet_';
 
   static ThemeMode _read(SharedPreferences prefs) =>

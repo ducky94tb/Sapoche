@@ -1,0 +1,6 @@
+Chọn dáng của trình phát: Thẻ và Tràn bìa
+- Cài đặt > Giao diện > Kiểu trình phát: Cổ điển, Thẻ (xáo trộn và lặp cạnh nút phát; lời, nghệ sĩ, hàng đợi và bình luận thành các thẻ để cuộn xuống) và Tràn bìa (bìa trải hết bề ngang, nút trơn).
+- Tràn bìa là kiểu mặc định mới. Chọn Cổ điển để giữ trình phát như trước.
+- Cả hai kiểu mới hiện dòng lời đang hát ngay trên thanh tua, chạy theo bài; dòng dài đứng yên một lúc để đọc đầu dòng rồi chạy tới cuối.
+- Cả hai có nút chuyển Âm thanh/Video và chạy được với hình, trong phòng và khi xoay ngang; Tràn bìa còn có chất lượng âm thanh và tên thiết bị đang phát.
+- Thẻ theo chủ đề sáng hoặc tối của app; Tràn bìa làm mờ nhẹ ảnh dưới thanh trạng thái để giờ và thông báo vẫn đọc được.

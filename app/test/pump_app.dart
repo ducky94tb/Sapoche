@@ -78,7 +78,13 @@ Future<(FakeBackend, RoomController)> pumpApp(
   addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
   // The language is a global; a test that changed it must not leave it to the next one
   addTearDown(() => S.current = 'en');
-  SharedPreferences.setMockInitialValues({'theme_mode': mode.name, ...prefs});
+  // The player is the classic one in the tests unless a test says another: most of them are about it (the default of the app
+  // is the full cover, which `player_styles_test.dart` has its own tests for)
+  SharedPreferences.setMockInitialValues({
+    'theme_mode': mode.name,
+    'player_style': 'classic',
+    ...prefs,
+  });
   final backend = FakeBackend();
   if (profile != null) backend.profileValue = profile;
   backend.pipSupportedValue = pipSupported;

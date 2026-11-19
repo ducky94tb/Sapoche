@@ -23,6 +23,7 @@ class PlayerBackdrop extends StatefulWidget {
     this.glowHeight,
     this.moving,
     this.mesh = false,
+    this.vivid = false,
   });
 
   final String? coverUrl;
@@ -47,6 +48,10 @@ class PlayerBackdrop extends StatefulWidget {
   /// cover the full player has: no shape of the cover is left to smear when it is stretched over a page of any shape,
   /// a phone on its side included. For the pages of an album, an artist, a playlist.
   final bool mesh;
+
+  /// The colours of the cover kept stronger in the light theme (a pale wash made them fade away), and less white laid
+  /// over them: for the player whose cover melts into them.
+  final bool vivid;
 
   @override
   State<PlayerBackdrop> createState() => _PlayerBackdropState();
@@ -162,7 +167,7 @@ class _PlayerBackdropState extends State<PlayerBackdrop> {
   @override
   void didUpdateWidget(PlayerBackdrop old) {
     super.didUpdateWidget(old);
-    if (widget.coverUrl != old.coverUrl) _load();
+    if (widget.coverUrl != old.coverUrl || widget.vivid != old.vivid) _load();
   }
 
   bool get _drifts =>
@@ -182,7 +187,7 @@ class _PlayerBackdropState extends State<PlayerBackdrop> {
     final made = widget.mesh
         ? CoverGlow.page(url, light: light)
         : widget.glowHeight == null
-        ? CoverGlow.of(url, light: light)
+        ? CoverGlow.of(url, light: light, vivid: widget.vivid)
         : CoverGlow.top(url, light: light);
     made.then((image) {
       if (!mounted || widget.coverUrl != url || _light != light) return;
@@ -239,10 +244,11 @@ class _PlayerBackdropState extends State<PlayerBackdrop> {
               end: Alignment.bottomCenter,
               stops: const [0, 0.45, 1],
               colors: light
-                  ? const [
-                      Color(0x00FFFFFF),
-                      Color(0x0DFFFFFF),
-                      Color(0x4DFFFFFF),
+                  ? [
+                      const Color(0x00FFFFFF),
+                      const Color(0x0DFFFFFF),
+                      // A vivid ground is not whitened towards the bottom as much
+                      Color(widget.vivid ? 0x26FFFFFF : 0x4DFFFFFF),
                     ]
                   : const [
                       PlayerBackdrop.darkestVeil,

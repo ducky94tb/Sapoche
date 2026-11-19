@@ -39,6 +39,12 @@ class CoverGlow {
   /// The brightness the background should average in the light theme, 0 black to 1 white: pale enough for dark text.
   static const _lightLuma = 0.8;
 
+  /// The light theme made richer, for a player whose cover melts into the colours behind it (the full cover): a good
+  /// part of the colour is kept, not a quarter, and it is brought up more. The most it can keep is where the darkest
+  /// cover, a grey of 60%, still has 4.5:1 with dark words (`test/on_cover_test.dart`).
+  static const _vividKeep = 0.4;
+  static const _vividSaturation = 1.7;
+
   /// Size of the picture of the glow along the top. Its shape does not matter: it is made of a few soft patches of
   /// colour, which stay soft however far they are stretched.
   static const topWidth = 64;
@@ -75,9 +81,52 @@ class CoverGlow {
   static Color toneFor(int seed) =>
       deepen(HSLColor.fromAHSL(1, _mixHues[(seed - 1) % _mixHues.length], 0.6, 0.3).toColor());
 
+  /// The one flat colour the full player of the style of cards stands on: the colour of the top of the very picture the
+  /// classic player and the full cover are drawn on ([of]), so that the three styles are of one colour for a cover,
+  /// light or dark as the theme is ([vivid]: the richer light ground the full cover has). Null when the cover cannot be read.
+  static Future<Color?> ground(
+    String url, {
+    bool light = false,
+    bool vivid = false,
+  }) async {
+    final glow = await of(url, light: light, vivid: vivid);
+    return glow == null ? null : groundOf(glow, light: light);
+  }
+
+  /// The mean colour of the top of [glow] (a picture of [render]), under what the player lays over its top in the dark
+  /// theme, which is what the colour is at the head of the page. Public so that it can be tested with made-up covers.
+  static Future<Color> groundOf(ui.Image glow, {required bool light}) async {
+    final data = await glow.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (data == null) return const Color(0xFF808080);
+    final rows = (glow.height * 0.45).round();
+    var r = 0.0, g = 0.0, b = 0.0, n = 0;
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < glow.width; x++) {
+        final at = (y * glow.width + x) * 4;
+        r += data.getUint8(at);
+        g += data.getUint8(at + 1);
+        b += data.getUint8(at + 2);
+        n++;
+      }
+    }
+    final mean = n == 0
+        ? const Color(0xFF808080)
+        : Color.fromARGB(
+            255,
+            (r / n).round(),
+            (g / n).round(),
+            (b / n).round(),
+          );
+    // The veil over the top of the page: black at about a third in the dark theme, nothing in the light one
+    return light ? mean : Color.alphaBlend(const Color(0x59000000), mean);
+  }
+
   /// The blurred picture for the cover at [url], pale when [light], or null when the cover cannot be read.
-  static Future<ui.Image?> of(String url, {bool light = false}) =>
-      _of(url, light, false);
+  static Future<ui.Image?> of(
+    String url, {
+    bool light = false,
+    bool vivid = false,
+  }) => _of(url, light, false, vivid: vivid);
 
   /// The glow along the top for the cover at [url]: see [renderTop].
   static Future<ui.Image?> top(String url, {bool light = false}) =>
@@ -93,9 +142,14 @@ class CoverGlow {
     bool light,
     bool top, {
     bool page = false,
+    bool vivid = false,
   }) {
     final key =
-        '${page ? 'page ' : top ? 'top ' : ''}${light ? 'light' : 'dark'} $url';
+        '${page
+            ? 'page '
+            : top
+            ? 'top '
+            : ''}${light ? (vivid ? 'vivid' : 'light') : 'dark'} $url';
     if (_cache.containsKey(key)) {
       // Most recently used goes last
       final image = _cache.remove(key);
@@ -103,7 +157,7 @@ class CoverGlow {
       return Future.value(image);
     }
     return _pending.putIfAbsent(key, () async {
-      final image = await _make(url, light, top, page: page);
+      final image = await _make(url, light, top, page: page, vivid: vivid);
       _remember(key, image);
       _pending.remove(key);
       return image;
@@ -123,13 +177,14 @@ class CoverGlow {
     bool light,
     bool top, {
     bool page = false,
+    bool vivid = false,
   }) async {
     final small = await _load(url);
     if (small == null) return null;
     try {
       return top
           ? await renderTop(small, light: light, page: page)
-          : await render(small, light: light);
+          : await render(small, light: light, vivid: vivid);
     } finally {
       small.dispose();
     }
@@ -163,7 +218,11 @@ class CoverGlow {
   }
 
   /// Blurs and tints [cover] into the small picture. Public so that it can be tested with a made-up cover.
-  static Future<ui.Image> render(ui.Image cover, {bool light = false}) async {
+  static Future<ui.Image> render(
+    ui.Image cover, {
+    bool light = false,
+    bool vivid = false,
+  }) async {
     final data = await cover.toByteData(format: ui.ImageByteFormat.rawRgba);
     final luma = data == null ? 0.5 : averageLuma(data.buffer.asUint8List());
     final recorder = ui.PictureRecorder();
@@ -176,7 +235,13 @@ class CoverGlow {
         tileMode: TileMode.mirror,
       )
       ..colorFilter = ColorFilter.matrix(
-        light
+        light && vivid
+            ? tint(
+                _vividKeep,
+                lift: 1 - _vividKeep,
+                saturation: _vividSaturation,
+              )
+            : light
             ? tint(
                 lightKeep(luma),
                 lift: 1 - lightKeep(luma),

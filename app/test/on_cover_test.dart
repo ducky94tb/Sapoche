@@ -19,7 +19,7 @@ double contrast(Color fg, Color bg) {
 void main() {
   /// The pictures the full player lays down behind everything: [CoverGlow.render] of covers from black to white and
   /// of every hue at full strength, in each theme. Every pixel is a ground the words and icons can land on.
-  Future<List<Color>> grounds({required bool light}) async {
+  Future<List<Color>> grounds({required bool light, bool vivid = false}) async {
     final covers = <ui.Image>[
       for (final rgb in const [
         [0, 0, 0],
@@ -40,7 +40,7 @@ void main() {
     ];
     final out = <Color>[];
     for (final cover in covers) {
-      final glow = await CoverGlow.render(cover, light: light);
+      final glow = await CoverGlow.render(cover, light: light, vivid: vivid);
       final data = (await glow.toByteData(format: ui.ImageByteFormat.rawRgba))!;
       for (var i = 0; i < data.lengthInBytes; i += 4 * 7) {
         final ground = Color.fromARGB(
@@ -57,6 +57,66 @@ void main() {
     }
     return out;
   }
+
+  // The flat colour of the style of cards, taken from the top of the same picture as the other two: words keep their 4.5:1
+  // on it, and on the card of the lyrics, a little deeper (dark theme: white words on the colour with the card at 45%
+  // black; light: dark words on it with the card at 6% black)
+  for (final light in [true, false]) {
+    testWidgets(
+      'on the flat colour of the cards, words keep 4.5:1 (${light ? 'light' : 'dark'})',
+      (tester) async {
+        await tester.runAsync(() async {
+          final onCover = (light ? Palette.light : Palette.dark).onCover;
+          var worst = double.infinity;
+          for (final cover in [
+            for (final rgb in const [
+              [0, 0, 0],
+              [255, 255, 255],
+              [128, 128, 128],
+              [255, 0, 0],
+              [0, 255, 0],
+              [0, 0, 255],
+              [255, 255, 0],
+              [0, 255, 255],
+              [255, 0, 255],
+              [255, 128, 0],
+              [40, 40, 90],
+            ])
+              await solid(rgb[0], rgb[1], rgb[2]),
+            await painted((x, y) => x < 24 ? [255, 255, 255] : [0, 0, 120]),
+          ]) {
+            final glow = await CoverGlow.render(
+              cover,
+              light: light,
+              vivid: light,
+            );
+            final ground = await CoverGlow.groundOf(glow, light: light);
+            final card = Color.lerp(ground, Colors.black, light ? 0.06 : 0.45)!;
+            for (final g in [ground, card]) {
+              final c = contrast(onCover.textSecondary, g);
+              if (c < worst) worst = c;
+            }
+          }
+          expect(worst, greaterThanOrEqualTo(4.5));
+        });
+      },
+    );
+  }
+
+  // The richer light ground of the full cover: dark words keep their 4.5:1 on every one of them too
+  testWidgets('on the vivid ground of the full cover, words keep 4.5:1', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      final onCover = Palette.light.onCover;
+      var worst = double.infinity;
+      for (final ground in await grounds(light: true, vivid: true)) {
+        final c = contrast(onCover.textSecondary, ground);
+        if (c < worst) worst = c;
+      }
+      expect(worst, greaterThanOrEqualTo(4.5));
+    });
+  });
 
   for (final light in [true, false]) {
     final name = light ? 'light' : 'dark';

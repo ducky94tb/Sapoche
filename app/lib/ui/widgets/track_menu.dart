@@ -26,12 +26,18 @@ class TrackMenu extends StatelessWidget {
     this.onAdd,
     this.onPlayNext,
     this.addedBy,
+    this.extra = const [],
+    this.onExtra,
   });
 
   final Track track;
   final VoidCallback? onAdd;
   final VoidCallback? onPlayNext;
   final String? addedBy;
+
+  /// Lines of the place the menu is in (the player), before the song's info, and what a touch on one does.
+  final List<MenuLine> extra;
+  final void Function(String value)? onExtra;
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +85,7 @@ class TrackMenu extends StatelessWidget {
       // Only where the room has a chat to send it to
       if (canSendToChat(room, track))
         MenuLine('chat', Icons.chat_bubble_outline_rounded, S.songSendToChat),
+      ...extra,
       MenuLine('info', Icons.info_outline_rounded, S.songInfo),
       if (online)
         MenuLine('blocked', Icons.block_rounded, S.notInterested, apart: true),
@@ -101,7 +108,7 @@ class TrackMenu extends StatelessWidget {
         'chat' => sendTrackToChat(context, track),
         'info' => showSongInfo(context, track, addedBy: addedBy),
         'blocked' => showNotInterested(context, track),
-        _ => null,
+        _ => onExtra?.call(value),
       },
     );
   }

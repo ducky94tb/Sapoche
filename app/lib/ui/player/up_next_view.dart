@@ -46,14 +46,14 @@ class UpNextView extends StatelessWidget {
                   return Row(
                     children: [
                       Expanded(
-                        child: _ShuffleButton(
+                        child: ShuffleButton(
                           controller: controller,
                           words: words,
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: _RepeatButton(
+                        child: RepeatButton(
                           controller: controller,
                           words: words,
                         ),
@@ -180,19 +180,27 @@ bool _pillWordsFit(BuildContext context, double width, bool autoplay) {
 /// Shuffle, on or off. On, what is still to come is mixed and stays mixed as songs are added; off, the songs go back in
 /// their order. A room whose server is too old for that has only a one-time mix: the icon turns once and a note says
 /// so, as shuffle did before it was a mode.
-class _ShuffleButton extends StatefulWidget {
-  const _ShuffleButton({required this.controller, required this.words});
+class ShuffleButton extends StatefulWidget {
+  const ShuffleButton({
+    super.key,
+    required this.controller,
+    this.words = true,
+    this.bare = false,
+  });
 
   final RoomController controller;
 
   /// Whether the pill has its word beside the icon.
   final bool words;
 
+  /// Only the icon, lit in the accent while on, with no pill: for the face of a player.
+  final bool bare;
+
   @override
-  State<_ShuffleButton> createState() => _ShuffleButtonState();
+  State<ShuffleButton> createState() => _ShuffleButtonState();
 }
 
-class _ShuffleButtonState extends State<_ShuffleButton> {
+class _ShuffleButtonState extends State<ShuffleButton> {
   int _turns = 0;
 
   void _press(bool? shuffle) {
@@ -221,11 +229,12 @@ class _ShuffleButtonState extends State<_ShuffleButton> {
     final enabled =
         snapshot.canControl && (shuffle != null || snapshot.upNext.length > 1);
     final color = on
-        ? p.onPrimary
+        ? (widget.bare ? p.primary : p.onPrimary)
         : enabled
         ? p.textSecondary
         : p.textTertiary.withValues(alpha: 0.5);
     return _Pill(
+      bare: widget.bare,
       onPressed: enabled ? () => _press(shuffle) : null,
       tooltip: shuffle == null
           ? S.shuffle
@@ -247,21 +256,30 @@ class _ShuffleButtonState extends State<_ShuffleButton> {
 }
 
 /// Cycles off, repeat all, repeat this song. Lit up while repeating.
-class _RepeatButton extends StatelessWidget {
-  const _RepeatButton({required this.controller, required this.words});
+class RepeatButton extends StatelessWidget {
+  const RepeatButton({
+    super.key,
+    required this.controller,
+    this.words = true,
+    this.bare = false,
+  });
 
   final RoomController controller;
 
   /// Whether the pill has its word beside the icon.
   final bool words;
 
+  /// Only the icon, lit in the accent while on, with no pill: for the face of a player.
+  final bool bare;
+
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final mode = controller.snapshot.repeat;
     final on = mode != Repeat.off;
-    final color = on ? p.onPrimary : p.textSecondary;
+    final color = on ? (bare ? p.primary : p.onPrimary) : p.textSecondary;
     return _Pill(
+      bare: bare,
       onPressed: controller.cycleRepeat,
       tooltip: switch (mode) {
         Repeat.off => S.repeatOff,
@@ -328,8 +346,11 @@ class _Pill extends StatelessWidget {
     required this.color,
     required this.on,
     required this.icon,
+    this.bare = false,
   });
 
+  /// Only the icon, in a square the size of a touch.
+  final bool bare;
   final VoidCallback? onPressed;
   final String tooltip;
 
@@ -344,6 +365,16 @@ class _Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    if (bare) {
+      return IconButton(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        icon: icon,
+        iconSize: 24,
+        color: color,
+        disabledColor: color,
+      );
+    }
     // The pill is drawn 40 high; a touch answers in the 48 round it
     return TouchBox(
       onTap: onPressed,

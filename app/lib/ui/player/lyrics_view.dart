@@ -8,6 +8,7 @@ import '../../strings.dart';
 import '../../theme/theme.dart';
 import '../scope.dart';
 import '../widgets/low_rate_timer.dart';
+import 'look.dart';
 import 'player_message.dart';
 
 /// The words of the song. With times they run along with the music like in Apple Music: the line being sung is
@@ -83,8 +84,11 @@ class _PlainLyrics extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 12, 4, 40),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.titleLarge
-            ?.copyWith(fontWeight: FontWeight.w600, height: 1.5),
+        style:
+            (PlayerLookScope.of(context).bigLyrics
+                    ? Theme.of(context).textTheme.headlineSmall
+                    : Theme.of(context).textTheme.titleLarge)
+                ?.copyWith(fontWeight: FontWeight.w600, height: 1.5),
       ),
     );
   }
@@ -170,8 +174,12 @@ class _SyncedLyricsState extends State<_SyncedLyrics> {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final style = Theme.of(context).textTheme.headlineSmall
-        ?.copyWith(fontWeight: FontWeight.w800, height: 1.25);
+    final text = Theme.of(context).textTheme;
+    final style =
+        (PlayerLookScope.of(context).bigLyrics
+                ? text.headlineMedium
+                : text.headlineSmall)
+            ?.copyWith(fontWeight: FontWeight.w800, height: 1.25);
     final lines = widget.lyrics.lines;
     return NotificationListener<UserScrollNotification>(
       onNotification: (n) {

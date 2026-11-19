@@ -16,6 +16,7 @@ class PlayPauseButton extends StatelessWidget {
     required this.onPressed,
     this.size = 72,
     this.filled = true,
+    this.white = false,
   });
 
   final bool playing;
@@ -26,11 +27,14 @@ class PlayPauseButton extends StatelessWidget {
   /// Filled pink disc (full player) or bare glyph (mini player).
   final bool filled;
 
+  /// With [filled], a white disc with a black glyph instead of the accent's.
+  final bool white;
+
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final glyphColor = filled ? p.onPrimary : p.text;
-    final ring = filled ? p.onPrimary.withValues(alpha: 0.7) : p.primary;
+    final glyphColor = filled ? (white ? Colors.black : p.onPrimary) : p.text;
+    final ring = filled ? glyphColor.withValues(alpha: 0.7) : p.primary;
     // A container of its own, or the screen reader merges it with the buttons around it
     return Semantics(
       container: true,
@@ -42,7 +46,9 @@ class PlayPauseButton extends StatelessWidget {
         child: SizedBox.square(
           dimension: size,
           child: Material(
-            color: filled ? p.primary : Colors.transparent,
+            color: filled
+                ? (white ? Colors.white : p.primary)
+                : Colors.transparent,
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),
@@ -92,6 +98,7 @@ class SkipButton extends StatelessWidget {
     required this.onPressed,
     this.size = 44,
     this.box,
+    this.fast = false,
   });
 
   final bool forward;
@@ -101,6 +108,9 @@ class SkipButton extends StatelessWidget {
   /// A square of this side with the glyph in it at the proportion [PlayPauseButton] has, so that the two are as large
   /// as each other and level when they stand side by side (the mini player). Without it, [size] is the glyph's.
   final double? box;
+
+  /// A double triangle (rewind, forward) in place of the single one with its bar.
+  final bool fast;
 
   @override
   Widget build(BuildContext context) {
@@ -117,7 +127,13 @@ class SkipButton extends StatelessWidget {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
       icon: Icon(
-        forward ? Icons.skip_next_rounded : Icons.skip_previous_rounded,
+        fast
+            ? (forward
+                  ? Icons.fast_forward_rounded
+                  : Icons.fast_rewind_rounded)
+            : (forward
+                  ? Icons.skip_next_rounded
+                  : Icons.skip_previous_rounded),
       ),
       color: context.palette.text,
     );

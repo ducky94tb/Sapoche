@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sapoche/data/app_settings.dart';
 import 'package:sapoche/data/backend.dart';
 import 'package:sapoche/data/models.dart';
 import 'package:sapoche/data/music_models.dart';
@@ -8,6 +9,7 @@ import 'package:sapoche/ui/artist_page.dart';
 import 'package:sapoche/ui/chat_sheet.dart';
 import 'package:sapoche/ui/collection_screen.dart';
 import 'package:sapoche/ui/home_shell.dart';
+import 'package:sapoche/ui/player/spotify_player.dart';
 import 'package:sapoche/ui/scope.dart';
 import 'package:sapoche/ui/widgets/reactions.dart' show showReactionPicker;
 import 'package:sapoche/ui/widgets/player_bar.dart';
@@ -29,21 +31,28 @@ Future<void> _state(WidgetTester t, FakeBackend b, RoomSnapshot s) async {
 }
 
 /// The playing room, with the song playing a little way in.
-Future<void> _playing(WidgetTester t, FakeBackend b) async {
-  await _state(t, b, busyRoom());
+Future<void> _playing(WidgetTester t, FakeBackend b, {bool video = false}) async {
+  await _state(t, b, busyRoom(video: video));
   b.emit(const PositionEvent(PlayerPosition(playing: true, positionMs: 64000, durationMs: 305000)));
   await _settle(t);
 }
 
 /// Opens the full player from whichever bar has the song: the mini player on a phone, the long bar of a wide window.
-Future<void> _openPlayer(WidgetTester t) async {
+Future<void> _openPlayer(WidgetTester t, {bool settle = true}) async {
   final bar = find.byType(PlayerBar);
   if (bar.evaluate().isNotEmpty) {
     await t.tapAt(t.getTopLeft(bar.first) + const Offset(40, 30));
   } else {
     await tapMiniPlayer(t);
   }
-  await _settle(t);
+  // The picture never lets the page come to rest (its controls fade on a timer): a few frames are all it gets
+  if (settle) {
+    await _settle(t);
+  } else {
+    for (var i = 0; i < 4; i++) {
+      await t.pump(const Duration(milliseconds: 500));
+    }
+  }
 }
 
 /// Opens the search page and looks up [text]: a button on a phone, a field in the sidebar of a wide window.
@@ -334,4 +343,97 @@ final shotScreens = <ShotScreen>[
       await t.tap(find.byKey(ValueKey('settings-$topic')));
       await _settle(t);
     }),
+  ..._playerStyleScreens(PlayerStyle.spotify, 'spotify'),
+  ..._playerStyleScreens(PlayerStyle.appleMusic, 'apple'),
+  // The three on a phone on its side, where they share one layout
+  for (final (style, suffix) in [
+    (PlayerStyle.classic, ''),
+    (PlayerStyle.spotify, '-spotify'),
+    (PlayerStyle.appleMusic, '-apple'),
+  ]) ...[
+    ShotScreen('player-land$suffix', style: style, windows: shotLandscape, listen: true, (t, b) async {
+      await _playing(t, b);
+      await _openPlayer(t);
+    }),
+    ShotScreen('player-land-lyrics$suffix', style: style, windows: shotLandscape, prepare: (b) => b.lyricsResult = lyricsData, listen: true, (t, b) async {
+      await _playing(t, b);
+      await _openPlayer(t);
+      await t.tap(find.byTooltip(S.lyrics));
+      await _settle(t);
+    }),
+    ShotScreen('player-land-queue$suffix', style: style, windows: shotLandscape, listen: true, (t, b) async {
+      await _playing(t, b);
+      await _openPlayer(t);
+      await t.tap(find.byTooltip(S.upNext));
+      await _settle(t);
+    }),
+  ],
 ];
+
+/// The player screens of one style of the full player, named like the classic ones with [suffix] after. The style of
+/// cards has no button for the lyrics or the comments: they are cards under the cover, reached by scrolling.
+List<ShotScreen> _playerStyleScreens(PlayerStyle style, String suffix) {
+  Future<void> card(WidgetTester t, String title) async {
+    // A wide window has no cards: the places and the buttons are the classic player's
+    if (find.byTooltip(title).evaluate().isNotEmpty) {
+      await t.tap(find.byTooltip(title));
+      return _settle(t);
+    }
+    final scroll = find.descendant(of: find.byType(SpotifyPlayer), matching: find.byType(CustomScrollView));
+    await t.drag(scroll, const Offset(0, -700));
+    await _settle(t);
+    final finder = find.descendant(of: find.byType(SpotifyPlayer), matching: find.text(title));
+    await t.ensureVisible(finder);
+    await t.tap(finder);
+    await _settle(t);
+  }
+
+  Future<void> comments(WidgetTester t) async {
+    if (style == PlayerStyle.spotify) return card(t, S.youtubeComments);
+    await t.tap(find.byTooltip(S.youtubeComments));
+    await _settle(t);
+  }
+
+  return [
+    ShotScreen('player-video-$suffix', style: style, listen: true, (t, b) async {
+      await _playing(t, b, video: true);
+      await _openPlayer(t, settle: false);
+    }),
+    ShotScreen('player-video-land-$suffix', style: style, windows: shotLandscape, listen: true, (t, b) async {
+      await _playing(t, b, video: true);
+      await _openPlayer(t, settle: false);
+    }),
+    ShotScreen('player-$suffix', style: style, prepare: (b) => b.lyricsResult = lyricsData, listen: true, (t, b) async {
+      await _playing(t, b);
+      await _openPlayer(t);
+    }),
+    if (style == PlayerStyle.spotify)
+      ShotScreen('player-$suffix-cards', style: style, prepare: (b) => b.lyricsResult = lyricsData, listen: true, (t, b) async {
+        await _playing(t, b);
+        await _openPlayer(t);
+        await t.drag(find.descendant(of: find.byType(SpotifyPlayer), matching: find.byType(CustomScrollView)), const Offset(0, -600));
+        await _settle(t);
+      }),
+    ShotScreen('player-lyrics-$suffix', style: style, prepare: (b) => b.lyricsResult = lyricsData, listen: true, (t, b) async {
+      await _playing(t, b);
+      await _openPlayer(t);
+      if (style == PlayerStyle.spotify) {
+        await card(t, S.lyrics);
+      } else {
+        await t.tap(find.byTooltip(S.lyrics));
+        await _settle(t);
+      }
+    }),
+    ShotScreen('player-comments-$suffix', style: style, listen: true, prepare: (b) => b.radioResult = const SongRadio(tracks: [longViVideo]), (t, b) async {
+      await _playing(t, b);
+      await _openPlayer(t);
+      await comments(t);
+    }),
+    ShotScreen('player-queue-$suffix', style: style, listen: true, (t, b) async {
+      await _playing(t, b);
+      await _openPlayer(t);
+      await t.tap(find.byTooltip(S.upNext));
+      await _settle(t);
+    }),
+  ];
+}
