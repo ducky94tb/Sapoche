@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../strings.dart';
 import '../../theme/theme.dart';
+import '../home_shell.dart';
 
 /// Which of the buttons of a [PlayRow] is waiting for songs to arrive.
 enum PlayWorking { none, play, shuffle, other }
@@ -69,6 +70,10 @@ class PlayRow extends StatelessWidget {
   /// The least Play is given to keep its word: with less it is a round button.
   static const _playLeast = 112.0;
 
+  /// On a screen on its side, where the player takes a share of the width and the pages are narrow, Play is a round button
+  /// unless it has this much room: a pill that is only a little wider than the round ones beside it looks squeezed.
+  static const _playRoomy = 200.0;
+
   /// A column narrower than this puts the round buttons under Play.
   static const _stackBelow = 380.0;
 
@@ -108,7 +113,8 @@ class PlayRow extends StatelessWidget {
         // What the round buttons leave Play. Squeezed under [_playLeast] (the player beside the pages, a phone on its
         // side) it is a round button as well, with the triangle only, rather than a pill that shrinks its word
         final others = 1 + (download == null ? 0 : 1) + (more == null ? 0 : 1);
-        final round = box.maxWidth - others * (_round + _gap) < _playLeast;
+        final room = box.maxWidth - others * (_round + _gap);
+        final round = room < (HomeShell.isWide(context) ? _playRoomy : _playLeast);
         return Row(
           mainAxisAlignment: round && !inline
               ? MainAxisAlignment.center

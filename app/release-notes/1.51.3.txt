@@ -1,0 +1,4 @@
+Full cover on phones on their side, round Play
+- A phone on its side, with the player beside the page: Full cover now shows the song's picture square and across the whole card, instead of a wide crop with the black bars and the square's edges at the sides.
+- The thin line that could cross the cover is gone on more screens (a pixel row at the foot of the cover is no longer left half covered).
+- On a screen on its side the Play button of a playlist or album turns into a round button when the page is narrow, as it does in folders.

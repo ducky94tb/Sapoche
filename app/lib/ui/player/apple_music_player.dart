@@ -12,6 +12,7 @@ import '../player_sheet.dart';
 import '../widgets/artwork.dart';
 import '../widgets/playback_bar.dart';
 import '../widgets/volume_bar.dart';
+import '../widgets/whole_pixel_clip.dart';
 import 'classic_player.dart';
 import 'look.dart';
 import 'lyrics_ticker.dart';
@@ -342,23 +343,11 @@ class _FullCoverState extends State<_FullCover> {
                   ).createShader(rect),
                   child: CoverSlot(
                     controller: sheet,
-                    // A box wider than tall (the card of a tablet) shows the picture square, as wide as the box and
-                    // cut at the top and foot: a wide crop of a square cover held in the black of a 16:9 thumbnail
-                    // shows the black at the sides, and the square's edges
-                    child: ClipRect(
-                      child: OverflowBox(
-                        minHeight: max(height, box.maxWidth),
-                        maxHeight: max(height, box.maxWidth),
-                        child: Artwork(
-                          key: sheet.pageCover,
-                          url: current.thumb,
-                          size: max(height, box.maxWidth),
-                          width: box.maxWidth,
-                          radius: 0,
-                          sharp: true,
-                          crossfade: true,
-                        ),
-                      ),
+                    child: _CoverPicture(
+                      pageCover: sheet.pageCover,
+                      url: current.thumb,
+                      width: box.maxWidth,
+                      height: height,
                     ),
                   ),
                 ),
@@ -458,6 +447,46 @@ class _FullCoverState extends State<_FullCover> {
   }
 }
 
+/// The picture of the full cover, [width] by [height]. A place wider than tall (the card of a tablet, or beside the
+/// pages on a phone on its side) shows the picture square, as wide as the place and cut at the top and foot: a wide crop
+/// of a square cover held in the black of a 16:9 thumbnail would show the black at the sides, and the square's edges.
+class _CoverPicture extends StatelessWidget {
+  const _CoverPicture({
+    required this.pageCover,
+    required this.url,
+    required this.width,
+    required this.height,
+  });
+
+  final GlobalKey pageCover;
+  final String? url;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final side = max(height, width);
+    // The key is on the part that shows, which is where the cover flies to
+    // The foot is left undrawn by a pixel row or two: the mask ends in a part row where the box stands at a half pixel,
+    // and what is drawn there shows as a line across the cover (on the phone and the Tab S7)
+    return WholePixelClip(
+      key: pageCover,
+      child: OverflowBox(
+        minHeight: side,
+        maxHeight: side,
+        child: Artwork(
+          url: url,
+          size: side,
+          width: width,
+          radius: 0,
+          sharp: true,
+          crossfade: true,
+        ),
+      ),
+    );
+  }
+}
+
 /// The cover of a phone on its side: across the whole width and up to the top edge, its foot melting into the colours
 /// behind it, with the song over that foot. A picture (the video) is 16 to 9 across the width at the top instead, and
 /// the song is under it.
@@ -547,14 +576,11 @@ class _CompactCover extends StatelessWidget {
                 ).createShader(rect),
                 child: CoverSlot(
                   controller: sheet,
-                  child: Artwork(
-                    key: sheet.pageCover,
+                  child: _CoverPicture(
+                    pageCover: sheet.pageCover,
                     url: current.thumb,
-                    size: height,
                     width: box.maxWidth,
-                    radius: 0,
-                    sharp: true,
-                    crossfade: true,
+                    height: height,
                   ),
                 ),
               ),

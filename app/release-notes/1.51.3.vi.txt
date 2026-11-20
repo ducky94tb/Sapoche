@@ -1,0 +1,4 @@
+Tràn bìa trên điện thoại xoay ngang, nút Play tròn
+- Điện thoại xoay ngang, player nằm cạnh trang: kiểu Tràn bìa nay vẽ ảnh bài hát vuông và rộng hết thẻ, thay vì cắt ngang để lòi khung đen và hai cạnh của ảnh vuông.
+- Đường kẻ mảnh có thể chạy ngang bìa nay hết ở nhiều màn hình hơn (hàng điểm ảnh ở chân bìa không còn bị che nửa chừng).
+- Khi màn hình xoay ngang, nút Play của playlist hay album thành nút tròn nếu trang hẹp, như ở thư mục.

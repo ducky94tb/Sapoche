@@ -14,6 +14,7 @@ import 'package:sapoche/ui/player/lyrics_ticker.dart';
 import 'package:sapoche/ui/player/lyrics_view.dart';
 import 'package:sapoche/ui/player_sheet.dart';
 import 'package:sapoche/ui/scope.dart';
+import 'package:sapoche/ui/widgets/artwork.dart';
 import 'package:sapoche/ui/widgets/flat_backdrop.dart';
 import 'package:sapoche/ui/widgets/player_backdrop.dart';
 import 'package:sapoche/ui/widgets/volume_bar.dart';
@@ -334,6 +335,25 @@ void main() {
   });
 
   group('full cover', () {
+    testWidgets(
+      'on a phone on its side the picture is a square as wide as the card, not a wide crop with the black of a 16:9 frame',
+      (tester) async {
+        // A song whose thumbnail is a square cover held in the black of a 16:9 frame shows the black at the sides of
+        // the card, and the square's edges, if the picture is cropped wide
+        await openStyled(tester, PlayerStyle.appleMusic);
+        await resize(tester, 844, 390);
+        final picture = find.descendant(
+          of: find.byType(AppleMusicPlayer),
+          matching: find.byType(Artwork),
+        );
+        expect(picture, findsOneWidget);
+        final box = tester.getRect(picture);
+        final card = tester.getRect(find.byType(AppleMusicPlayer));
+        expect(box.width, closeTo(card.width, 1));
+        expect(box.height, closeTo(box.width, 1), reason: 'a square, cut at the top and foot');
+      },
+    );
+
     testWidgets(
       'the cover ends on a whole device pixel, so that no row of it is left unmasked',
       (tester) async {
