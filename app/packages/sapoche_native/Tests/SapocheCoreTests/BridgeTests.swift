@@ -262,6 +262,30 @@ final class BridgeTests: XCTestCase {
         }
     }
 
+    /// Settles until [done] holds. The downloads and the library work on actors of their own, so how many rounds they need
+    /// depends on the machine (a CI runner is several times slower than a laptop): a test waits for what it expects, not for
+    /// a fixed number of rounds. It gives up after 20 seconds, and the assertion that follows says what was missing.
+    private func settle(until done: () async -> Bool) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(20))
+        while true {
+            await settle()
+            if await done() || ContinuousClock.now >= deadline { return }
+        }
+    }
+
+    private func downloadStates() async -> [String?] {
+        ((try? await result("downloads", as: [[String: Any]].self)) ?? []).map { $0["state"] as? String }
+    }
+
+    private func downloadIds() async -> [String?] {
+        ((try? await result("downloads", as: [[String: Any]].self)) ?? []).map { $0["videoId"] as? String }.sorted { ($0 ?? "") < ($1 ?? "") }
+    }
+
+    /// The last word the screen had of the run of downloads was that it is over.
+    private var downloadRunIsOver: Bool {
+        events.last { $0["type"] as? String == "downloads" }?["active"] is NSNull
+    }
+
     // ------------------------------------------------------------------ music on this phone
 
     private func addMusic(_ name: String, durMs: Int64 = 60_000, title: String? = nil, artist: String? = nil) throws {
@@ -625,7 +649,7 @@ final class BridgeTests: XCTestCase {
     func testADownloadIsQueuedFetchedAndListed() async throws {
         let answer = try await call("download", ["tracks": [song(1)], "allowMetered": false]) as? String
         XCTAssertEqual(answer, "queued")
-        await settle()
+        await settle(until: { await self.downloadStates() == ["done"] && self.downloadRunIsOver && self.platform.activitySteps.count == 2 })
         let list = try await result("downloads", as: [[String: Any]].self)
         XCTAssertEqual(list.first?["state"] as? String, "done")
         XCTAssertEqual(JSON(list.first?["bytes"]).int64, 10)
@@ -654,16 +678,16 @@ final class BridgeTests: XCTestCase {
 
     func testCancellingStopsTheRunDropsWhatWasNotFetchedAndDoesNotStartAgain() async throws {
         _ = try await call("download", ["tracks": [song(1)], "allowMetered": false])
-        await settle()
+        await settle(until: { await self.downloadStates() == ["done"] && self.downloadRunIsOver })
         gate.hold()
         _ = try await call("download", ["tracks": [song(2), song(3)], "allowMetered": false])
-        await settle()
+        await settle(until: { self.gate.waiters == 1 })
         XCTAssertEqual(gate.waiters, 1, "the second song is on its way and held")
         // Asking again while the run goes on would make it look again at the end
         _ = try await call("download", ["tracks": [song(4)], "allowMetered": false])
 
         _ = try await call("downloadCancel")
-        await settle()
+        await settle(until: { await self.downloadIds() == ["video000001"] && self.downloadRunIsOver })
         let list = try await result("downloads", as: [[String: Any]].self)
         XCTAssertEqual(list.map { $0["videoId"] as? String }, ["video000001"], "what is on the phone stays, the rest is gone")
         XCTAssertEqual(gate.waiters, 1, "the run did not start again by itself")
@@ -674,14 +698,15 @@ final class BridgeTests: XCTestCase {
     func testASongAskedForAgainWhileAFailedRunWaitsToTryAgainIsFetchedAtOnce() async throws {
         gate.breakTransfers(true)
         _ = try await call("download", ["tracks": [song(1)], "allowMetered": false])
-        await settle()
+        // The state says "queued" a moment before the run starts its wait: the person taps once the wait has begun
+        await settle(until: { await self.downloadStates() == ["queued"] && self.time.dueTimes.contains(60_000) })
         var list = try await result("downloads", as: [[String: Any]].self)
         XCTAssertEqual(list.first?["state"] as? String, "queued", "it failed once and has tries left: the run waits to try it again")
 
         // The person taps Try again: no minute of waiting is left for the run to get over
         gate.breakTransfers(false)
         _ = try await call("download", ["tracks": [song(1)], "allowMetered": false])
-        await settle()
+        await settle(until: { await self.downloadStates() == ["done"] })
         list = try await result("downloads", as: [[String: Any]].self)
         XCTAssertEqual(list.first?["state"] as? String, "done")
         XCTAssertEqual(time.now, 0, "no time went by")
@@ -690,10 +715,11 @@ final class BridgeTests: XCTestCase {
     func testTheDelayBeforeAFailedSongIsTriedAgainStillPassesWhenNobodyAsks() async throws {
         gate.breakTransfers(true)
         _ = try await call("download", ["tracks": [song(1)], "allowMetered": false])
-        await settle()
+        // Time moves on only once the run is waiting for it, or it would pass with nobody to wake
+        await settle(until: { self.time.dueTimes.contains(60_000) })
         gate.breakTransfers(false)
         await time.advance(60_000)
-        await settle()
+        await settle(until: { await self.downloadStates() == ["done"] })
         let list = try await result("downloads", as: [[String: Any]].self)
         XCTAssertEqual(list.first?["state"] as? String, "done")
     }
@@ -701,14 +727,14 @@ final class BridgeTests: XCTestCase {
     func testASongAddedToAKeptPlaylistComesByItself() async throws {
         let id = try await result("playlistCreate", ["name": "Road", "tracks": [song(1)]], as: Int64.self)
         _ = try await call("playlistOffline", ["id": id, "on": true])
-        await settle()
+        await settle(until: { await self.downloadStates() == ["done"] })
         var list = try await result("downloads", as: [[String: Any]].self)
         XCTAssertEqual(list.map { $0["state"] as? String }, ["done"], "switched on, what it has comes")
         let lists = try await result("playlists", as: [[String: Any]].self)
         XCTAssertEqual(lists.first?["offline"] as? Bool, true)
 
         _ = try await call("playlistAdd", ["id": id, "tracks": [song(2)]])
-        await settle()
+        await settle(until: { await self.downloadStates() == ["done", "done"] })
         list = try await result("downloads", as: [[String: Any]].self)
         XCTAssertEqual(list.compactMap { $0["videoId"] as? String }.sorted(), ["video000001", "video000002"])
         XCTAssertEqual(list.map { $0["state"] as? String }, ["done", "done"])
@@ -723,7 +749,7 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(list.count, 0, "nothing comes by itself on mobile data")
 
         _ = try await call("setOfflineCellular", ["on": true])
-        await settle()
+        await settle(until: { await self.downloadIds() == ["video000001"] })
         let storage = try await result("storage", as: [String: Any].self)
         XCTAssertEqual(storage["offlineCellular"] as? Bool, true)
         list = try await result("downloads", as: [Any].self)
@@ -742,11 +768,11 @@ final class BridgeTests: XCTestCase {
         let id = try await result("playlistCreate", ["name": "Road", "tracks": [song(1)]], as: Int64.self)
         gate.hold()
         _ = try await call("playlistOffline", ["id": id, "on": true])
-        await settle()
+        await settle(until: { self.gate.waiters == 1 })
         XCTAssertEqual(gate.waiters, 1, "the song is on its way")
         gate.release()
         _ = try await call("setAutoDownload", ["on": false])
-        await settle()
+        await settle(until: { await self.downloadStates() == ["done"] })
         let list = try await result("downloads", as: [[String: Any]].self)
         XCTAssertEqual(list.map { $0["state"] as? String }, ["done"], "the run starts again for the kept playlist")
     }
@@ -754,7 +780,7 @@ final class BridgeTests: XCTestCase {
     func testSwitchingOffWithRemovingTakesTheFilesAway() async throws {
         let id = try await result("playlistCreate", ["name": "Road", "tracks": [song(1)]], as: Int64.self)
         _ = try await call("playlistOffline", ["id": id, "on": true])
-        await settle()
+        await settle(until: { await self.downloadStates() == ["done"] })
         let removable = try await result("offlineRemovable", ["playlistId": id], as: Int.self)
         XCTAssertEqual(removable, 1)
         _ = try await call("playlistOffline", ["id": id, "on": false, "remove": true])
@@ -770,12 +796,12 @@ final class BridgeTests: XCTestCase {
             let before = gate.waiters
             gate.hold()
             _ = try await call("playlistOffline", ["id": id, "on": true])
-            await settle()
+            await settle(until: { self.gate.waiters == before + 1 })
             XCTAssertEqual(gate.waiters, before + 1, "the song is on its way")
             _ = try await call("playlistOffline", ["id": id, "on": false, "remove": remove])
             gate.release()
             try await Task.sleep(nanoseconds: 200_000_000) // the held transfer polls the gate in real time
-            await settle()
+            await settle(until: { await self.downloadIds().isEmpty })
             let list = try await result("downloads", as: [Any].self)
             XCTAssertEqual(list.count, 0, "remove \(remove): nothing asks for the song any more")
             let storage = try await result("storage", as: [String: Any].self)
@@ -787,11 +813,11 @@ final class BridgeTests: XCTestCase {
         let id = try await result("playlistCreate", ["name": "Road", "tracks": [song(1)]], as: Int64.self)
         gate.hold()
         _ = try await call("playlistOffline", ["id": id, "on": true])
-        await settle()
+        await settle(until: { self.gate.waiters == 1 })
         _ = try await call("playlistDelete", ["id": id])
         gate.release()
         try await Task.sleep(nanoseconds: 200_000_000) // the held transfer polls the gate in real time
-        await settle()
+        await settle(until: { await self.downloadIds().isEmpty })
         let list = try await result("downloads", as: [Any].self)
         XCTAssertEqual(list.count, 0)
         let storage = try await result("storage", as: [String: Any].self)
@@ -905,7 +931,7 @@ final class BridgeTests: XCTestCase {
 
         // The room tells this phone to get ready, then to start
         socket.receive(#"{"t":"prepare","epoch":3,"index":0,"item":{"id":"q1","videoId":"video000001","title":"Song 1","artist":"A","durMs":200000,"addedBy":"dev-a"},"seekToMs":0}"#)
-        await settle()
+        await settle(until: { self.engine.loaded?.id == "q1" })
         XCTAssertEqual(engine.loaded?.id, "q1")
         XCTAssertTrue(socket.sent.contains { $0.contains("\"ready\"") && $0.contains("\"epoch\":3") })
 
@@ -1019,7 +1045,7 @@ final class BridgeTests: XCTestCase {
         let socket = try await inRoomWithTheScreenOff()
         socket.receive(#"{"t":"chat","msg":{"id":1,"by":"u2","name":"Ann","text":"hello","at":5}}"#)
         socket.receive(#"{"t":"chat","msg":{"id":2,"by":"me","name":"Me","text":"mine","at":6}}"#)
-        await settle()
+        await settle(until: { self.platform.noticesShown.count >= 1 })
         XCTAssertEqual(platform.noticesShown.count, 1, "this phone's own message is no news")
         XCTAssertEqual(platform.noticesShown.first?.room, "ABC234")
         XCTAssertEqual(platform.noticesShown.first?.title, "Ann")
@@ -1027,7 +1053,7 @@ final class BridgeTests: XCTestCase {
 
         _ = try await call("setNotificationPreview", ["on": false])
         socket.receive(#"{"t":"chat","msg":{"id":3,"by":"u2","name":"Ann","text":"secret","at":7}}"#)
-        await settle()
+        await settle(until: { self.platform.noticesShown.count >= 2 })
         XCTAssertEqual(platform.noticesShown.last?.body, "sent a message")
     }
 
@@ -1050,7 +1076,7 @@ final class BridgeTests: XCTestCase {
 
         _ = try await call("muteRoomNotifications", ["code": "ABC234", "until": NSNull()])
         socket.receive(#"{"t":"chat","msg":{"id":3,"by":"u2","name":"Ann","text":"loud","at":7}}"#)
-        await settle()
+        await settle(until: { !self.platform.noticesShown.isEmpty })
         XCTAssertEqual(platform.noticesShown.map(\.body), ["loud"])
     }
 

@@ -1356,22 +1356,38 @@ final class MediaTests: XCTestCase {
     }
 
     func testATransferNobodyWaitsForAnyMoreIsStopped() async throws {
+        // A transfer that would take a minute: it ends early only if it is stopped, and says so
         final class Slow: FileFetcher, @unchecked Sendable {
             let lock = NSLock()
+            var started = false
+            var stopped = false
             var finished = false
 
             func fetch(_ url: URL, headers: [String: String], to file: URL) async throws -> Int64 {
-                try await Task.sleep(nanoseconds: 300_000_000)
-                lock.lock()
-                finished = true
-                lock.unlock()
+                lock.lock(); started = true; lock.unlock()
+                do {
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                } catch {
+                    lock.lock(); stopped = true; lock.unlock()
+                    throw error
+                }
+                lock.lock(); finished = true; lock.unlock()
                 return 10
             }
+
+            var isStarted: Bool { lock.lock(); defer { lock.unlock() }; return started }
+            var isStopped: Bool { lock.lock(); defer { lock.unlock() }; return stopped }
+            var isFinished: Bool { lock.lock(); defer { lock.unlock() }; return finished }
+        }
+        // Waits for what the test expects, not for a time: a slow machine takes as long as it takes (gives up after 20 s)
+        func eventually(_ done: () -> Bool) async {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(20))
+            while !done(), ContinuousClock.now < deadline { try? await Task.sleep(nanoseconds: 5_000_000) }
         }
         let slow = Slow()
         let (media, files) = library(FakeResolver(), slow)
         let only = Task { try await media.playable("vid00000001") }
-        try await Task.sleep(nanoseconds: 30_000_000)
+        await eventually { slow.isStarted }
         only.cancel()
         do {
             _ = try await only.value
@@ -1379,8 +1395,9 @@ final class MediaTests: XCTestCase {
         } catch is CancellationError {
             // as it should
         }
-        try await Task.sleep(nanoseconds: 450_000_000)
-        XCTAssertFalse(slow.finished, "the transfer was stopped with its only waiter")
+        await eventually { slow.isStopped }
+        XCTAssertTrue(slow.isStopped, "the transfer was stopped with its only waiter")
+        XCTAssertFalse(slow.isFinished)
         XCTAssertNil(files.file("vid00000001"))
     }
 

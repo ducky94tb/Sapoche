@@ -15,6 +15,9 @@ final class VirtualTime: TimeSource {
 
     func nowMs() -> Int64 { now }
 
+    /// The moments something is waiting for, so that a test can tell the wait has begun before it moves time forward.
+    var dueTimes: [Int64] { timers.values.map(\.at) }
+
     func sleep(ms: Int64) async throws {
         try Task.checkCancellation()
         if ms <= 0 { return }
