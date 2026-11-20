@@ -404,6 +404,20 @@ final class GroupSessionTests: XCTestCase {
         XCTAssertEqual(h.player.seeks.count, seeksBefore)
     }
 
+    func testAStartMissedWhileTheConnectionWasDownIsCaughtUpWithAfterReconnecting() async {
+        let h = harness()
+        h.message(prepare(1, item))
+        await h.run()
+        XCTAssertFalse(h.player.playing)
+        // The room started without this device while it was offline; the state it gets back has the barrier's epoch
+        h.session.onReconnected()
+        await h.run()
+        h.message(state("playing", epoch: 1, startedAt: h.serverNow() - 2000))
+        await h.step(1500)
+        XCTAssertTrue(h.player.playing)
+        XCTAssertEqual(h.player.prepareCount, 1, "the item must stay loaded")
+    }
+
     func testReportsTheEndOfAnItemOnce() async {
         let h = harness()
         h.message(prepare(1, item))
@@ -537,6 +551,19 @@ final class GroupSessionTests: XCTestCase {
         let startedAt = Int64(digits)!
         // Position 0 was heard about 1100ms ago
         XCTAssertLessThan(abs(startedAt - (h.serverNow() - 1100)), 60, "startedAt=\(startedAt) now=\(h.serverNow())")
+    }
+
+    func testReconnectingAfterMovingOnByItselfBeforeTheRoomSaysSoDoesNotTakeTheDeviceBackToTheOldSong() async {
+        let h = await playingFirstOfTwo()
+        await h.step(5000)
+        h.player.autoAdvance()
+        await h.step(100)
+        h.session.onReconnected()
+        await h.run()
+        h.message(twoItemState("playing", epoch: 1, startedAt: h.serverNow() - 5100))
+        await h.step(500)
+        XCTAssertEqual(h.player.prepareCount, 1, "the item it moved on to must stay loaded")
+        XCTAssertEqual(h.player.loaded, item2)
     }
 
     func testTheRoomsAdvanceIsAdoptedAndDriftCorrectionCarriesOn() async {

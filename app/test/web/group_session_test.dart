@@ -244,6 +244,21 @@ void main() {
     });
   });
 
+  test('a start missed while the connection was down is caught up with after reconnecting', () {
+    run(() {
+      session.onMessage(stateOf(room(phase: 'preparing', epoch: 2)));
+      session.onMessage(PrepareMessage(epoch: 2, index: 0, item: item('1'), seekToMs: 0));
+      async.elapse(const Duration(milliseconds: 10));
+      expect(player.playing, isFalse);
+      // The room started without this device; the state it gets back has the barrier's epoch
+      session.onReconnected();
+      session.onMessage(stateOf(room(phase: 'playing', startedAt: 10000 - 2000, epoch: 2)));
+      async.elapse(const Duration(milliseconds: 1500));
+      expect(player.playing, isTrue);
+      expect(player.prepareAttempts, 1);
+    });
+  });
+
   test('the player ending its song is reported with the epoch of the room', () {
     run(() {
       session.onMessage(stateOf(room(phase: 'playing', startedAt: 10000, epoch: 4)));
@@ -338,6 +353,19 @@ void main() {
       // The player moves on to song 2 by itself, then the room says so
       player.onAdvanced?.call();
       session.onMessage(const AdvanceMessage(epoch: 2, index: 1, startedAt: 10000 + 180000));
+      async.elapse(const Duration(milliseconds: 10));
+      expect(player.calls.where((c) => c.startsWith('prepare')), hasLength(1));
+    });
+  });
+
+  test('reconnecting after moving on by itself, before the room says so, does not take the device back to the old song', () {
+    run(() {
+      session.onMessage(stateOf(room(phase: 'playing', startedAt: 10000)));
+      async.elapse(const Duration(seconds: 1));
+      player.onAdvanced?.call();
+      async.elapse(const Duration(milliseconds: 100));
+      session.onReconnected();
+      session.onMessage(stateOf(room(phase: 'playing', startedAt: 10000)));
       async.elapse(const Duration(milliseconds: 10));
       expect(player.calls.where((c) => c.startsWith('prepare')), hasLength(1));
     });

@@ -549,6 +549,21 @@ class GroupSessionTest {
     }
 
     @Test
+    fun `a start missed while the connection was down is caught up with after reconnecting`() = runTest {
+        val h = harness()
+        h.session.onMessage(ServerMessage.Prepare(1, 0, item, 0))
+        runCurrent()
+        assertFalse(h.player.playing)
+        // The room started without this device while it was offline; the state it gets back has the barrier's epoch
+        h.session.onReconnected()
+        runCurrent()
+        h.session.onMessage(state("playing", epoch = 1, startedAt = h.serverNow() - 2000))
+        step(1500)
+        assertTrue(h.player.playing)
+        assertEquals(1, h.player.prepareCount, "the item must stay loaded")
+    }
+
+    @Test
     fun `reports the end of an item once`() = runTest {
         val h = harness()
         h.session.onMessage(ServerMessage.Prepare(1, 0, item, 0))
@@ -704,6 +719,20 @@ class GroupSessionTest {
         val startedAt = Regex("\"startedAt\":(-?\\d+)").find(report)!!.groupValues[1].toLong()
         // Position 0 was heard about 1100ms ago
         assertTrue(abs(startedAt - (h.serverNow() - 1100)) < 60, "startedAt=$startedAt now=${h.serverNow()}")
+    }
+
+    @Test
+    fun `reconnecting after moving on by itself, before the room says so, does not take the device back to the old song`() = runTest {
+        val h = playingFirstOfTwo()
+        step(5000)
+        h.player.autoAdvance()
+        step(100)
+        h.session.onReconnected()
+        runCurrent()
+        h.session.onMessage(twoItemState("playing", epoch = 1, startedAt = h.serverNow() - 5100))
+        step(500)
+        assertEquals(1, h.player.prepareCount, "the item it moved on to must stay loaded")
+        assertEquals(item2, h.player.loaded)
     }
 
     @Test

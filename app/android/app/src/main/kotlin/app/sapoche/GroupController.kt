@@ -723,11 +723,16 @@ class GroupController(
             if (it is ServerMessage.AutoplayFill) fillRoom(it)
             if (it is ServerMessage.State) {
                 if (owedFill != null && fillJob?.isActive != true) deliverOwedFill(it.state)
-                // The room ran out of songs and carries on by itself: every device needs to be awake to load what it adds
-                if (it.state.phase == "idle" && it.state.autoplay == true && it.state.queue.isNotEmpty() && !awake.held &&
-                    !exo.isPlaying && sleep.state.value != Sleep.SongEnd
-                ) {
-                    awake.hold("the room ran out of songs")
+                // The room ran out of songs and carries on by itself: every device needs to be awake to load what it adds.
+                // This runs on OkHttp's thread; the player and the wake locks belong to the main one, so it is asked there,
+                // in the order of the messages (before the session has the state, as it was)
+                val state = it.state
+                scope.launch {
+                    if (state.phase == "idle" && state.autoplay == true && state.queue.isNotEmpty() && !awake.held &&
+                        !exo.isPlaying && sleep.state.value != Sleep.SongEnd
+                    ) {
+                        awake.hold("the room ran out of songs")
+                    }
                 }
             }
             if (it is ServerMessage.MediaTicket) ticketWaiters[it.id]?.complete(it)
@@ -736,7 +741,7 @@ class GroupController(
             onChat(code.uppercase(), it)
             newSession.onMessage(it)
             // The song loads paused: the hold is taken after the session has stopped the player
-            if (it is ServerMessage.Prepare && !exo.isPlaying) awake.hold("a song of the room to load")
+            if (it is ServerMessage.Prepare) scope.launch { if (!exo.isPlaying) awake.hold("a song of the room to load") }
             // After the session has the state: the offer depends on whether the room's chat is sealed
             if (it is ServerMessage.State && it.protocol >= TASTE_PROTOCOL) shareTaste()
         }

@@ -1,0 +1,3 @@
+Rooms: no more stuck on "Syncing..."
+- Fixed a bug where a song could hang on "Syncing..." in a room, for example after one song ended and the next one began. A device that lost its connection at the wrong moment now catches up with the room by itself, so you no longer have to pause and play again.
+- Starting or skipping a song in a room no longer drops the connection of Android phones for a moment.

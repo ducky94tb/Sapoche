@@ -182,6 +182,9 @@ final class GroupSession {
     }
 
     private var pendingAdopt: PendingAdopt?
+
+    /// The connection came back and the room's state has not been read since.
+    private var rejoined = false
     private var advanceJob: Job?
 
     /// Per-device correction in ms for output latency the player does not know about, e.g. a Bluetooth speaker.
@@ -367,6 +370,7 @@ final class GroupSession {
     func onReconnected() {
         scope.launch { [weak self] in
             guard let self else { return }
+            self.rejoined = true
             if self.solo { self.send(Wire.solo(true)) }
             // The server forgot this device's network too
             if self.netSent && self.state?.waitWeak != nil { self.send(Wire.net(weak: true)) }
@@ -537,6 +541,8 @@ final class GroupSession {
     // ------------------------------------------------------------------ handlers
 
     private func onState(state newState: RoomState, members: [Member], you: String) {
+        let reconnected = rejoined
+        rejoined = false
         state = newState
         snapshot.update { $0.state = newState; $0.members = members; $0.you = you }
         if solo {
@@ -545,8 +551,14 @@ final class GroupSession {
             return
         }
 
+        // The start came while the connection was down (the barrier shares its epoch with the start): nothing else will tell
+        // (not when this device moved on to the next item by itself and the room has not said so yet: that one is reported, not undone)
+        let missedStart = reconnected && newState.phase == "playing" && startedAtServer == nil &&
+            startJob?.isActive != true && prepareJob?.isActive != true && advanceJob?.isActive != true && pendingAdopt == nil &&
+            (loadedItemId == nil || loadedItemId == newState.current?.id)
+
         // Same or older epoch: we already follow this room (e.g. the queue changed). Nothing to do.
-        if newState.epoch <= handledEpoch {
+        if newState.epoch <= handledEpoch && !missedStart {
             if startedAtServer != nil { syncPreload() } // e.g. a track was added after the current one
             return
         }

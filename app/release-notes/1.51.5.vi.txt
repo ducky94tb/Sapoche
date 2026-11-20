@@ -1,0 +1,3 @@
+Phòng: hết kẹt ở "Đang đồng bộ..."
+- Sửa lỗi bài hát bị treo ở "Đang đồng bộ..." trong phòng, ví dụ khi một bài hết và bài tiếp theo bắt đầu. Máy mất kết nối đúng lúc không may nay tự bắt kịp phòng, bạn không phải bấm tạm dừng rồi phát lại nữa.
+- Bắt đầu hoặc bỏ qua một bài trong phòng không còn làm điện thoại Android đứt kết nối trong chốc lát.

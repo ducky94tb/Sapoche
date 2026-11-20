@@ -215,6 +215,9 @@ class GroupSession {
 
   /// The room advanced before this device did; adopt its start time once the local player follows.
   _PendingAdopt? _pendingAdopt;
+
+  /// The connection came back and the room's state has not been read since.
+  bool _rejoined = false;
   Job? _advanceJob;
 
   /// Per-device correction in ms for output latency the player does not know about. Positive means this device is
@@ -354,6 +357,7 @@ class GroupSession {
 
   /// The connection came back: the server forgot that this device listens alone.
   void onReconnected() {
+    _rejoined = true;
     if (_solo) send(Wire.solo(true));
     // The server forgot this device's network too
     if (_netSent && _state?.waitWeak != null) send(Wire.net(true));
@@ -513,6 +517,8 @@ class GroupSession {
   // ------------------------------------------------------------------ handlers
 
   void _onState(StateMessage msg) {
+    final reconnected = _rejoined;
+    _rejoined = false;
     _state = msg.state;
     _update((s) => s.copyWith(state: msg.state, members: msg.members, you: msg.you));
     if (_solo) {
@@ -521,8 +527,19 @@ class GroupSession {
       return;
     }
 
+    // The start came while the connection was down (the barrier shares its epoch with the start): nothing else will tell
+    // (not when this device moved on to the next item by itself and the room has not said so yet: that one is reported, not undone)
+    final missedStart = reconnected &&
+        msg.state.phase == 'playing' &&
+        _startedAtServer == null &&
+        _startJob?.isActive != true &&
+        _prepareJob?.isActive != true &&
+        _advanceJob?.isActive != true &&
+        _pendingAdopt == null &&
+        (_loadedItemId == null || _loadedItemId == msg.state.current?.id);
+
     // Same or older epoch: we already follow this room (e.g. the queue changed). Nothing to do.
-    if (msg.state.epoch <= _handledEpoch) {
+    if (msg.state.epoch <= _handledEpoch && !missedStart) {
       if (_startedAtServer != null) _syncPreload(); // e.g. a track was added after the current one
       return;
     }

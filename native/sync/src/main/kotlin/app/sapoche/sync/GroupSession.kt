@@ -210,6 +210,9 @@ class GroupSession(
     /** The room advanced before this device did; adopt its start time once the local player follows. */
     private class PendingAdopt(val itemId: String, val startedAt: Long)
     private var pendingAdopt: PendingAdopt? = null
+
+    /** The connection came back and the room's state has not been read since. */
+    private var rejoined = false
     private var advanceJob: Job? = null
 
     /**
@@ -392,6 +395,7 @@ class GroupSession(
     /** The connection came back: the server forgot that this device listens alone. */
     fun onReconnected() {
         scope.launch {
+            rejoined = true
             if (solo) send(Protocol.solo(true))
             // The server forgot this device's network too
             if (netSent && state?.waitWeak != null) send(Protocol.net(true))
@@ -547,6 +551,8 @@ class GroupSession(
     // ------------------------------------------------------------------ handlers
 
     private fun onState(msg: ServerMessage.State) {
+        val reconnected = rejoined
+        rejoined = false
         state = msg.state
         _snapshot.update { it.copy(state = msg.state, members = msg.members, you = msg.you) }
         if (solo) {
@@ -555,8 +561,14 @@ class GroupSession(
             return
         }
 
+        // The start came while the connection was down (the barrier shares its epoch with the start): nothing else will tell
+        // (not when this device moved on to the next item by itself and the room has not said so yet: that one is reported, not undone)
+        val missedStart = reconnected && msg.state.phase == "playing" && startedAtServer == null &&
+            startJob?.isActive != true && prepareJob?.isActive != true && advanceJob?.isActive != true && pendingAdopt == null &&
+            (loadedItemId == null || loadedItemId == msg.state.current?.id)
+
         // Same or older epoch: we already follow this room (e.g. the queue changed). Nothing to do.
-        if (msg.state.epoch <= handledEpoch) {
+        if (msg.state.epoch <= handledEpoch && !missedStart) {
             if (startedAtServer != null) syncPreload() // e.g. a track was added after the current one
             return
         }
