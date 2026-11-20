@@ -181,6 +181,53 @@ final shotScreens = <ShotScreen>[
     await _state(t, b, const RoomSnapshot());
     await _search(t, 'sơn tùng');
   }),
+  // Rows of every kind in one list, none of the songs with an album: they run as wide as the rows of an album or a podcast
+  ShotScreen(
+    'search-mixed',
+    prepare: (b) => b.searchPageResult = const SearchResults(
+      items: [
+        SearchItem(
+          kind: 'episode',
+          id: 'ep000000001',
+          title: 'Shocking! Wedding night, ugly wife turn into beautiful empress: beggar to queen in one episode of the long drama',
+          subtitle: 'Episode · Aug 13 · ShuiDing',
+          track: MusicTrack(videoId: 'ep000000001', title: 'Shocking! Wedding night, ugly wife turn into beautiful empress: beggar to queen in one episode of the long drama', artist: 'ShuiDing', durMs: 0),
+        ),
+        SearchItem(kind: 'podcast', id: 'MPSPpod1', title: 'Mục Thần Ký', subtitle: 'Podcast · Lát Radio'),
+        SearchItem(kind: 'podcast', id: 'MPSPpod2', title: '[Đang ra]: Tại Fairy Tail Lại Bắt Đầu Lại Từ Đầu Sinh Hoạt - Đồng Nhân', subtitle: 'Podcast · Thích Nghe Truyện'),
+        SearchItem(
+          kind: 'song',
+          id: 'song0000001',
+          title: 'Lạnh Lẽo - Nhạc Phim Trung Hoa Bất Hủ | Tam Sinh Tam Thế',
+          subtitle: 'Song · Sáo Trúc Hoàng Anh · 838K plays',
+          track: MusicTrack(videoId: 'song0000001', title: 'Lạnh Lẽo - Nhạc Phim Trung Hoa Bất Hủ | Tam Sinh Tam Thế', artist: 'Sáo Trúc Hoàng Anh', durMs: 276000, isSong: true),
+        ),
+        SearchItem(
+          kind: 'song',
+          id: 'song0000002',
+          title: 'Đôi Mắt Của Trái Tim',
+          subtitle: 'Song · PHAM HUU TAM · 158 plays',
+          track: MusicTrack(videoId: 'song0000002', title: 'Đôi Mắt Của Trái Tim', artist: 'PHAM HUU TAM', durMs: 243000, isSong: true),
+        ),
+        SearchItem(kind: 'album', id: 'MPREb_x', title: 'Chúng Ta Của Hiện Tại', subtitle: 'Album · Sơn Tùng M-TP · 2020'),
+      ],
+    ),
+    (t, b) async {
+      await _state(t, b, const RoomSnapshot());
+      await _search(t, 'ost tam sinh tam the');
+    },
+  ),
+  // Nothing typed: the songs of "For you"
+  ShotScreen('search-idle', prepare: (b) => b.forYouSongs = [...tracks], (t, b) async {
+    await _state(t, b, const RoomSnapshot());
+    // What was searched for lately runs the width of the page; the songs under it are as wide
+    for (final term in ['khong phai dang vua dau', 'j97', 'hoa co lau h2k', 'the fat rat']) {
+      AppScope.of(_shell(t)).searches.add(term);
+    }
+    final button = find.byTooltip(S.tabSearch);
+    await t.tap(button.evaluate().isNotEmpty ? button : find.text(S.tabSearch).first);
+    await _settle(t);
+  }),
   ShotScreen('search-none', prepare: (b) => b.searchPageResult = const SearchResults(), (t, b) async {
     await _state(t, b, const RoomSnapshot());
     await _search(t, 'zzzz');

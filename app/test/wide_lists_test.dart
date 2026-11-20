@@ -8,6 +8,7 @@ import 'package:sapoche/theme/palette.dart';
 import 'package:sapoche/ui/collection_screen.dart' show openCollection;
 import 'package:sapoche/ui/home_shell.dart';
 import 'package:sapoche/ui/room_page.dart' show RoomPage;
+import 'package:sapoche/ui/scope.dart';
 import 'package:sapoche/ui/player/lyrics_view.dart';
 import 'package:sapoche/ui/player/up_next_view.dart';
 import 'package:sapoche/ui/widgets/glass.dart';
@@ -93,12 +94,36 @@ void main() {
       expect(find.text(S.sortTitle), findsNothing);
       expect(find.byTooltip(S.infoLength), findsNothing);
       expect(find.text('4:18'), findsNothing);
-      // Both rows end where a line ends, not at the edge of the window
+      // Both rows end where the page does (the rows of an album or a podcast run so far, and the songs with them), not at
+      // the edge of the window
+      final ends = <double>[];
       for (final row in find.byType(TrackTile).evaluate()) {
         final rect = tester.getRect(find.byWidget(row.widget));
         final menu = tester.getRect(find.descendant(of: find.byWidget(row.widget), matching: find.byType(IconButton)).last);
-        expect(menu.right - rect.left, lessThanOrEqualTo(TrackColumns.maxContent(album: false) + 40));
+        expect(menu.right - rect.left, lessThanOrEqualTo(TrackColumns.maxContent(album: true) + 40));
+        ends.add(menu.right);
       }
+      expect(ends, hasLength(2));
+      expect(ends.first, closeTo(ends.last, 0.5), reason: 'the menus of the rows stand in one line');
+    });
+
+    testWidgets('with nothing typed, the songs of For you run as wide as the recent searches above them', (tester) async {
+      final backend = await pumpAt(tester, 1280, 800);
+      backend.forYouSongs = [without, withAlbum];
+      backend.emit(const StateEvent(RoomSnapshot()));
+      backend.emit(const LibraryEvent());
+      await tester.pumpAndSettle();
+      final button = find.byTooltip(S.tabSearch);
+      await tester.tap(button.evaluate().isNotEmpty ? button : find.text(S.tabSearch).first);
+      await tester.pumpAndSettle();
+      AppScope.of(tester.element(find.byType(HomeShell))).searches.add('the fat rat');
+      await tester.pumpAndSettle();
+      // The cross of a recent search is at the end of the page; so is the menu of a song, not a third of the way
+      final cross = tester.getRect(find.byTooltip(S.remove));
+      final menu = tester.getRect(
+        find.descendant(of: find.byType(TrackTile).first, matching: find.byType(IconButton)).last,
+      );
+      expect(menu.right, closeTo(cross.right, 12));
     });
 
     testWidgets('a phone has no columns, and no head for them', (tester) async {

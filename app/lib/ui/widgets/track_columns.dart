@@ -65,16 +65,22 @@ class TrackColumnsScope extends StatelessWidget {
   const TrackColumnsScope({
     super.key,
     required this.tracks,
+    this.contentMax,
     required this.child,
   });
 
   final Iterable<Object> tracks;
+
+  /// How wide the rows may be, where it is not the usual cap of a list with no album: a list that has rows of other
+  /// kinds as wide as the page (search) has its songs as wide as they are.
+  final double? contentMax;
   final Widget child;
 
   @override
   Widget build(BuildContext context) => TrackColumns(
     album: tracks.any((t) => t is MusicTrack && (t.album ?? '').isNotEmpty),
     length: tracks.any((t) => t is Track && t.durMs > 0),
+    contentMax: contentMax,
     child: child,
   );
 }

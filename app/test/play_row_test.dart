@@ -60,4 +60,23 @@ void main() {
     expect(find.text(S.play), findsNothing);
     expect(find.byTooltip(S.play), findsOneWidget);
   });
+
+  testWidgets('beside a cover in a window on its side (a browser, a tablet) Play is round among the others, not stacked', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    // The column beside the cover of a playlist is 320 wide: upright, Play would take the whole of it above the rest
+    await tester.pumpWidget(_row(320, inline: true, withDownload: false));
+    expect(find.text(S.play), findsNothing);
+    final play = tester.getRect(find.byTooltip(S.play));
+    final shuffle = tester.getRect(find.byTooltip(S.shuffle));
+    expect(play.top, closeTo(shuffle.top, 1), reason: 'one row');
+    expect(play.width, play.height);
+    // Upright the same column keeps Play as the wide button above them
+    tester.view.physicalSize = const Size(900, 1600);
+    await tester.pumpWidget(_row(320, inline: true, withDownload: false));
+    expect(find.text(S.play), findsOneWidget);
+  });
 }

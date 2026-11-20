@@ -155,11 +155,13 @@ class PlayRow extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, box) {
             // Four buttons in a column as narrow as the cover leave Play little: it takes the whole width, and the
-            // round ones go under it. Not on a phone on its side, which has no height to spare
+            // round ones go under it. Not on a phone on its side, which has no height to spare, and not in a window on
+            // its side at all (a tablet, a browser): there Play is a round button among the others, whatever the height
             final stacked =
                 box.maxWidth < _stackBelow &&
                 (download != null || more != null) &&
-                MediaQuery.sizeOf(context).height >= 480;
+                MediaQuery.sizeOf(context).height >= 480 &&
+                !HomeShell.isWide(context);
             if (!stacked) return buttons(narrow: true);
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

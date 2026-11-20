@@ -427,7 +427,11 @@ class _SearchPageState extends State<SearchPage> {
             body: S.searchEmptyBody,
           );
         }
-        return RefreshIndicator(
+        // The recent searches run the width of the page, so the songs under them do too (they are no album's)
+        return TrackColumns(
+          album: false,
+          contentMax: TrackColumns.maxContent(album: true),
+          child: RefreshIndicator(
           key: const ValueKey('idle'),
           onRefresh: model.library.refreshForYou,
           child: ListView(
@@ -499,7 +503,7 @@ class _SearchPageState extends State<SearchPage> {
               ],
             ],
           ),
-        );
+        ));
       },
     );
   }
@@ -688,8 +692,11 @@ class _SearchPageState extends State<SearchPage> {
           ],
         ),
         // In a wide window the songs stand in columns, with an album's name beside each that has one
+        // The rows of other kinds (an album, a podcast) are as wide as the page, so the songs are too: with the usual cap of
+        // a list with no album they stood shorter than them, and out of line
         _Phase.results => TrackColumnsScope(
           tracks: [for (final item in _items) ?item.track],
+          contentMax: TrackColumns.maxContent(album: true),
           child: ListView(
           key: const ValueKey('results'),
           controller: _scroll,

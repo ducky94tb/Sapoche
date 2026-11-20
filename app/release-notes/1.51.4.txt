@@ -1,0 +1,3 @@
+Tidier Search, round Play beside the cover
+- Search on wide screens: the songs of "For you" and the results now run as wide as the page, in line with the recent searches and with albums and podcasts, instead of stopping short.
+- Playlists, albums and folders on a wide screen: the Play button is round, in one row with Shuffle, Download and More, instead of a wide button over the rest.

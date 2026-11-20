@@ -1,0 +1,3 @@
+Tìm kiếm gọn hơn, nút Play tròn cạnh bìa
+- Tìm kiếm trên màn rộng: các bài "Dành cho bạn" và kết quả nay rộng hết trang, thẳng hàng với các tìm kiếm gần đây và với album, podcast, thay vì dừng ngắn.
+- Playlist, album và thư mục trên màn rộng: nút Play là nút tròn, cùng một hàng với Trộn, Tải và "…", thay vì một nút dài nằm trên các nút còn lại.
