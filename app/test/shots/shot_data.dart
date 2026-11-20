@@ -201,6 +201,25 @@ void fillLibrary(FakeBackend b) {
   ];
 }
 
+/// Outside a room, playing the first song of an album with two songs queued by hand ahead of the rest of the album.
+RoomSnapshot splitQueue() => RoomSnapshot(
+  phase: 'paused',
+  index: 0,
+  label: albumPage.title,
+  queue: [
+    for (final (i, t) in tracks.indexed)
+      QueueEntry(
+        id: 'q$i',
+        videoId: t.videoId,
+        title: t.title,
+        artist: t.artist,
+        durMs: t.durMs,
+        addedBy: '',
+        queued: i == 1 || i == 2,
+      ),
+  ],
+);
+
 /// Three people in a room, a queue of five and the first song playing.
 RoomSnapshot busyRoom({String phase = 'playing', int index = 0, Link link = Link.connected, bool video = false}) {
   final base = sampleRoom(phase: phase, index: index, songs: 0);

@@ -478,7 +478,7 @@ void main() {
       expect(tester.getSize(find.byKey(const ValueKey('mix-play'))).height, 40);
       await tester.tap(find.byKey(const ValueKey('mix-play')));
       await tester.pump();
-      expect(backend.calls.where((c) => c.startsWith('addMany')), isNotEmpty);
+      expect(backend.calls.where((c) => c.startsWith('playList')), isNotEmpty);
     });
 
     testWidgets(

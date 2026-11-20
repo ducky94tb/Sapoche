@@ -74,8 +74,7 @@ final class NowPlaying {
             return
         }
         EventLog.d("widget", "quick list \(list.rawValue): \(songs.count) songs")
-        controller.requestClearQueue()
-        controller.requestAddMany(Array(songs), playNext: false)
+        controller.requestPlayList(Array(songs), start: 0)
     }
 
     // ------------------------------------------------------------------ buttons

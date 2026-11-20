@@ -752,10 +752,20 @@ class WebBackend extends BackendDefaults {
       addMany([track], playNext: playNext, source: source);
 
   @override
-  Future<void> addMany(List<Track> tracks, {bool playNext = false, String source = ListenSource.chosen}) async {
+  Future<void> addMany(List<Track> tracks, {bool playNext = false, bool queued = true, String source = ListenSource.chosen}) async {
     final refs = [for (final t in tracks) TrackRef.of(t)];
     _sources.mark([for (final t in tracks) t.videoId], source);
-    _onQueue(outside: () => _local.add(refs, next: playNext), inRoom: () => Wire.queueAddMany(refs, playNext: playNext));
+    _onQueue(
+      outside: () => _local.add(refs, next: playNext, queued: queued),
+      inRoom: () => Wire.queueAddMany(refs, playNext: playNext),
+    );
+  }
+
+  @override
+  Future<void> playList(List<Track> tracks, {int start = 0, String? label, String source = ListenSource.chosen}) async {
+    final refs = [for (final t in tracks) TrackRef.of(t)];
+    _sources.mark([for (final t in tracks) t.videoId], source);
+    _onQueue(outside: () => _local.playList(refs, start, label: label), inRoom: () => Wire.queueAddMany(refs));
   }
 
   @override
@@ -773,11 +783,16 @@ class WebBackend extends BackendDefaults {
   );
 
   @override
-  Future<void> move(String itemId, int toIndex) async =>
-      _onQueue(outside: () => _local.move(itemId, toIndex), inRoom: () => Wire.queueMove(itemId, toIndex));
+  Future<void> move(String itemId, int toIndex, {bool? queued}) async =>
+      _onQueue(outside: () => _local.move(itemId, toIndex, queued: queued), inRoom: () => Wire.queueMove(itemId, toIndex));
 
   @override
   Future<void> clear() async => _onQueue(outside: _local.clear, inRoom: Wire.queueClear);
+
+  @override
+  Future<void> clearQueued() async {
+    if (_session == null) _local.clearQueued();
+  }
 
   @override
   Future<void> shuffle() async => _onQueue(outside: _local.shuffle, inRoom: Wire.queueShuffle);
@@ -944,7 +959,7 @@ class WebBackend extends BackendDefaults {
         // Carrying on only adds: what has been played makes room when the new songs would not fit
         _local.dropPlayed(_local.snapshot.queue.length + more.length - LocalSession.maxQueue);
         _sources.mark([for (final t in more) t.videoId], ListenSource.auto);
-        _local.add(more, next: false);
+        _local.add(more, next: false, queued: false, auto: true);
       } on Object catch (e) {
         _note('local: autoplay found nothing: $e');
       } finally {
@@ -989,11 +1004,12 @@ class WebBackend extends BackendDefaults {
         await _local.changes.firstWhere((s) => !s.loading).timeout(const Duration(seconds: 30));
       }
       final more = await _moreLike([videoId], {videoId}, _radioCount);
-      final queue = _local.snapshot.queue;
-      if (turn != _radioFor || more.isEmpty || _session != null || queue.length != 1 || queue.first.videoId != videoId) return;
+      final snap = _local.snapshot;
+      final contextOnly = [for (final e in snap.queue) if (!snap.queued.contains(e.id)) e];
+      if (turn != _radioFor || more.isEmpty || _session != null || contextOnly.length != 1 || contextOnly.first.videoId != videoId) return;
       _note('local: radio adds ${more.length} songs like $videoId');
       _sources.mark([for (final t in more) t.videoId], ListenSource.auto);
-      _local.add(more, next: false);
+      _local.add(more, next: false, queued: false);
     } on Object catch (e) {
       _note('local: no radio for $videoId: $e');
     }
@@ -1839,6 +1855,7 @@ class WebBackend extends BackendDefaults {
       encryptionKey: inRoom && _secrets.containsKey(_roomCode),
       // Outside a room this device's own; in one the room's, or null on a server too old to have it
       shuffle: inRoom ? state?.shuffle : local.shuffle,
+      label: inRoom ? null : local.label,
     );
   }
 
@@ -1852,7 +1869,8 @@ class WebBackend extends BackendDefaults {
       snapshot.phase,
       snapshot.index,
       snapshot.repeat,
-      snapshot.queue.map((e) => e.id).join(','),
+      snapshot.label,
+      snapshot.queue.map((e) => '${e.id}:${e.queued}:${e.auto}').join(','),
       snapshot.members.map((m) => '${m.id}${m.name}${m.ready}${m.solo}${m.away}${m.owner}${m.weak}').join(','),
       snapshot.solo,
       snapshot.soloItemId,

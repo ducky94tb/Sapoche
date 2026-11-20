@@ -10,13 +10,16 @@ import '../widgets/track_menu.dart';
 import '../widgets/cached_cover.dart';
 import '../widgets/track_tile.dart';
 
-/// A heading and rows of songs that a touch plays, each with the usual "more" menu.
+/// A heading and rows of songs that a touch plays, each with the usual "more" menu. Outside a room a touch plays the
+/// song with songs like it after it; with [asList] the rows are a list, and it plays from the song touched.
 class TrackSection extends StatelessWidget {
   const TrackSection({
     super.key,
     required this.title,
     required this.tracks,
     this.headerAction,
+    this.asList = false,
+    this.listLabel,
   });
 
   final String title;
@@ -24,6 +27,11 @@ class TrackSection extends StatelessWidget {
 
   /// At the end of the heading, like a switch.
   final Widget? headerAction;
+
+  final bool asList;
+
+  /// Name of the list when [asList] is true; falls back to [title].
+  final String? listLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -34,10 +42,10 @@ class TrackSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (title.isNotEmpty) SectionHeading(title, action: headerAction),
-          for (final track in tracks)
+          for (final (i, track) in tracks.indexed)
             TrackTile(
               track: track,
-              onTap: () => playNow(context, track),
+              onTap: asList ? () => playFrom(context, tracks, i, label: listLabel ?? title) : () => playNow(context, track),
               trailing: TrackMenu(
                 track: track,
                 onAdd: () => queueTrack(context, track),
@@ -63,7 +71,7 @@ class SectionHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 12, 6),
+      padding: EdgeInsets.fromLTRB(20, action == null ? 18 : 6, 12, action == null ? 6 : 0),
       child: Row(
         children: [
           if (icon != null) ...[
@@ -71,7 +79,12 @@ class SectionHeading extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           Expanded(
-            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
           ),
           ?action,
         ],

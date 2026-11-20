@@ -29,6 +29,10 @@ data class SavedQueue(
     /** Whether shuffle is on, and the order the queue had when it went on. */
     val shuffle: Boolean = false,
     val shuffleOrder: List<String> = emptyList(),
+    /** Ids of the songs added to the queue by hand that are still waiting after [index]. */
+    val queued: List<String> = emptyList(),
+    /** Name of the list playing (album, playlist), shown above the songs still to come from it. */
+    val label: String? = null,
 )
 
 /** [SavedQueue] as one JSON file. A write goes to a temporary file first, so a crash never leaves half a queue. */
@@ -90,6 +94,10 @@ class LocalSession(
         val finished: Boolean = false,
         /** The current song is on its way to play: the screen shows that something is happening before it is heard. */
         val loading: Boolean = false,
+        /** Ids of the songs added by hand that are still waiting after [index]; they play before the rest of the list. */
+        val queued: Set<String> = emptySet(),
+        /** Name of the list playing, or null when there is none. */
+        val label: String? = null,
     ) {
         val current: QueueItem? get() = queue.getOrNull(index)
     }
@@ -130,6 +138,9 @@ class LocalSession(
 
     /** The ids of the queue in the order it had when shuffle went on: what turning it off goes back to. */
     private var shuffleOrder: List<String> = saved?.shuffleOrder.orEmpty()
+
+    /** Songs added by hand that have played (or been skipped past): back can reach them, but repeat all leaves them out. */
+    private val playedQueued = mutableSetOf<String>()
 
     /** Item handed to the player as the gapless successor of the loaded one. */
     private var preloaded: QueueItem? = null
@@ -241,33 +252,139 @@ class LocalSession(
     }
 
     fun jump(id: String) {
-        snapshot.value.queue.firstOrNull { it.id == id }?.let { load(it, 0, play = true) }
+        val s = snapshot.value
+        val at = s.queue.indexOfFirst { it.id == id }
+        if (at < 0) return
+        val item = placeTarget(at)
+        load(item, 0, play = true)
+    }
+
+    /**
+     * Moves playback to the song at [target] while keeping the three tiers after the new index in order:
+     * songs in [Snapshot.queued] stay right after the song playing unless the jump is into [Snapshot.queued] itself,
+     * in which case the queued songs before [target] are skipped past and become played.
+     */
+    private fun placeTarget(target: Int): QueueItem {
+        val s = snapshot.value
+        val chosen = s.queue[target]
+        if (chosen.id in s.queued) {
+            val dropped = s.queue.take(target + 1).mapNotNull { it.id.takeIf(s.queued::contains) }
+            playedQueued += dropped
+            val newQueued = s.queued - dropped.toSet()
+            val queue = s.queue.mapIndexed { i, it -> if (i <= target && it.auto) it.copy(auto = false) else it }
+            _snapshot.update { it.copy(queue = queue, index = target, queued = newQueued, finished = false) }
+            return queue[target]
+        }
+        val waiting = if (s.finished) emptyList() else s.queue.drop(s.index + 1).filter { it.id in s.queued }
+        val waitingIds = waiting.mapTo(HashSet()) { it.id }
+        val rest = s.queue.filterNot { it.id in waitingIds }
+        val at = rest.indexOfFirst { it.id == chosen.id }.coerceAtLeast(0)
+        val before = rest.take(at + 1).map { if (it.auto) it.copy(auto = false) else it }
+        val after = rest.drop(at + 1)
+        val queue = before + waiting + after
+        _snapshot.update { it.copy(queue = queue, index = at, queued = waitingIds, finished = false) }
+        return queue[at]
     }
 
     // ------------------------------------------------------------------ queue
 
     /**
-     * Adds songs at the end, or right after the current one with [next]. With nothing to play, the first one
-     * starts. A song that is waiting in the queue already is left out.
+     * Adds songs to the queue. By default ([queued] = true) they go into the "Next in queue" group: at the start of it
+     * with [next], or at the end of it without, and only a song already in that group is left out. With [queued] = false
+     * they extend the list itself (before autoplay songs), or with [auto] = true the autoplay tail at the very end.
      */
-    fun add(tracks: List<TrackRef>, next: Boolean) {
+    fun add(tracks: List<TrackRef>, next: Boolean, queued: Boolean = true, auto: Boolean = false) {
         val s = snapshot.value
         val startNow = s.queue.isEmpty() || s.finished
-        val fresh = Queues.fresh(tracks, s.queue, if (s.finished) s.queue.size else s.index)
+        val fresh = if (queued && !auto) {
+            val seen = if (startNow) HashSet() else s.queue.drop(s.index + 1).filter { it.id in s.queued }.mapTo(HashSet()) { it.videoId }
+            tracks.filter { seen.add(it.videoId) }
+        } else {
+            Queues.fresh(tracks, s.queue, if (s.finished) s.queue.size else s.index)
+        }
         val room = MAX_QUEUE - s.queue.size
         if (fresh.isNotEmpty() && room <= 0) return problem(Problem(Problem.Kind.QUEUE_FULL))
-        val items = fresh.take(room).map { QueueItem(newId(), it.videoId, it.title, it.artist, it.thumb, it.durMs, addedBy = "") }
+        val items = fresh.take(room).mapIndexed { i, it ->
+            QueueItem(newId(), it.videoId, it.title, it.artist, it.thumb, it.durMs, addedBy = "", auto = auto && !(startNow && i == 0))
+        }
         if (items.isEmpty()) return
 
-        val at = if (next && !startNow) s.index + 1 else s.queue.size
-        val queue = s.queue.toMutableList().also { it.addAll(at, items) }
-        if (s.shuffle && !next && !startNow) {
-            // Mixed in among what is to come instead of waiting behind it
-            queue.subList(at, queue.size).clear()
-            for (item in items) queue.add(random.nextInt(s.index + 1, queue.size + 1), item)
+        if (startNow) {
+            val old = s.queue.map { if (it.auto) it.copy(auto = false) else it }
+            val queue = old + items
+            if (s.shuffle && !auto) shuffleOrder = shuffleOrder + items.map { it.id }
+            _snapshot.update { it.copy(queue = queue, index = old.size, queued = emptySet(), finished = false) }
+            load(items.first(), 0, play = true)
+            save()
+            return
         }
-        _snapshot.update { it.copy(queue = queue) }
-        if (startNow) load(items.first(), 0, play = true) else preload()
+
+        val queue = s.queue.toMutableList()
+        var newQueued = s.queued
+        if (queued && !auto) {
+            val at = if (next) s.index + 1 else s.index + 1 + s.queued.size
+            queue.addAll(at.coerceIn(0, queue.size), items)
+            newQueued = LinkedHashSet(s.queued).apply { addAll(items.map { it.id }) }
+        } else if (auto) {
+            queue.addAll(items)
+        } else {
+            val autoStart = (s.index + 1 until queue.size).firstOrNull { queue[it].auto } ?: queue.size
+            val contextStart = (s.index + 1 + s.queued.size).coerceAtMost(autoStart)
+            if (s.shuffle && !next) {
+                shuffleOrder = shuffleOrder + items.map { it.id }
+                var end = autoStart
+                for (item in items) {
+                    queue.add(random.nextInt(contextStart, end + 1), item)
+                    end++
+                }
+            } else {
+                val at = if (next) contextStart else autoStart
+                queue.addAll(at, items)
+            }
+        }
+        _snapshot.update { it.copy(queue = queue, queued = newQueued) }
+        preload()
+        save()
+    }
+
+    /**
+     * Makes [tracks], a list the person chose a song from, the active list and plays song [start] of it, keeping any
+     * unplayed songs added by hand ([Snapshot.queued]) right after that song. With shuffle on, that song is first,
+     * the queued songs follow, and the rest of the list is mixed behind them.
+     */
+    fun playList(tracks: List<TrackRef>, start: Int, label: String? = null) {
+        val s = snapshot.value
+        val waiting = if (s.finished) emptyList() else s.queue.drop(s.index + 1).filter { it.id in s.queued }
+        val cap = (MAX_QUEUE - waiting.size).coerceAtLeast(0)
+        val items = tracks.take(cap).map { QueueItem(newId(), it.videoId, it.title, it.artist, it.thumb, it.durMs, addedBy = "") }
+        if (items.isEmpty()) return
+        val first = start.coerceIn(0, items.size - 1)
+        val chosen = items[first]
+        val shuffle = s.shuffle
+        val queue = if (shuffle) {
+            listOf(chosen) + waiting + items.filterIndexed { i, _ -> i != first }.shuffled(random)
+        } else {
+            items.subList(0, first + 1) + waiting + items.subList(first + 1, items.size)
+        }
+        val newIndex = if (shuffle) 0 else first
+        val newQueued = waiting.mapTo(LinkedHashSet()) { it.id }
+        shuffleOrder = if (shuffle) items.map { it.id } else emptyList()
+        playedQueued.clear()
+        skippedInARow = 0 // a new list is a new start
+        val cleanLabel = label?.trim()?.takeIf { it.isNotEmpty() }
+        // What plays carries on until the new song is ready, as when a song of the queue is chosen
+        _snapshot.update { it.copy(queue = queue, index = newIndex, queued = newQueued, label = cleanLabel, finished = false) }
+        load(chosen, 0, play = true)
+        save()
+    }
+
+    /** Removes only the songs added to the queue by hand ("Next in queue"), leaving the playing list untouched. */
+    fun clearQueued() {
+        val s = snapshot.value
+        if (s.queued.isEmpty()) return
+        val queue = s.queue.filterNot { it.id in s.queued }
+        _snapshot.update { it.copy(queue = queue, queued = emptySet()) }
+        preload()
         save()
     }
 
@@ -276,22 +393,32 @@ class LocalSession(
         val at = s.queue.indexOfFirst { it.id == id }
         if (at < 0) return
         val queue = s.queue.toMutableList().also { it.removeAt(at) }
+        var newQueued = s.queued - id
+        playedQueued -= id
+        if (shuffleOrder.isNotEmpty()) shuffleOrder = shuffleOrder.filterNot { it == id }
         when {
-            at < s.index -> _snapshot.update { it.copy(queue = queue, index = s.index - 1) }
-            at > s.index -> _snapshot.update { it.copy(queue = queue) }
+            at < s.index -> _snapshot.update { it.copy(queue = queue, index = s.index - 1, queued = newQueued) }
+            at > s.index -> _snapshot.update { it.copy(queue = queue, queued = newQueued) }
             queue.isEmpty() -> {
                 stopPlayer()
+                playedQueued.clear()
                 _snapshot.update { Snapshot(repeat = it.repeat, shuffle = it.shuffle) }
             }
             at < queue.size -> {
                 // The next song takes the place of the one removed, and plays if that one was playing
                 val play = loadedId == id && player.isPlaying()
-                _snapshot.update { it.copy(queue = queue) }
+                val nextItem = queue[at]
+                if (nextItem.id in newQueued) {
+                    newQueued = newQueued - nextItem.id
+                    playedQueued += nextItem.id
+                }
+                if (nextItem.auto) queue[at] = nextItem.copy(auto = false)
+                _snapshot.update { it.copy(queue = queue, queued = newQueued) }
                 if (loadedId == id) load(queue[at], 0, play) else pendingPositionMs = 0
             }
             else -> {
                 stopPlayer()
-                _snapshot.update { it.copy(queue = queue, index = queue.size - 1, finished = true) }
+                _snapshot.update { it.copy(queue = queue, index = queue.size - 1, queued = emptySet(), finished = true) }
             }
         }
         preload()
@@ -318,15 +445,35 @@ class LocalSession(
         save()
     }
 
-    fun move(id: String, toIndex: Int) {
+    /**
+     * Moves item [id] to [toIndex]. When [queued] is given, the song also joins (or leaves) the "Next in queue" group
+     * according to the group it was dropped into; the three tiers after [Snapshot.index] are always kept in order.
+     */
+    fun move(id: String, toIndex: Int, queued: Boolean? = null) {
         val s = snapshot.value
         val from = s.queue.indexOfFirst { it.id == id }
         if (from < 0) return
         val currentId = s.current?.id
-        val queue = s.queue.toMutableList()
-        queue.add(toIndex.coerceIn(0, queue.size - 1), queue.removeAt(from))
-        val index = if (currentId == null) 0 else queue.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
-        _snapshot.update { it.copy(queue = queue, index = index) }
+        val list = s.queue.toMutableList()
+        list.add(toIndex.coerceIn(0, list.size - 1), list.removeAt(from))
+        val index = if (currentId == null) 0 else list.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
+        val landed = list.indexOfFirst { it.id == id }
+        var newQueued = s.queued
+        if (s.finished || landed <= index) {
+            newQueued = newQueued - id
+        } else if (queued == true) {
+            newQueued = newQueued + id
+            playedQueued -= id
+            if (list[landed].auto) list[landed] = list[landed].copy(auto = false)
+        } else if (queued == false) {
+            newQueued = newQueued - id
+            playedQueued -= id
+            if (list[landed].auto) list[landed] = list[landed].copy(auto = false)
+            if (s.shuffle && id !in shuffleOrder) shuffleOrder = shuffleOrder + id
+        }
+        val queue = normalize(list, index, if (s.finished) emptySet() else newQueued, s.finished)
+        val keptQueued = if (s.finished) emptySet() else queue.drop(index + 1).mapNotNullTo(LinkedHashSet()) { it.id.takeIf(newQueued::contains) }
+        _snapshot.update { it.copy(queue = queue, index = index, queued = keptQueued) }
         preload()
         save()
     }
@@ -339,6 +486,8 @@ class LocalSession(
         val s = snapshot.value
         val drop = minOf(count, if (s.finished) s.queue.size else s.index)
         if (drop <= 0) return
+        val dropped = s.queue.take(drop).mapTo(HashSet()) { it.id }
+        playedQueued -= dropped
         _snapshot.update { it.copy(queue = it.queue.drop(drop), index = (it.index - drop).coerceAtLeast(0)) }
         save()
     }
@@ -346,52 +495,60 @@ class LocalSession(
     fun clear() {
         stopPlayer()
         skippedInARow = 0 // a new list is a new start
+        playedQueued.clear()
+        shuffleOrder = emptyList()
         _snapshot.update { Snapshot(repeat = it.repeat, shuffle = it.shuffle) }
         save()
     }
 
     /**
-     * Mixes up what is still to come, so the song playing carries on. Once the queue has finished it
-     * mixes the whole list and plays from the top: the way to hear it again in a new order.
+     * Mixes up what is still to come of the list, so the song playing carries on and any songs added by hand keep their
+     * order ahead of it. Once the queue has finished it mixes the whole list and plays from the top.
      */
     fun shuffle() {
         val s = snapshot.value
         if (s.queue.size < 2) return
-        val queue = s.queue.toMutableList()
         if (s.finished) {
-            queue.shuffle(random)
+            val queue = s.queue.toMutableList().also { it.shuffle(random) }
             _snapshot.update { it.copy(queue = queue) }
             load(queue[0], 0, play = true)
         } else {
-            queue.subList(s.index + 1, queue.size).shuffle(random)
-            _snapshot.update { it.copy(queue = queue) }
+            val before = s.queue.take(s.index + 1)
+            val after = s.queue.drop(s.index + 1)
+            val waiting = after.filter { it.id in s.queued }
+            val context = after.filter { it.id !in s.queued && !it.auto }.shuffled(random)
+            val auto = after.filter { it.auto }
+            _snapshot.update { it.copy(queue = before + waiting + context + auto) }
             preload()
         }
         save()
     }
 
     /**
-     * Shuffle as a mode, like the room's: on remembers the order and mixes what is still to come; off puts those songs
-     * back in that order, with the ones added meanwhile after them.
+     * Shuffle as a mode, like the room's: on remembers the order of the list and mixes what is still to come of it
+     * (leaving songs added by hand in the order they were added); off puts the list's songs back in that order.
      */
     fun setShuffle(on: Boolean) {
         val s = snapshot.value
         if (on == s.shuffle) return
-        val queue = s.queue.toMutableList()
-        val first = if (s.finished) 0 else s.index + 1
-        if (on) {
-            shuffleOrder = queue.map { it.id }
-            // After the queue finished only the mode is set: the list is mixed when it is played again
-            if (!s.finished && first < queue.size) queue.subList(first, queue.size).shuffle(random)
+        val queue = if (s.finished) {
+            if (on) shuffleOrder = s.queue.filter { it.id !in s.queued && !it.auto }.map { it.id } else shuffleOrder = emptyList()
+            s.queue
         } else {
-            val rank = shuffleOrder.withIndex().associate { (i, id) -> id to i }
-            if (first < queue.size) {
-                val rest = queue.subList(first, queue.size)
-                val sorted = rest.sortedBy { rank[it.id] ?: Int.MAX_VALUE }
-                rest.clear()
-                rest.addAll(sorted)
+            val before = s.queue.take(s.index + 1)
+            val after = s.queue.drop(s.index + 1)
+            val waiting = after.filter { it.id in s.queued }
+            val context = after.filter { it.id !in s.queued && !it.auto }
+            val auto = after.filter { it.auto }
+            val mixed = if (on) {
+                shuffleOrder = s.queue.filter { it.id !in s.queued && !it.auto }.map { it.id }
+                context.shuffled(random)
+            } else {
+                val rank = shuffleOrder.withIndex().associate { (i, id) -> id to i }
+                shuffleOrder = emptyList()
+                context.sortedBy { rank[it.id] ?: Int.MAX_VALUE }
             }
-            shuffleOrder = emptyList()
+            before + waiting + mixed + auto
         }
         _snapshot.update { it.copy(shuffle = on, queue = queue) }
         preload()
@@ -410,7 +567,8 @@ class LocalSession(
     fun save() {
         val s = snapshot.value
         val position = if (loadedId != null) player.positionMs() else pendingPositionMs
-        persist(SavedQueue(s.queue, s.index, s.repeat, position, s.finished, s.shuffle, shuffleOrder))
+        val orderedQueued = s.queue.drop(s.index + 1).mapNotNull { it.id.takeIf(s.queued::contains) }
+        persist(SavedQueue(s.queue, s.index, s.repeat, position, s.finished, s.shuffle, shuffleOrder, orderedQueued, s.label))
     }
 
     // ------------------------------------------------------------------ playing
@@ -419,20 +577,38 @@ class LocalSession(
     private fun step(delta: Int, auto: Boolean) {
         val s = snapshot.value
         if (s.queue.isEmpty()) return
+        if (auto && s.repeat == "one") {
+            load(s.queue[s.index], 0, play = true)
+            return
+        }
         var target = if (s.finished && delta < 0) s.index else s.index + delta
-        if (auto && s.repeat == "one") target = s.index
-        if (target >= s.queue.size) target = if (s.repeat == "all") 0 else -1
+        if (target >= s.queue.size) {
+            if (s.repeat != "all") return finish()
+            // Repeat all loops the list: songs added by hand that already played once do not play a second time
+            val contextOnly = s.queue.filterNot { it.id in playedQueued }
+            if (contextOnly.isNotEmpty() && contextOnly.size < s.queue.size) {
+                playedQueued.clear()
+                _snapshot.update { it.copy(queue = contextOnly, index = 0, queued = emptySet(), finished = false) }
+                load(contextOnly[0], 0, play = true)
+                return
+            }
+            target = 0
+        }
         if (target < 0) {
             if (delta < 0) target = 0 else return finish()
         }
-        load(s.queue[target], 0, play = true)
+        val item = placeTarget(target)
+        load(item, 0, play = true)
     }
 
     /** Ran out of songs: nothing is current until play starts the list again. */
     private fun finish() {
         val last = snapshot.value.queue.lastOrNull()
         stopPlayer()
-        _snapshot.update { it.copy(index = it.queue.size - 1, finished = true) }
+        _snapshot.update { s ->
+            val clean = s.queue.map { if (it.auto) it.copy(auto = false) else it }
+            s.copy(queue = clean, index = clean.size - 1, queued = emptySet(), finished = true)
+        }
         save()
         last?.let(onQueueEnd)
     }
@@ -452,29 +628,38 @@ class LocalSession(
         job?.cancel()
         preloaded = null
         loadedId = null
-        val at = snapshot.value.queue.indexOfFirst { it.id == item.id }
+        val s = snapshot.value
+        val at = s.queue.indexOfFirst { it.id == item.id }
         if (at < 0) return
+        val newQueued = if (item.id in s.queued) {
+            playedQueued += item.id
+            s.queued - item.id
+        } else {
+            s.queued
+        }
+        val queue = if (s.queue[at].auto) s.queue.toMutableList().also { it[at] = it[at].copy(auto = false) } else s.queue
+        val loaded = queue[at]
         // The person sees the new song at once, and that it is on its way, not only when it has loaded
-        _snapshot.update { it.copy(index = at, finished = false, loading = play) }
+        _snapshot.update { it.copy(queue = queue, index = at, queued = newQueued, finished = false, loading = play) }
         playOnLoad = play
-        val again = item.videoId in stuckVideoIds
+        val again = loaded.videoId in stuckVideoIds
         job = scope.launch {
             // A load that takes long is said to be slow, so that waiting does not look like nothing happening
             val slow = launch {
                 delay(SLOW_LOAD_MS)
                 if (playOnLoad) {
-                    stuckVideoIds += item.videoId
-                    problem(Problem(Problem.Kind.SLOW, item.title))
+                    stuckVideoIds += loaded.videoId
+                    problem(Problem(Problem.Kind.SLOW, loaded.title))
                 }
             }
             var retried = false
             while (true) {
                 try {
-                    if (again || retried) player.refresh(item.videoId)
-                    player.prepare(item, positionMs)
+                    if (again || retried) player.refresh(loaded.videoId)
+                    player.prepare(loaded, positionMs)
                     slow.cancel()
-                    stuckVideoIds -= item.videoId
-                    loadedId = item.id
+                    stuckVideoIds -= loaded.videoId
+                    loadedId = loaded.id
                     pendingPositionMs = 0
                     skippedInARow = 0
                     _snapshot.update { it.copy(loading = false) }
@@ -485,28 +670,28 @@ class LocalSession(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    log("could not load '${item.title}': ${e.message}")
+                    log("could not load '${loaded.title}': ${e.message}")
                     // Nothing goes on loading in the background, and nothing starts later by itself
                     player.stop()
                     // A failure that is neither "YouTube will not give it out" nor "no network" is often a blip: the person
                     // who wants to hear the song gets one more try from a new stream address before it counts as failed
                     if (!retried && LoadFailure.of(e) == null && playOnLoad) {
                         retried = true
-                        log("trying '${item.title}' once more in ${RETRY_AFTER_MS}ms")
+                        log("trying '${loaded.title}' once more in ${RETRY_AFTER_MS}ms")
                         delay(RETRY_AFTER_MS)
                         if (playOnLoad) continue
                         // Paused meanwhile: there is nothing to tell, and play starts from a new address
                         slow.cancel()
-                        stuckVideoIds += item.videoId
+                        stuckVideoIds += loaded.videoId
                         pendingPositionMs = positionMs
                         _snapshot.update { it.copy(loading = false) }
                         return@launch
                     }
                     slow.cancel()
-                    stuckVideoIds += item.videoId
+                    stuckVideoIds += loaded.videoId
                     pendingPositionMs = positionMs
                     _snapshot.update { it.copy(loading = false) }
-                    loadFailed(item, e)
+                    loadFailed(loaded, e)
                     return@launch
                 }
             }
@@ -559,13 +744,21 @@ class LocalSession(
     /** The player moved on to the successor by itself. */
     private fun onAdvanced() {
         val item = preloaded ?: return
-        val at = snapshot.value.queue.indexOfFirst { it.id == item.id }
+        val s = snapshot.value
+        val at = s.queue.indexOfFirst { it.id == item.id }
         if (at < 0) return
         preloaded = null
         loadedId = item.id
         pendingPositionMs = 0
         recoveries = 0
-        _snapshot.update { it.copy(index = at) }
+        val newQueued = if (item.id in s.queued) {
+            playedQueued += item.id
+            s.queued - item.id
+        } else {
+            s.queued
+        }
+        val queue = if (s.queue[at].auto) s.queue.toMutableList().also { it[at] = it[at].copy(auto = false) } else s.queue
+        _snapshot.update { it.copy(queue = queue, index = at, queued = newQueued) }
         preload()
         save()
     }
@@ -584,15 +777,33 @@ class LocalSession(
         load(item, player.positionMs(), play = true)
     }
 
+    private fun normalize(list: List<QueueItem>, index: Int, queuedIds: Set<String>, finished: Boolean): List<QueueItem> {
+        if (list.isEmpty()) return list
+        if (finished) return list.map { if (it.auto) it.copy(auto = false) else it }
+        val before = list.take(index + 1).map { if (it.auto) it.copy(auto = false) else it }
+        val after = list.drop(index + 1)
+        val tierQueued = after.filter { it.id in queuedIds }.map { if (it.auto) it.copy(auto = false) else it }
+        val tierContext = after.filter { it.id !in queuedIds && !it.auto }
+        val tierAuto = after.filter { it.id !in queuedIds && it.auto }
+        return before + tierQueued + tierContext + tierAuto
+    }
+
     private fun restore(saved: SavedQueue?): Snapshot {
         if (saved == null) return Snapshot()
-        val queue = saved.queue.take(MAX_QUEUE)
+        val raw = saved.queue.take(MAX_QUEUE)
+        val index = saved.index.coerceIn(0, maxOf(0, raw.size - 1))
+        val finished = saved.finished && raw.isNotEmpty()
+        val afterIds = if (finished) emptySet() else raw.drop(index + 1).mapTo(HashSet()) { it.id }
+        val queued = if (finished) emptySet() else saved.queued.filterTo(LinkedHashSet()) { it in afterIds }
+        val queue = normalize(raw, index, queued, finished)
         return Snapshot(
             queue = queue,
-            index = saved.index.coerceIn(0, maxOf(0, queue.size - 1)),
+            index = index,
             repeat = saved.repeat.takeIf { it == "all" || it == "one" } ?: "off",
-            finished = saved.finished && queue.isNotEmpty(),
+            finished = finished,
             shuffle = saved.shuffle,
+            queued = queued,
+            label = saved.label?.trim()?.takeIf { it.isNotEmpty() && queue.isNotEmpty() },
         )
     }
 

@@ -105,11 +105,76 @@ class LocalSessionTest {
     }
 
     @Test
+    fun `playing a list from a song keeps the songs before it to go back to`() = runTest {
+        val h = harness()
+        h.session.add(listOf(track(9)), next = false)
+        step()
+        h.session.playList((1..5).map(::track), start = 2)
+        step()
+        assertEquals(listOf("Song 1", "Song 2", "Song 3", "Song 4", "Song 5"), h.titles(), "the old queue is gone")
+        assertEquals(2, h.session.snapshot.value.index)
+        assertEquals("Song 3", h.player.loaded?.title)
+        assertTrue(h.player.playing)
+        assertEquals("Song 4", h.player.queuedNext?.title)
+        h.session.next()
+        h.session.prev()
+        step()
+        assertEquals("Song 3", h.player.loaded?.title)
+        h.session.prev()
+        step()
+        assertEquals("Song 2", h.player.loaded?.title, "back goes to the song before the one chosen")
+    }
+
+    @Test
+    fun `a list played from a start outside it is kept inside`() = runTest {
+        val h = harness()
+        h.session.playList((1..3).map(::track), start = 9)
+        step()
+        assertEquals("Song 3", h.player.loaded?.title)
+        h.session.playList((1..3).map(::track), start = -4)
+        step()
+        assertEquals("Song 1", h.player.loaded?.title)
+        h.session.playList(emptyList(), start = 0)
+        assertEquals(3, h.session.snapshot.value.queue.size, "nothing to play changes nothing")
+    }
+
+    @Test
+    fun `playing a list with shuffle on starts at the song and mixes the rest`() = runTest {
+        val h = harness()
+        h.session.setShuffle(true)
+        h.session.playList((1..8).map(::track), start = 3)
+        step()
+        val s = h.session.snapshot.value
+        assertEquals(0, s.index)
+        assertEquals("Song 4", s.current?.title)
+        assertEquals("Song 4", h.player.loaded?.title)
+        assertEquals((1..8).map { "Song $it" }.toSet(), h.titles().toSet())
+        assertEquals(8, s.queue.size)
+        h.session.setShuffle(false)
+        assertEquals(listOf("Song 4") + listOf(1, 2, 3, 5, 6, 7, 8).map { "Song $it" }, h.titles(), "off puts the rest back in the list's order")
+    }
+
+    @Test
+    fun `the end of a list played from the middle wraps to its first song when repeating all`() = runTest {
+        val h = harness()
+        h.session.setRepeat("all")
+        h.session.playList((1..3).map(::track), start = 1)
+        step()
+        h.session.next()
+        step()
+        assertEquals("Song 3", h.player.loaded?.title)
+        h.session.next()
+        step()
+        assertEquals("Song 1", h.player.loaded?.title)
+    }
+
+    @Test
     fun `a song already waiting in the queue is not added again`() = runTest {
         val h = harness()
-        h.session.add(listOf(track(1), track(2)), next = false)
+        h.session.add(listOf(track(1)), next = false)
         step()
-        h.session.add(listOf(track(1), track(2), track(3), track(3)), next = false)
+        h.session.add(listOf(track(2)), next = false)
+        h.session.add(listOf(track(2), track(3), track(3)), next = false)
         step()
         assertEquals(listOf("Song 1", "Song 2", "Song 3"), h.titles())
         assertTrue(h.problems.isEmpty())
@@ -466,7 +531,7 @@ class LocalSessionTest {
     }
 
     @Test
-    fun `songs added while shuffle is on are mixed in, and follow the rest once it is off`() = runTest {
+    fun `songs added while shuffle is on keep their order ahead of the shuffled list`() = runTest {
         val h = harness()
         h.session.add((1..6).map(::track), next = false)
         step()
@@ -476,15 +541,11 @@ class LocalSessionTest {
         h.session.add(listOf(track(8)), next = true)
         step()
         val titles = h.titles()
-        assertEquals("Song 8", titles[1], "a song added to play next stays next")
-        assertEquals("Song 1", titles[0], "the current song stays first")
-        assertTrue("Song 7" in titles.drop(1))
+        assertEquals(listOf("Song 1", "Song 8", "Song 7"), titles.take(3), "queued songs stay in order right after the current song")
 
         h.session.setShuffle(false)
         step()
-        val back = h.titles()
-        assertEquals((1..6).map { "Song $it" }, back.filter { it in (1..6).map { n -> "Song $n" } })
-        assertEquals(setOf("Song 7", "Song 8"), back.takeLast(2).toSet(), "the ones added meanwhile come after")
+        assertEquals(listOf("Song 1", "Song 8", "Song 7", "Song 2", "Song 3", "Song 4", "Song 5", "Song 6"), h.titles())
     }
 
     @Test
@@ -1017,6 +1078,241 @@ class LocalSessionTest {
      * queue ends only when the person goes past its last song. Whatever the failures, it never throws and, when left alone
      * on a good network, settles with nothing still loading.
      */
+    private fun checkInvariant(s: LocalSession.Snapshot) {
+        if (s.queue.isEmpty()) {
+            assertEquals(0, s.index)
+            assertTrue(s.queued.isEmpty())
+            assertFalse(s.finished)
+            return
+        }
+        assertTrue(s.index in s.queue.indices, "index ${s.index} out of ${s.queue.size}")
+        if (s.finished) {
+            assertTrue(s.queued.isEmpty(), "finished queue has no waiting queued songs")
+            assertTrue(s.queue.none { it.auto }, "finished queue has no waiting auto songs")
+            return
+        }
+        val before = s.queue.take(s.index + 1)
+        val after = s.queue.drop(s.index + 1)
+        assertTrue(before.none { it.id in s.queued }, "played or current song cannot be in queued")
+        assertTrue(before.none { it.auto }, "played or current song cannot be auto")
+        val afterIds = after.mapTo(HashSet()) { it.id }
+        assertTrue(afterIds.containsAll(s.queued), "every queued id must be after index")
+        var tier = 0
+        for (item in after) {
+            val itemTier = when {
+                item.id in s.queued -> {
+                    assertFalse(item.auto, "a queued song cannot be auto")
+                    0
+                }
+                !item.auto -> 1
+                else -> 2
+            }
+            assertTrue(itemTier >= tier, "tier order broken after index: saw $itemTier after $tier in ${after.map { "${it.title}(q=${it.id in s.queued},a=${it.auto})" }}")
+            tier = itemTier
+        }
+    }
+
+    @Test
+    fun `queued songs play before the rest of the list and play next goes to the front of them`() = runTest {
+        val h = harness()
+        h.session.playList((1..5).map(::track), start = 1, label = "Lofi Chill")
+        step()
+        h.session.add(listOf(track(8)), next = false)
+        h.session.add(listOf(track(9)), next = false)
+        h.session.add(listOf(track(7)), next = true)
+        step()
+        val s = h.session.snapshot.value
+        checkInvariant(s)
+        assertEquals("Lofi Chill", s.label)
+        assertEquals(listOf("Song 1", "Song 2", "Song 7", "Song 8", "Song 9", "Song 3", "Song 4", "Song 5"), h.titles())
+        assertEquals(setOf("Song 7", "Song 8", "Song 9"), s.queue.filter { it.id in s.queued }.map { it.title }.toSet())
+        assertEquals("Song 7", h.player.queuedNext?.title)
+    }
+
+    @Test
+    fun `starting a new list keeps unplayed queued songs right after the chosen song`() = runTest {
+        val h = harness()
+        h.session.playList((1..4).map(::track), start = 0, label = "Old")
+        step()
+        h.session.add(listOf(track(8), track(9)), next = false)
+        h.session.next()
+        step()
+        assertEquals("Song 8", h.player.loaded?.title)
+        h.session.playList((10..12).map(::track), start = 1, label = "New Album")
+        step()
+        val s = h.session.snapshot.value
+        checkInvariant(s)
+        assertEquals("New Album", s.label)
+        assertEquals(listOf("Song 10", "Song 11", "Song 9", "Song 12"), h.titles())
+        assertEquals(1, s.index)
+        assertEquals("Song 11", h.player.loaded?.title)
+        assertEquals(listOf("Song 9"), s.queue.filter { it.id in s.queued }.map { it.title })
+    }
+
+    @Test
+    fun `shuffling only mixes the list and leaves queued songs in order`() = runTest {
+        val h = harness()
+        h.session.playList((1..8).map(::track), start = 0, label = "Mix")
+        step()
+        h.session.add(listOf(track(20), track(21)), next = false)
+        h.session.setShuffle(true)
+        step()
+        val mixed = h.session.snapshot.value
+        checkInvariant(mixed)
+        assertEquals(listOf("Song 1", "Song 20", "Song 21"), h.titles().take(3))
+        h.session.shuffle()
+        assertEquals(listOf("Song 1", "Song 20", "Song 21"), h.titles().take(3))
+        h.session.setShuffle(false)
+        assertEquals(listOf("Song 1", "Song 20", "Song 21", "Song 2", "Song 3", "Song 4", "Song 5", "Song 6", "Song 7", "Song 8"), h.titles())
+    }
+
+    @Test
+    fun `played queued songs stay in history for back but repeat all loops only the list and repeat one repeats a queued song`() = runTest {
+        val h = harness()
+        h.session.playList((1..3).map(::track), start = 0)
+        step()
+        h.session.add(listOf(track(9)), next = false)
+        h.session.setRepeat("one")
+        h.session.next()
+        step()
+        assertEquals("Song 9", h.player.loaded?.title)
+        assertTrue(h.session.snapshot.value.queued.isEmpty(), "once playing, it is no longer waiting in queued")
+        h.player.onEnded?.invoke()
+        step()
+        assertEquals("Song 9", h.player.loaded?.title, "repeat one repeats a queued song too")
+
+        h.session.setRepeat("all")
+        h.session.next()
+        step()
+        assertEquals("Song 2", h.player.loaded?.title)
+        h.session.prev()
+        step()
+        assertEquals("Song 9", h.player.loaded?.title, "back returns to the queued song just heard")
+        h.session.next()
+        h.session.next()
+        step()
+        assertEquals("Song 3", h.player.loaded?.title)
+        h.session.next()
+        step()
+        assertEquals("Song 1", h.player.loaded?.title)
+        assertEquals(listOf("Song 1", "Song 2", "Song 3"), h.titles(), "repeat all loops only the list, not the one-time queued song")
+    }
+
+    @Test
+    fun `jumping to a song of the list keeps queued songs waiting right after it`() = runTest {
+        val h = harness()
+        h.session.playList((1..5).map(::track), start = 0)
+        step()
+        h.session.add(listOf(track(8), track(9)), next = false)
+        val song4 = h.session.snapshot.value.queue.first { it.title == "Song 4" }.id
+        h.session.jump(song4)
+        step()
+        val s = h.session.snapshot.value
+        checkInvariant(s)
+        assertEquals("Song 4", h.player.loaded?.title)
+        assertEquals(3, s.index)
+        assertEquals(listOf("Song 1", "Song 2", "Song 3", "Song 4", "Song 8", "Song 9", "Song 5"), h.titles())
+        assertEquals(listOf("Song 8", "Song 9"), s.queue.filter { it.id in s.queued }.map { it.title })
+    }
+
+    @Test
+    fun `jumping to a queued song skips earlier queued songs and keeps the list waiting`() = runTest {
+        val h = harness()
+        h.session.playList((1..3).map(::track), start = 0)
+        step()
+        h.session.add(listOf(track(7), track(8), track(9)), next = false)
+        val song8 = h.session.snapshot.value.queue.first { it.title == "Song 8" }.id
+        h.session.jump(song8)
+        step()
+        val s = h.session.snapshot.value
+        checkInvariant(s)
+        assertEquals("Song 8", h.player.loaded?.title)
+        assertEquals(2, s.index)
+        assertEquals(listOf("Song 1", "Song 7", "Song 8", "Song 9", "Song 2", "Song 3"), h.titles())
+        assertEquals(listOf("Song 9"), s.queue.filter { it.id in s.queued }.map { it.title })
+    }
+
+    @Test
+    fun `moving a song between the two groups changes which group it belongs to`() = runTest {
+        val h = harness()
+        h.session.playList((1..4).map(::track), start = 0)
+        step()
+        h.session.add(listOf(track(8), track(9)), next = false)
+        val id8 = h.session.snapshot.value.queue.first { it.title == "Song 8" }.id
+        h.session.move(id8, toIndex = 3, queued = false)
+        checkInvariant(h.session.snapshot.value)
+        assertEquals(listOf("Song 1", "Song 9", "Song 2", "Song 8", "Song 3", "Song 4"), h.titles())
+        assertEquals(listOf("Song 9"), h.session.snapshot.value.queue.filter { it.id in h.session.snapshot.value.queued }.map { it.title })
+
+        val id3 = h.session.snapshot.value.queue.first { it.title == "Song 3" }.id
+        h.session.move(id3, toIndex = 1, queued = true)
+        checkInvariant(h.session.snapshot.value)
+        assertEquals(listOf("Song 1", "Song 3", "Song 9", "Song 2", "Song 8", "Song 4"), h.titles())
+        assertEquals(listOf("Song 3", "Song 9"), h.session.snapshot.value.queue.filter { it.id in h.session.snapshot.value.queued }.map { it.title })
+    }
+
+    @Test
+    fun `clearing the queued group removes only those songs and leaves the list`() = runTest {
+        val h = harness()
+        h.session.playList((1..3).map(::track), start = 0, label = "Album")
+        step()
+        h.session.add(listOf(track(8), track(9)), next = false)
+        h.session.clearQueued()
+        val s = h.session.snapshot.value
+        checkInvariant(s)
+        assertTrue(s.queued.isEmpty())
+        assertEquals("Album", s.label)
+        assertEquals(listOf("Song 1", "Song 2", "Song 3"), h.titles())
+        assertEquals("Song 2", h.player.queuedNext?.title)
+    }
+
+    @Test
+    fun `autoplay songs stay in the third tier behind queued songs and the list`() = runTest {
+        val h = harness()
+        h.session.playList((1..2).map(::track), start = 1)
+        step()
+        h.session.add(listOf(track(10), track(11)), next = false, queued = false, auto = true)
+        h.session.add(listOf(track(8)), next = false)
+        h.session.add(listOf(track(3)), next = false, queued = false)
+        val s = h.session.snapshot.value
+        checkInvariant(s)
+        assertEquals(listOf("Song 1", "Song 2", "Song 8", "Song 3", "Song 10", "Song 11"), h.titles())
+        assertEquals(listOf("Song 10", "Song 11"), s.queue.filter { it.auto }.map { it.title })
+    }
+
+    @Test
+    fun `a song in the list can still be added to the queued group, but not twice to the queued group`() = runTest {
+        val h = harness()
+        h.session.playList((1..3).map(::track), start = 0)
+        step()
+        h.session.add(listOf(track(2)), next = false)
+        assertEquals(listOf("Song 1", "Song 2", "Song 2", "Song 3"), h.titles())
+        h.session.add(listOf(track(2)), next = false)
+        assertEquals(listOf("Song 1", "Song 2", "Song 2", "Song 3"), h.titles(), "already in the queued group: not added again")
+    }
+
+    @Test
+    fun `saved queue remembers the queued group and the list label and reads old files without them`() = runTest {
+        val h = harness()
+        h.session.playList((1..3).map(::track), start = 0, label = "My List")
+        step()
+        h.session.add(listOf(track(9)), next = false)
+        val lastSaved = h.saved.last()
+        assertEquals("My List", lastSaved.label)
+        assertEquals(1, lastSaved.queued.size)
+
+        val restored = harness(lastSaved)
+        checkInvariant(restored.session.snapshot.value)
+        assertEquals("My List", restored.session.snapshot.value.label)
+        assertEquals(listOf("Song 1", "Song 9", "Song 2", "Song 3"), restored.titles())
+        assertEquals(listOf("Song 9"), restored.session.snapshot.value.queue.filter { it.id in restored.session.snapshot.value.queued }.map { it.title })
+
+        val oldJson = """{"queue":[{"id":"q1","videoId":"aaaaaaaaaaa","title":"One","artist":"x","durMs":1000,"addedBy":""}],"index":0,"repeat":"off","positionMs":0,"finished":false}"""
+        val decoded = Protocol.json.decodeFromString<SavedQueue>(oldJson)
+        assertTrue(decoded.queued.isEmpty())
+        assertNull(decoded.label)
+    }
+
     private fun TestScope.randomTaps(transientOnly: Boolean) {
         for (seed in 1..40) {
             val h = harness()
@@ -1032,7 +1328,7 @@ class LocalSessionTest {
                 val snapshot = h.session.snapshot.value
                 val queue = snapshot.queue
                 val pastTheEnd = snapshot.index + 1 >= queue.size && snapshot.repeat != "all"
-                when (random.nextInt(14)) {
+                when (random.nextInt(19)) {
                     0, 1 -> if (!pastTheEnd) h.session.next()
                     2 -> h.session.prev()
                     3 -> h.session.pause()
@@ -1044,8 +1340,15 @@ class LocalSessionTest {
                     11 -> h.player.onError?.invoke(RuntimeException("403"))
                     12 -> h.player.prepareDelayMs = random.nextLong(0, 9_000)
                     13 -> h.session.seek(random.nextLong(0, 100_000))
+                    14 -> h.session.setShuffle(random.nextBoolean())
+                    15 -> if (snapshot.index + 1 < queue.size) h.session.move(queue[random.nextInt(snapshot.index + 1, queue.size)].id, random.nextInt(snapshot.index + 1, queue.size), listOf(null, true, false)[random.nextInt(3)])
+                    16 -> h.session.clearQueued()
+                    17 -> h.session.playList((1..random.nextInt(2, 7)).map { track(random.nextInt(1, 30)) }, start = random.nextInt(0, 6), label = "L")
+                    18 -> h.session.add(listOf(track(random.nextInt(40, 60))), next = false, queued = false, auto = random.nextBoolean())
                 }
+                checkInvariant(h.session.snapshot.value)
                 step(random.nextLong(0, 5_000))
+                checkInvariant(h.session.snapshot.value)
                 if (transientOnly) assertTrue(h.ended.isEmpty(), "seed $seed: a blip ended the queue, which would start autoplay")
             }
             // Nobody touches it any more, and the network is fine: it settles, with nothing still loading

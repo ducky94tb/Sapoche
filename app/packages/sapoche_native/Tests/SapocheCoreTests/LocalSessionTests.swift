@@ -67,6 +67,66 @@ final class LocalSessionTests: XCTestCase {
         XCTAssertEqual(h.player.queuedNext?.title, "Song 2", "the next song is ready for a gapless finish")
     }
 
+    func testPlayingAListFromASongKeepsTheSongsBeforeItToGoBackTo() async {
+        let h = harness()
+        h.session.add([track(9)], next: false)
+        await h.step()
+        h.session.playList((1...5).map(track), start: 2)
+        await h.step()
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 2", "Song 3", "Song 4", "Song 5"], "the old queue is gone")
+        XCTAssertEqual(h.session.snapshot.value.index, 2)
+        XCTAssertEqual(h.player.loaded?.title, "Song 3")
+        XCTAssertTrue(h.player.playing)
+        XCTAssertEqual(h.player.queuedNext?.title, "Song 4")
+        h.session.next()
+        h.session.prev()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 3")
+        h.session.prev()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 2", "back goes to the song before the one chosen")
+    }
+
+    func testAListPlayedFromAStartOutsideItIsKeptInside() async {
+        let h = harness()
+        h.session.playList((1...3).map(track), start: 9)
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 3")
+        h.session.playList((1...3).map(track), start: -4)
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 1")
+        h.session.playList([], start: 0)
+        XCTAssertEqual(h.session.snapshot.value.queue.count, 3, "nothing to play changes nothing")
+    }
+
+    func testPlayingAListWithShuffleOnStartsAtTheSongAndMixesTheRest() async {
+        let h = harness()
+        h.session.setShuffle(true)
+        h.session.playList((1...8).map(track), start: 3)
+        await h.step()
+        let s = h.session.snapshot.value
+        XCTAssertEqual(s.index, 0)
+        XCTAssertEqual(s.current?.title, "Song 4")
+        XCTAssertEqual(h.player.loaded?.title, "Song 4")
+        XCTAssertEqual(Set(h.titles()), Set((1...8).map { "Song \($0)" }))
+        XCTAssertEqual(s.queue.count, 8)
+        h.session.setShuffle(false)
+        XCTAssertEqual(h.titles(), ["Song 4"] + [1, 2, 3, 5, 6, 7, 8].map { "Song \($0)" }, "off puts the rest back in the list's order")
+    }
+
+    func testTheEndOfAListPlayedFromTheMiddleWrapsToItsFirstSongWhenRepeatingAll() async {
+        let h = harness()
+        h.session.setRepeat("all")
+        h.session.playList((1...3).map(track), start: 1)
+        await h.step()
+        h.session.next()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 3")
+        h.session.next()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 1")
+    }
+
     func testAddingWhilePlayingDoesNotDisturbIt() async {
         let h = harness()
         h.session.add([track(1)], next: false)
@@ -81,9 +141,10 @@ final class LocalSessionTests: XCTestCase {
 
     func testASongAlreadyWaitingInTheQueueIsNotAddedAgain() async {
         let h = harness()
-        h.session.add([track(1), track(2)], next: false)
+        h.session.add([track(1)], next: false)
         await h.step()
-        h.session.add([track(1), track(2), track(3), track(3)], next: false)
+        h.session.add([track(2)], next: false)
+        h.session.add([track(2), track(3), track(3)], next: false)
         await h.step()
         XCTAssertEqual(h.titles(), ["Song 1", "Song 2", "Song 3"])
         XCTAssertTrue(h.problems.isEmpty)
@@ -398,7 +459,7 @@ final class LocalSessionTests: XCTestCase {
         XCTAssertEqual(before, h.titles(), "turning it off puts the songs back in the order they had")
     }
 
-    func testSongsAddedWhileShuffleIsOnAreMixedInAndFollowTheRestOnceItIsOff() async {
+    func testSongsAddedWhileShuffleIsOnKeepTheirOrderAheadOfTheShuffledList() async {
         let h = harness()
         h.session.add((1...6).map(track), next: false)
         await h.step()
@@ -408,16 +469,11 @@ final class LocalSessionTests: XCTestCase {
         h.session.add([track(8)], next: true)
         await h.step()
         let titles = h.titles()
-        XCTAssertEqual(titles[1], "Song 8", "a song added to play next stays next")
-        XCTAssertEqual(titles[0], "Song 1", "the current song stays first")
-        XCTAssertTrue(titles.dropFirst().contains("Song 7"))
+        XCTAssertEqual(Array(titles.prefix(3)), ["Song 1", "Song 8", "Song 7"], "queued songs stay in order right after the current song")
 
         h.session.setShuffle(false)
         await h.step()
-        let back = h.titles()
-        let original = (1...6).map { "Song \($0)" }
-        XCTAssertEqual(back.filter { original.contains($0) }, original)
-        XCTAssertEqual(Set(back.suffix(2)), ["Song 7", "Song 8"], "the ones added meanwhile come after")
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 8", "Song 7", "Song 2", "Song 3", "Song 4", "Song 5", "Song 6"])
     }
 
     func testShuffleModeSurvivesClearingTheQueueAndIsSaved() async {
@@ -903,6 +959,230 @@ final class LocalSessionTests: XCTestCase {
     /// Random taps among random failures. With [transientOnly] every failure is a blip, which must never end the queue: the
     /// queue ends only when the person goes past its last song. Whatever the failures, it settles, when left alone on a good
     /// network, with nothing still loading.
+    private func checkInvariant(_ s: LocalSession.Snapshot) {
+        if s.queue.isEmpty {
+            XCTAssertEqual(s.index, 0)
+            XCTAssertTrue(s.queued.isEmpty)
+            XCTAssertFalse(s.finished)
+            return
+        }
+        XCTAssertTrue(s.queue.indices.contains(s.index))
+        if s.finished {
+            XCTAssertTrue(s.queued.isEmpty)
+            XCTAssertFalse(s.queue.contains(where: \.auto))
+            return
+        }
+        let before = s.queue.prefix(s.index + 1)
+        let after = s.queue.dropFirst(s.index + 1)
+        XCTAssertFalse(before.contains { s.queued.contains($0.id) })
+        XCTAssertFalse(before.contains(where: \.auto))
+        let afterIds = Set(after.map(\.id))
+        XCTAssertTrue(s.queued.isSubset(of: afterIds))
+        var tier = 0
+        for item in after {
+            let itemTier: Int
+            if s.queued.contains(item.id) {
+                XCTAssertFalse(item.auto)
+                itemTier = 0
+            } else if !item.auto {
+                itemTier = 1
+            } else {
+                itemTier = 2
+            }
+            XCTAssertGreaterThanOrEqual(itemTier, tier)
+            tier = itemTier
+        }
+    }
+
+    func testQueuedSongsPlayBeforeTheRestOfTheListAndPlayNextGoesToTheFrontOfThem() async {
+        let h = harness()
+        h.session.playList((1...5).map(track), start: 1, label: "Lofi Chill")
+        await h.step()
+        h.session.add([track(8)], next: false)
+        h.session.add([track(9)], next: false)
+        h.session.add([track(7)], next: true)
+        await h.step()
+        let s = h.session.snapshot.value
+        checkInvariant(s)
+        XCTAssertEqual(s.label, "Lofi Chill")
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 2", "Song 7", "Song 8", "Song 9", "Song 3", "Song 4", "Song 5"])
+        XCTAssertEqual(Set(s.queue.filter { s.queued.contains($0.id) }.map(\.title)), ["Song 7", "Song 8", "Song 9"])
+        XCTAssertEqual(h.player.queuedNext?.title, "Song 7")
+    }
+
+    func testStartingANewListKeepsUnplayedQueuedSongsRightAfterTheChosenSong() async {
+        let h = harness()
+        h.session.playList((1...4).map(track), start: 0, label: "Old")
+        await h.step()
+        h.session.add([track(8), track(9)], next: false)
+        h.session.next()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 8")
+        h.session.playList((10...12).map(track), start: 1, label: "New Album")
+        await h.step()
+        let s = h.session.snapshot.value
+        checkInvariant(s)
+        XCTAssertEqual(s.label, "New Album")
+        XCTAssertEqual(h.titles(), ["Song 10", "Song 11", "Song 9", "Song 12"])
+        XCTAssertEqual(s.index, 1)
+        XCTAssertEqual(h.player.loaded?.title, "Song 11")
+        XCTAssertEqual(s.queue.filter { s.queued.contains($0.id) }.map(\.title), ["Song 9"])
+    }
+
+    func testShufflingOnlyMixesTheListAndLeavesQueuedSongsInOrder() async {
+        let h = harness()
+        h.session.playList((1...8).map(track), start: 0, label: "Mix")
+        await h.step()
+        h.session.add([track(20), track(21)], next: false)
+        h.session.setShuffle(true)
+        await h.step()
+        checkInvariant(h.session.snapshot.value)
+        XCTAssertEqual(Array(h.titles().prefix(3)), ["Song 1", "Song 20", "Song 21"])
+        h.session.shuffle()
+        XCTAssertEqual(Array(h.titles().prefix(3)), ["Song 1", "Song 20", "Song 21"])
+        h.session.setShuffle(false)
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 20", "Song 21", "Song 2", "Song 3", "Song 4", "Song 5", "Song 6", "Song 7", "Song 8"])
+    }
+
+    func testPlayedQueuedSongsStayInHistoryForBackButRepeatAllLoopsOnlyTheListAndRepeatOneRepeatsAQueuedSong() async {
+        let h = harness()
+        h.session.playList((1...3).map(track), start: 0)
+        await h.step()
+        h.session.add([track(9)], next: false)
+        h.session.setRepeat("one")
+        h.session.next()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 9")
+        XCTAssertTrue(h.session.snapshot.value.queued.isEmpty)
+        h.player.onEnded?()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 9")
+
+        h.session.setRepeat("all")
+        h.session.next()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 2")
+        h.session.prev()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 9")
+        h.session.next()
+        h.session.next()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 3")
+        h.session.next()
+        await h.step()
+        XCTAssertEqual(h.player.loaded?.title, "Song 1")
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 2", "Song 3"])
+    }
+
+    func testJumpingToASongOfTheListKeepsQueuedSongsWaitingRightAfterIt() async {
+        let h = harness()
+        h.session.playList((1...5).map(track), start: 0)
+        await h.step()
+        h.session.add([track(8), track(9)], next: false)
+        let song4 = h.session.snapshot.value.queue.first { $0.title == "Song 4" }!.id
+        h.session.jump(song4)
+        await h.step()
+        let s = h.session.snapshot.value
+        checkInvariant(s)
+        XCTAssertEqual(h.player.loaded?.title, "Song 4")
+        XCTAssertEqual(s.index, 3)
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 2", "Song 3", "Song 4", "Song 8", "Song 9", "Song 5"])
+        XCTAssertEqual(s.queue.filter { s.queued.contains($0.id) }.map(\.title), ["Song 8", "Song 9"])
+    }
+
+    func testJumpingToAQueuedSongSkipsEarlierQueuedSongsAndKeepsTheListWaiting() async {
+        let h = harness()
+        h.session.playList((1...3).map(track), start: 0)
+        await h.step()
+        h.session.add([track(7), track(8), track(9)], next: false)
+        let song8 = h.session.snapshot.value.queue.first { $0.title == "Song 8" }!.id
+        h.session.jump(song8)
+        await h.step()
+        let s = h.session.snapshot.value
+        checkInvariant(s)
+        XCTAssertEqual(h.player.loaded?.title, "Song 8")
+        XCTAssertEqual(s.index, 2)
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 7", "Song 8", "Song 9", "Song 2", "Song 3"])
+        XCTAssertEqual(s.queue.filter { s.queued.contains($0.id) }.map(\.title), ["Song 9"])
+    }
+
+    func testMovingASongBetweenTheTwoGroupsChangesWhichGroupItBelongsTo() async {
+        let h = harness()
+        h.session.playList((1...4).map(track), start: 0)
+        await h.step()
+        h.session.add([track(8), track(9)], next: false)
+        let id8 = h.session.snapshot.value.queue.first { $0.title == "Song 8" }!.id
+        h.session.move(id8, toIndex: 3, queued: false)
+        checkInvariant(h.session.snapshot.value)
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 9", "Song 2", "Song 8", "Song 3", "Song 4"])
+        XCTAssertEqual(h.session.snapshot.value.queue.filter { h.session.snapshot.value.queued.contains($0.id) }.map(\.title), ["Song 9"])
+
+        let id3 = h.session.snapshot.value.queue.first { $0.title == "Song 3" }!.id
+        h.session.move(id3, toIndex: 1, queued: true)
+        checkInvariant(h.session.snapshot.value)
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 3", "Song 9", "Song 2", "Song 8", "Song 4"])
+        XCTAssertEqual(h.session.snapshot.value.queue.filter { h.session.snapshot.value.queued.contains($0.id) }.map(\.title), ["Song 3", "Song 9"])
+    }
+
+    func testClearingTheQueuedGroupRemovesOnlyThoseSongsAndLeavesTheList() async {
+        let h = harness()
+        h.session.playList((1...3).map(track), start: 0, label: "Album")
+        await h.step()
+        h.session.add([track(8), track(9)], next: false)
+        h.session.clearQueued()
+        let s = h.session.snapshot.value
+        checkInvariant(s)
+        XCTAssertTrue(s.queued.isEmpty)
+        XCTAssertEqual(s.label, "Album")
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 2", "Song 3"])
+        XCTAssertEqual(h.player.queuedNext?.title, "Song 2")
+    }
+
+    func testAutoplaySongsStayInTheThirdTierBehindQueuedSongsAndTheList() async {
+        let h = harness()
+        h.session.playList((1...2).map(track), start: 1)
+        await h.step()
+        h.session.add([track(10), track(11)], next: false, queued: false, auto: true)
+        h.session.add([track(8)], next: false)
+        h.session.add([track(3)], next: false, queued: false)
+        let s = h.session.snapshot.value
+        checkInvariant(s)
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 2", "Song 8", "Song 3", "Song 10", "Song 11"])
+        XCTAssertEqual(s.queue.filter(\.auto).map(\.title), ["Song 10", "Song 11"])
+    }
+
+    func testASongInTheListCanStillBeAddedToTheQueuedGroupButNotTwiceToTheQueuedGroup() async {
+        let h = harness()
+        h.session.playList((1...3).map(track), start: 0)
+        await h.step()
+        h.session.add([track(2)], next: false)
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 2", "Song 2", "Song 3"])
+        h.session.add([track(2)], next: false)
+        XCTAssertEqual(h.titles(), ["Song 1", "Song 2", "Song 2", "Song 3"])
+    }
+
+    func testSavedQueueRemembersTheQueuedGroupAndTheListLabelAndReadsOldFilesWithoutThem() async throws {
+        let h = harness()
+        h.session.playList((1...3).map(track), start: 0, label: "My List")
+        await h.step()
+        h.session.add([track(9)], next: false)
+        let lastSaved = try XCTUnwrap(h.saved.last)
+        XCTAssertEqual(lastSaved.label, "My List")
+        XCTAssertEqual(lastSaved.queued.count, 1)
+
+        let restored = harness(lastSaved)
+        checkInvariant(restored.session.snapshot.value)
+        XCTAssertEqual(restored.session.snapshot.value.label, "My List")
+        XCTAssertEqual(restored.titles(), ["Song 1", "Song 9", "Song 2", "Song 3"])
+        XCTAssertEqual(restored.session.snapshot.value.queue.filter { restored.session.snapshot.value.queued.contains($0.id) }.map(\.title), ["Song 9"])
+
+        let oldJson = #"{"queue":[{"id":"q1","videoId":"aaaaaaaaaaa","title":"One","artist":"x","durMs":1000,"addedBy":"","auto":false}],"index":0,"repeat":"off","positionMs":0,"finished":false}"#
+        let decoded = try JSONDecoder().decode(SavedQueue.self, from: Data(oldJson.utf8))
+        XCTAssertTrue(decoded.queued.isEmpty)
+        XCTAssertNil(decoded.label)
+    }
+
     private func randomTaps(transientOnly: Bool) async {
         for seed in 1...12 {
             let h = harness()
@@ -922,7 +1202,7 @@ final class LocalSessionTests: XCTestCase {
                 let snapshot = h.session.snapshot.value
                 let queue = snapshot.queue
                 let pastTheEnd = snapshot.index + 1 >= queue.count && snapshot.repeatMode != "all"
-                switch roll(14) {
+                switch roll(19) {
                 case 0, 1: if !pastTheEnd { h.session.next() }
                 case 2: h.session.prev()
                 case 3: h.session.pause()
@@ -933,9 +1213,29 @@ final class LocalSessionTests: XCTestCase {
                 case 10: if queue.count > 1, snapshot.index < queue.count - 1 { h.session.remove(queue[roll(queue.count)].id) }
                 case 11: h.player.onError?(NSError(domain: "t", code: 403))
                 case 12: h.player.prepareDelayMs = Int64(roll(9_000))
-                default: h.session.seek(Int64(roll(100_000)))
+                case 13: h.session.seek(Int64(roll(100_000)))
+                case 14: h.session.setShuffle(roll(2) == 0)
+                case 15:
+                    if snapshot.index + 1 < queue.count {
+                        let span = queue.count - (snapshot.index + 1)
+                        let from = snapshot.index + 1 + roll(span)
+                        let to = snapshot.index + 1 + roll(span)
+                        let qOpt: [Bool?] = [nil, true, false]
+                        h.session.move(queue[from].id, toIndex: to, queued: qOpt[roll(3)])
+                    }
+                case 16:
+                    if queue.dropFirst(snapshot.index + 1).contains(where: { !snapshot.queued.contains($0.id) }) {
+                        h.session.clearQueued()
+                    }
+                case 17:
+                    let count = 2 + roll(5)
+                    h.session.playList((0..<count).map { _ in track(1 + roll(30)) }, start: roll(count), label: "L")
+                default:
+                    h.session.add([track(40 + roll(20))], next: false, queued: false, auto: roll(2) == 0)
                 }
+                checkInvariant(h.session.snapshot.value)
                 await h.step(Int64(roll(5_000)))
+                checkInvariant(h.session.snapshot.value)
                 if transientOnly { XCTAssertTrue(h.ended.isEmpty, "seed \(seed): a blip ended the queue, which would start autoplay") }
             }
             // Nobody touches it any more, and the network is fine: it settles, with nothing still loading

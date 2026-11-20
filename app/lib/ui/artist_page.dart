@@ -133,7 +133,10 @@ class _ContentState extends State<_Content> {
     setState(() => _working = PlayWorking.none);
     if (songs.isEmpty) return;
     if (shuffle) songs.shuffle();
-    await AppScope.roomOf(context).playTracks(songs);
+    await AppScope.roomOf(context).playTracks(
+      songs,
+      label: '${_page.name} · ${S.topSongs}',
+    );
   }
 
   @override
@@ -234,6 +237,8 @@ class _ContentState extends State<_Content> {
       TrackSection(
         title: S.topSongs,
         tracks: page.topSongs,
+        asList: true,
+        listLabel: '${page.name} · ${S.topSongs}',
         headerAction: page.topSongsId == null
             ? null
             : TextButton(

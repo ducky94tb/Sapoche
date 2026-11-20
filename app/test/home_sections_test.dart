@@ -317,10 +317,9 @@ void main() {
       expect(find.text('Mixed for you'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('mix-2')));
       await tester.pump();
-      final added = backend.calls.firstWhere((c) => c.startsWith('addMany'));
+      final added = backend.calls.firstWhere((c) => c.startsWith('playList'));
       expect(added, contains('drake'));
       expect(added, isNot(contains('adele')));
-      expect(backend.calls, contains('clear'));
     });
 
     testWidgets('go on the queue in a room instead of taking its place', (
@@ -409,9 +408,8 @@ void main() {
       final backend = await openHome(tester, prepare: ownSongs);
       await tester.tap(find.byKey(const ValueKey('chip-new')));
       await tester.pump();
-      final added = backend.calls.firstWhere((c) => c.startsWith('addMany'));
+      final added = backend.calls.firstWhere((c) => c.startsWith('playList'));
       expect(added, contains('new0aaaaaaaa'));
-      expect(backend.calls, contains('clear'));
       final prefs = await SharedPreferences.getInstance();
       final stored = jsonDecode(prefs.getString('shelf_stats')!) as Map;
       final part = stored[dayPartOf(DateTime.now())] as Map;

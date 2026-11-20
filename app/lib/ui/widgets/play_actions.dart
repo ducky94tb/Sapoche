@@ -21,19 +21,22 @@ void playNow(BuildContext context, Track track, {String source = ListenSource.ch
   room.playSong(track, source: source);
 }
 
-/// A touch on song [index] of [tracks] (a playlist, a search for a playlist): outside a room it plays from there
-/// to the end of the list, in a room the song is queued.
-void playFrom(BuildContext context, List<Track> tracks, int index) {
-  if (AppScope.roomOf(context).snapshot.inRoom) {
-    playNow(context, tracks[index]);
-    return;
-  }
+/// A touch on song [index] of [tracks] (a playlist, a search for a playlist): outside a room the whole list is the
+/// queue and plays from there, in a room the song is queued.
+Future<void> playFrom(
+  BuildContext context,
+  List<Track> tracks,
+  int index, {
+  String? label,
+}) async {
+  final room = AppScope.roomOf(context);
+  if (room.snapshot.inRoom) return playNow(context, tracks[index]);
   HapticFeedback.selectionClick();
-  AppScope.roomOf(context).playTracks(tracks.sublist(index));
+  await room.playTracks(tracks, start: index, label: label);
 }
 
 /// Starts a mix: the radio of [seed], the song itself first. Without a network it plays the song alone.
-Future<void> startMix(BuildContext context, Track seed) async {
+Future<void> startMix(BuildContext context, Track seed, {String? label}) async {
   HapticFeedback.selectionClick();
   final scope = AppScope.of(context);
   final messenger = ScaffoldMessenger.of(context);
@@ -46,17 +49,21 @@ Future<void> startMix(BuildContext context, Track seed) async {
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(S.mixFailed)));
   }
-  await scope.room.playTracks(songs, source: ListenSource.shelf);
+  await scope.room.playTracks(
+    songs,
+    label: label ?? S.mixOf(seed.artist),
+    source: ListenSource.shelf,
+  );
 }
 
 /// Plays [tracks], a mix that was made for the person: outside a room it takes the place of the queue, in a room
 /// it is put on the queue.
-Future<void> playMix(BuildContext context, List<Track> tracks) async {
+Future<void> playMix(BuildContext context, List<Track> tracks, {String? label}) async {
   if (AppScope.roomOf(context).snapshot.inRoom) {
     return queueTracks(context, tracks, source: ListenSource.shelf);
   }
   HapticFeedback.selectionClick();
-  await AppScope.roomOf(context).playTracks(tracks, source: ListenSource.shelf);
+  await AppScope.roomOf(context).playTracks(tracks, label: label, source: ListenSource.shelf);
 }
 
 /// Plays the songs of [playlists] (the playlists of a folder) as one list: the playlists one after the other, or with
@@ -66,6 +73,7 @@ Future<void> playPlaylists(
   BuildContext context,
   List<SavedPlaylist> playlists, {
   required bool shuffle,
+  String? label,
 }) async {
   HapticFeedback.selectionClick();
   final scope = AppScope.of(context);
@@ -85,6 +93,6 @@ Future<void> playPlaylists(
     if (context.mounted) await queueTracks(context, songs);
     return;
   }
-  final kept = await scope.room.playTracks(songs);
+  final kept = await scope.room.playTracks(songs, label: label);
   if (kept < songs.length) say(S.playingSome(kept, songs.length));
 }

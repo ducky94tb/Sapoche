@@ -61,6 +61,12 @@ abstract final class S {
   );
   static String get nowPlaying => _t('Now playing', 'Đang phát');
   static String get upNext => _t('Up next', 'Tiếp theo');
+  static String get nextInQueue =>
+      _t('Next in queue', 'Tiếp theo trong hàng đợi');
+  static String nextFrom(String list) =>
+      _t('Next from: $list', 'Tiếp theo từ: $list');
+  static String get queueCleared =>
+      _t('Queue cleared', 'Đã xóa hàng đợi');
   static String get played => _t('Played', 'Đã phát');
   static String get emptyQueueTitle =>
       _t('Nothing queued yet', 'Chưa có bài nào trong hàng đợi');

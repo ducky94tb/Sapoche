@@ -57,7 +57,8 @@ object UiJson {
             .put("soloItemId", snap.soloItemId ?: JSONObject.NULL)
             // A song is on its way to play on this device: outside a room, or while listening alone in one
             .put("loading", if (inRoom) snap.loading else local.loading)
-            .put("queue", JSONArray().also { array -> (if (inRoom) state?.queue else local.queue)?.forEach { array.put(item(it)) } })
+            .put("label", if (inRoom) JSONObject.NULL else local.label ?: JSONObject.NULL)
+            .put("queue", JSONArray().also { array -> (if (inRoom) state?.queue else local.queue)?.forEach { array.put(item(it, !inRoom && it.id in local.queued)) } })
             .put(
                 "members",
                 JSONArray().also { array ->
@@ -241,7 +242,7 @@ object UiJson {
     fun error(code: String, message: String): String =
         JSONObject().put("type", "error").put("code", code).put("message", message).toString()
 
-    fun item(item: QueueItem): JSONObject = JSONObject()
+    fun item(item: QueueItem, queued: Boolean = false): JSONObject = JSONObject()
         .put("id", item.id)
         .put("videoId", item.videoId)
         .put("title", item.title)
@@ -250,6 +251,7 @@ object UiJson {
         .put("durMs", item.durMs)
         .put("addedBy", item.addedBy)
         .put("auto", item.auto)
+        .put("queued", queued)
 
     private fun connectionName(view: GroupController.View): String = when (view.connection) {
         null -> "none"

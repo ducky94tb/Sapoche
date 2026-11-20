@@ -397,7 +397,7 @@ class GroupController(
                 // Carrying on only adds: what has been played makes room when the new songs would not fit
                 local.dropPlayed(local.snapshot.value.queue.size + more.size - LocalSession.MAX_QUEUE)
                 sources.mark(more.map { it.videoId }, ListenSource.AUTO)
-                local.add(more, next = false)
+                local.add(more, next = false, queued = false, auto = true)
                 added = true // the song still has to be fetched: the hold goes when it plays
             } catch (e: CancellationException) {
                 throw e
@@ -626,11 +626,12 @@ class GroupController(
                 // The song that was tapped comes first: on a slow network the two would share it
                 local.snapshot.first { !it.loading }
                 val more = moreLike(listOf(videoId), setOf(videoId), RADIO_COUNT)
-                val queue = local.snapshot.value.queue
-                if (more.isEmpty() || session != null || queue.singleOrNull()?.videoId != videoId) return@launch
+                val snap = local.snapshot.value
+                val contextOnly = snap.queue.filterNot { it.id in snap.queued }
+                if (more.isEmpty() || session != null || contextOnly.singleOrNull()?.videoId != videoId) return@launch
                 EventLog.d("local", "radio adds ${more.size} songs like $videoId")
                 sources.mark(more.map { it.videoId }, ListenSource.AUTO)
-                local.add(more, next = false)
+                local.add(more, next = false, queued = false)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1081,6 +1082,7 @@ class GroupController(
     }
 
     fun requestClearQueue() = onQueue({ it.clear() }) { send(Protocol.queueClear()) }
+    fun requestClearQueued() = onQueue({ it.clearQueued() }) { false }
     fun requestShuffle() = onQueue({ it.shuffle() }) { send(Protocol.queueShuffle()) }
     /** Shuffle as a mode. A server older than protocol 11 has none, so there it mixes the queue once, as it always did. */
     fun requestShuffleMode(on: Boolean) = onQueue({ it.setShuffle(on) }) {
@@ -1091,12 +1093,18 @@ class GroupController(
         }
     }
     fun requestRepeat(mode: String) = onQueue({ it.setRepeat(mode) }) { send(Protocol.repeat(mode)) }
-    fun requestAddMany(tracks: List<TrackRef>, playNext: Boolean, source: String = ListenSource.CHOSEN): Boolean {
+    fun requestAddMany(tracks: List<TrackRef>, playNext: Boolean, source: String = ListenSource.CHOSEN, queued: Boolean = true): Boolean {
         sources.mark(tracks.map { it.videoId }, source)
-        return addToQueue(tracks, playNext)
+        return addToQueue(tracks, playNext, queued)
     }
 
-    private fun addToQueue(tracks: List<TrackRef>, playNext: Boolean) = onQueue({ it.add(tracks, playNext) }) {
+    /** Outside a room [tracks] become the queue and play from song [start]; a room's queue is shared, so they are only added to it. */
+    fun requestPlayList(tracks: List<TrackRef>, start: Int, label: String? = null, source: String = ListenSource.CHOSEN): Boolean {
+        sources.mark(tracks.map { it.videoId }, source)
+        return onQueue({ it.playList(tracks, start, label) }) { addToQueue(tracks, playNext = false) }
+    }
+
+    private fun addToQueue(tracks: List<TrackRef>, playNext: Boolean, queued: Boolean = true) = onQueue({ it.add(tracks, playNext, queued = queued) }) {
         // What is waiting in the room's queue is not added twice
         val fresh = Queues.fresh(tracks, queue(), session?.snapshot?.value?.state?.index ?: 0)
         fresh.isEmpty() || send(Protocol.queueAddMany(fresh, playNext))
@@ -1111,7 +1119,7 @@ class GroupController(
         return onQueue({ it.swap(itemId, track) }) { send(Protocol.queueSwap(itemId, track)) }
     }
     fun requestRemove(itemId: String) = onQueue({ it.remove(itemId) }) { send(Protocol.queueRemove(itemId)) }
-    fun requestMove(itemId: String, toIndex: Int) = onQueue({ it.move(itemId, toIndex) }) { send(Protocol.queueMove(itemId, toIndex)) }
+    fun requestMove(itemId: String, toIndex: Int, queued: Boolean? = null) = onQueue({ it.move(itemId, toIndex, queued) }) { send(Protocol.queueMove(itemId, toIndex)) }
 
     // Only meaningful in a room
     fun requestKick(memberId: String) = send(Protocol.kick(memberId))

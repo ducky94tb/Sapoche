@@ -8,6 +8,7 @@ import 'package:sapoche/data/music_models.dart';
 import 'package:sapoche/ui/artist_page.dart';
 import 'package:sapoche/ui/collection_screen.dart';
 import 'package:sapoche/ui/home_shell.dart';
+import 'package:sapoche/ui/player/up_next_view.dart';
 import 'package:sapoche/ui/widgets/player_backdrop.dart';
 
 import 'fake_backend.dart';
@@ -162,8 +163,7 @@ void main() {
       expect(
         backend.calls,
         containsAllInOrder([
-          'clear',
-          'addMany a1aaaaaaaaa,a2aaaaaaaaa,a3aaaaaaaaa next=false',
+          'playList a1aaaaaaaaa,a2aaaaaaaaa,a3aaaaaaaaa start=0 label=The Album',
         ]),
       );
     });
@@ -174,13 +174,12 @@ void main() {
       await openAlbum(tester, context);
       await tester.tap(find.byTooltip('Shuffle'));
       await tester.pumpAndSettle();
-      final added = backend.calls.firstWhere((c) => c.startsWith('addMany'));
+      final added = backend.calls.firstWhere((c) => c.startsWith('playList'));
       final ids = added.split(' ')[1].split(',')..sort();
       expect(ids, ['a1aaaaaaaaa', 'a2aaaaaaaaa', 'a3aaaaaaaaa']);
-      expect(backend.calls, contains('clear'));
     });
 
-    testWidgets('a touch on a song plays on from it', (tester) async {
+    testWidgets('a touch on a song plays the whole album from it', (tester) async {
       final (backend, context) = await start(tester);
       backend.collectionResult = album;
       await openAlbum(tester, context);
@@ -189,8 +188,7 @@ void main() {
       expect(
         backend.calls,
         containsAllInOrder([
-          'clear',
-          'addMany a2aaaaaaaaa,a3aaaaaaaaa next=false',
+          'playList a1aaaaaaaaa,a2aaaaaaaaa,a3aaaaaaaaa start=1 label=The Album',
         ]),
       );
       await tester.pumpAndSettle();
@@ -267,10 +265,56 @@ void main() {
         containsAllInOrder([
           'musicMore TOKEN1',
           'musicMore TOKEN2',
-          'clear',
-          'addMany p1aaaaaaaaa,p2aaaaaaaaa,p3aaaaaaaaa,p4aaaaaaaaa next=false',
+          'playList p1aaaaaaaaa,p2aaaaaaaaa,p3aaaaaaaaa,p4aaaaaaaaa start=0 label=Long Mix',
         ]),
       );
+    });
+
+    void queueIs(FakeBackend backend, List<String> ids) =>
+        backend.afterPlayList = (_) => backend.emit(
+          StateEvent(
+            sampleRoom(
+              local: true,
+              queue: [
+                for (final id in ids)
+                  QueueEntry(id: 'q$id', videoId: id, title: id, artist: 'x', durMs: 1, addedBy: ''),
+              ],
+            ),
+          ),
+        );
+
+    testWidgets('a touch on a song plays the page from it, and the pages after it join the queue', (
+      tester,
+    ) async {
+      final (backend, context) = await start(tester);
+      backend.collectionResult = playlist;
+      backend.moreResults['TOKEN1'] = MoreTracks(
+        tracks: [music('p3aaaaaaaaa', 'Third')],
+        more: 'TOKEN2',
+      );
+      backend.moreResults['TOKEN2'] = MoreTracks(
+        tracks: [music('p4aaaaaaaaa', 'Fourth')],
+      );
+      queueIs(backend, ['p1aaaaaaaaa', 'p2aaaaaaaaa']);
+      await openAlbum(tester, context, id: 'PLlong');
+      await tester.tap(find.text('Second'));
+      await tester.pumpAndSettle();
+      expect(backend.calls, contains('playList p1aaaaaaaaa,p2aaaaaaaaa start=1 label=Long Mix'));
+      expect(backend.calls, contains('addMany p3aaaaaaaaa,p4aaaaaaaaa next=false queued=false'));
+    });
+
+    testWidgets('the pages after it are left out when the queue became something else meanwhile', (
+      tester,
+    ) async {
+      final (backend, context) = await start(tester);
+      backend.collectionResult = playlist;
+      backend.moreResults['TOKEN1'] = MoreTracks(tracks: [music('p3aaaaaaaaa', 'Third')]);
+      queueIs(backend, ['other000000']);
+      await openAlbum(tester, context, id: 'PLlong');
+      await tester.tap(find.text('Second'));
+      await tester.pumpAndSettle();
+      expect(backend.calls, contains('playList p1aaaaaaaaa,p2aaaaaaaaa start=1 label=Long Mix'));
+      expect(backend.calls.where((c) => c.startsWith('addMany')), isEmpty);
     });
 
     testWidgets('the next songs are asked for as the end comes near', (
@@ -432,10 +476,17 @@ void main() {
       expect(
         backend.calls,
         containsAllInOrder([
-          'clear',
-          'addMany t1aaaaaaaaa,t2aaaaaaaaa next=false',
+          'playList t1aaaaaaaaa,t2aaaaaaaaa start=0 label=Zen · Top songs',
         ]),
       );
+    });
+
+    testWidgets('a touch on a top song plays the list of them from it', (tester) async {
+      final (backend, _) = await open(tester);
+      await tester.tap(find.text('Hit'));
+      await tester.pumpAndSettle();
+      expect(backend.calls, contains('playList t1aaaaaaaaa start=0 label=Zen · Top songs'));
+      expect(backend.calls.any((c) => c.startsWith('radio')), isFalse);
     });
 
     testWidgets('See all opens the playlist of the top songs', (tester) async {
@@ -539,6 +590,152 @@ void main() {
       expect(find.text('Clip'), findsOneWidget);
       expect(find.text('Play'), findsNothing);
       expect(find.byTooltip('Shuffle'), findsNothing);
+    });
+  });
+
+  group('the two-group Up Next view', () {
+    RoomSnapshot twoGroupQueue({bool inRoom = false, String? label = 'Lofi Chill'}) => RoomSnapshot(
+      room: inRoom ? 'ABC234' : null,
+      link: Link.connected,
+      you: 'me',
+      phase: 'playing',
+      index: 0,
+      label: inRoom ? null : label,
+      queue: [
+        const QueueEntry(
+          id: 'cur',
+          videoId: 'curaaaaaaaa',
+          title: 'Current Song',
+          artist: 'Zen',
+          durMs: 200000,
+          addedBy: 'me',
+        ),
+        QueueEntry(
+          id: 'q1',
+          videoId: 'q1aaaaaaaaa',
+          title: 'Queued One',
+          artist: 'Zen',
+          durMs: 200000,
+          addedBy: 'me',
+          queued: !inRoom,
+        ),
+        QueueEntry(
+          id: 'q2',
+          videoId: 'q2aaaaaaaaa',
+          title: 'Queued Two',
+          artist: 'Zen',
+          durMs: 200000,
+          addedBy: 'me',
+          queued: !inRoom,
+        ),
+        const QueueEntry(
+          id: 'c1',
+          videoId: 'c1aaaaaaaaa',
+          title: 'List Song One',
+          artist: 'Zen',
+          durMs: 200000,
+          addedBy: 'me',
+        ),
+        const QueueEntry(
+          id: 'c2',
+          videoId: 'c2aaaaaaaaa',
+          title: 'List Song Two',
+          artist: 'Zen',
+          durMs: 200000,
+          addedBy: 'me',
+        ),
+      ],
+    );
+
+    testWidgets('shows Next in queue with Clear and Next from with the list name, and Clear offers Undo', (
+      tester,
+    ) async {
+      final (backend, _) = await pumpApp(tester, listen: true);
+      backend.emit(StateEvent(twoGroupQueue()));
+      await tester.pumpAndSettle();
+
+      await tapMiniPlayer(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Up next'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(UpNextView), findsOneWidget);
+      expect(find.text('Next in queue'), findsOneWidget);
+      expect(find.text('Next from: Lofi Chill'), findsOneWidget);
+      expect(find.text('Clear'), findsOneWidget);
+      expect(tester.getSize(find.widgetWithText(TextButton, 'Clear')).height, greaterThanOrEqualTo(48));
+
+      await tester.tap(find.text('Clear'));
+      await tester.pump();
+      expect(backend.calls.last, 'clearQueued');
+      expect(find.text('Queue cleared'), findsOneWidget);
+      expect(find.text('Undo'), findsOneWidget);
+
+      // Native reports the queued songs cleared, then Undo puts them back
+      backend.emit(
+        StateEvent(
+          RoomSnapshot(
+            phase: 'playing',
+            index: 0,
+            label: 'Lofi Chill',
+            queue: [
+              for (final e in twoGroupQueue().queue)
+                if (!e.queued) e,
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Undo'));
+      await tester.pump();
+      expect(backend.calls.last, 'addMany q1aaaaaaaaa,q2aaaaaaaaa next=false');
+    });
+
+    testWidgets('dragging between the two groups tells the native side which group the song was dropped into', (
+      tester,
+    ) async {
+      final (backend, _) = await pumpApp(tester, listen: true);
+      backend.emit(StateEvent(twoGroupQueue()));
+      await tester.pumpAndSettle();
+
+      await tapMiniPlayer(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Up next'));
+      await tester.pumpAndSettle();
+
+      final list = tester.widget<SliverReorderableList>(find.byType(SliverReorderableList));
+      // Items in the list: 0=q1, 1=q2, 2=heading("Next from: Lofi Chill"), 3=c1, 4=c2
+      // Drag c1 (index 3) above the heading into the queued group at slot 1
+      list.onReorderItem!(3, 1);
+      await tester.pump();
+      expect(backend.calls.last, 'move c1 2 queued=true');
+
+      // Drag q1 (index 0) below the heading into the context list at slot 3
+      list.onReorderItem!(0, 3);
+      await tester.pump();
+      expect(backend.calls.last, 'move q1 3 queued=false');
+    });
+
+    testWidgets('in a room the queue stays one flat Up next list without Clear', (
+      tester,
+    ) async {
+      final (backend, _) = await pumpApp(tester, listen: true);
+      backend.emit(StateEvent(twoGroupQueue(inRoom: true)));
+      await tester.pumpAndSettle();
+
+      await tapMiniPlayer(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Up next'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Up next'), findsOneWidget);
+      expect(find.text('Next in queue'), findsNothing);
+      expect(find.text('Clear'), findsNothing);
+
+      final list = tester.widget<SliverReorderableList>(find.byType(SliverReorderableList));
+      list.onReorderItem!(1, 0);
+      await tester.pump();
+      expect(backend.calls.last, 'move q2 1');
     });
   });
 }

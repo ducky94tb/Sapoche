@@ -1,0 +1,4 @@
+Play any song in a list without losing the rest, and a two-part queue like Spotify
+- Tap a song in the middle of an album, a playlist, your library or an artist's top songs and the whole list now becomes your queue from that song on, with the songs before it kept so you can go back to them. For long playlists, the remaining pages load in the background and join the end of the list.
+- Outside a room, Up next is now split into "Next in queue" (songs you added with Play next or Add to queue, with a Clear button and Undo) and "Next from: …" for the rest of the album or playlist you are listening to.
+- Songs you add to the queue play first, before the list resumes where you left off. Starting a new album or playlist, or turning Shuffle on and off, keeps your queued songs in order right after the current song; you can also drag songs between the two groups.

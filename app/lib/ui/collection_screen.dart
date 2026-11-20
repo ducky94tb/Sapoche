@@ -282,6 +282,28 @@ class _ContentState extends State<_Content> {
     return songs.take(_cap).toList();
   }
 
+  /// Plays the playlist from song [i]. A long playlist has more pages than are here: the rest is fetched while it
+  /// plays and put at the end of the queue, unless the queue has become something else by then.
+  Future<void> _playFrom(int i) async {
+    final room = AppScope.roomOf(context);
+    final listed = [..._tracks];
+    final every = _more == null || room.snapshot.inRoom ? null : _everySong();
+    await playFrom(context, listed, i, label: _page.title);
+    final songs = await every;
+    if (songs == null || songs.length <= listed.length) return;
+    final snap = room.snapshot;
+    final contextSongs = [
+      for (final e in snap.queue)
+        if (!e.queued && !e.auto) e.videoId,
+    ];
+    if ((snap.label != null && snap.label != _page.title) ||
+        contextSongs.isEmpty ||
+        contextSongs.first != listed.first.videoId) {
+      return;
+    }
+    await room.addMany(songs.sublist(listed.length), queued: false);
+  }
+
   Future<void> _playAll({required bool shuffle}) async {
     if (_working != PlayWorking.none) return;
     HapticFeedback.selectionClick();
@@ -294,7 +316,7 @@ class _ContentState extends State<_Content> {
     final room = AppScope.roomOf(context);
     final inRoom = room.snapshot.inRoom;
     final messenger = ScaffoldMessenger.of(context);
-    await room.playTracks(songs);
+    await room.playTracks(songs, label: _page.title);
     // In a room the songs are only put on the queue: say so
     if (inRoom) {
       messenger
@@ -607,7 +629,7 @@ class _ContentState extends State<_Content> {
     return TrackTile(
       track: track,
       // The playlist plays on from the song touched, as in the library
-      onTap: () => playFrom(context, _tracks, i),
+      onTap: () => _playFrom(i),
       // An album's songs are numbered and all by the same artist, so the artist is only said when it is another
       dense: _isAlbum,
       leading: _isAlbum

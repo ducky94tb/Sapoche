@@ -1632,8 +1632,7 @@ void main() {
       expect(
         backend.calls,
         containsAllInOrder([
-          'clear',
-          'addMany aaaaaaaaaaa next=false',
+          'playList aaaaaaaaaaa start=0 label=Radio · Found',
           'radio aaaaaaaaaaa',
         ]),
       );
@@ -1691,8 +1690,7 @@ void main() {
     expect(
       backend.calls,
       containsAllInOrder([
-        'clear',
-        'addMany bbbbbbbbbbb,ccccccccccc next=false',
+        'playList aaaaaaaaaaa,bbbbbbbbbbb,ccccccccccc start=1 label=Road trip',
       ]),
     );
     expect(backend.calls.where((c) => c.startsWith('radio')), isEmpty);
@@ -2138,13 +2136,11 @@ void main() {
 
       await tester.tap(find.text('Play'));
       await tester.pumpAndSettle();
-      final tail = backend.calls.where(
-        (c) => c == 'clear' || c.startsWith('addMany'),
-      );
-      expect(tail, ['clear', 'addMany aaaaaaaaaaa,bbbbbbbbbbb next=false']);
+      final tail = backend.calls.where((c) => c.startsWith('playList'));
+      expect(tail, ['playList aaaaaaaaaaa,bbbbbbbbbbb start=0 label=Liked songs']);
     });
 
-    testWidgets('a song tapped plays from there, with the rest behind it', (
+    testWidgets('a song tapped plays the whole list from there', (
       tester,
     ) async {
       final backend = await openLibrary(tester);
@@ -2153,7 +2149,7 @@ void main() {
 
       await tester.tap(find.text('Beta'));
       await tester.pumpAndSettle();
-      expect(backend.calls.last, 'addMany bbbbbbbbbbb next=false');
+      expect(backend.calls.last, 'playList aaaaaaaaaaa,bbbbbbbbbbb start=1 label=Liked songs');
     });
 
     testWidgets('in a room the songs are added, never replacing the queue', (
@@ -2323,10 +2319,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Play'));
       await tester.pumpAndSettle();
-      final started = backend.calls.where(
-        (c) => c == 'clear' || c.startsWith('addMany'),
-      );
-      expect(started, ['clear', 'addMany aaaaaaaaaaa,bbbbbbbbbbb next=false']);
+      final started = backend.calls.where((c) => c.startsWith('playList'));
+      expect(started, ['playList aaaaaaaaaaa,bbbbbbbbbbb start=0 label=Mix']);
 
       await tester.drag(find.text('Alpha'), const Offset(-600, 0));
       await tester.pumpAndSettle();
@@ -2910,8 +2904,7 @@ void main() {
         expect(
           backend.calls,
           containsAllInOrder([
-            'clear',
-            'addMany aaaaaaaaaaa next=false',
+            'playList aaaaaaaaaaa start=0 label=Radio · Alpha',
             'radio aaaaaaaaaaa',
           ]),
         );

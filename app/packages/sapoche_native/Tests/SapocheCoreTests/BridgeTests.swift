@@ -485,6 +485,19 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(engine.loaded?.title, "Song 2")
     }
 
+    func testPlayingAListOutsideARoomMakesItTheQueueAndStartsFromTheChosenSong() async throws {
+        _ = try await call("add", song(9))
+        await time.advance(100)
+        _ = try await call("playList", ["tracks": [song(1), song(2), song(3)], "start": 1])
+        await time.advance(100)
+        let state = try XCTUnwrap(states().last)
+        let queue = try XCTUnwrap(state["queue"] as? [[String: Any]])
+        XCTAssertEqual(queue.map { $0["title"] as? String }, ["Song 1", "Song 2", "Song 3"])
+        XCTAssertEqual(state["index"] as? Int, 1)
+        XCTAssertEqual(engine.loaded?.title, "Song 2")
+        XCTAssertTrue(engine.playing)
+    }
+
     func testTheOtherReleaseIsMadeReadyBeforeItReplacesTheSongThatPlays() async throws {
         _ = try await call("add", song(1))
         await time.advance(100)

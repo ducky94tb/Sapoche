@@ -266,6 +266,20 @@ final shotScreens = <ShotScreen>[
     await t.tap(find.byTooltip(S.upNext));
     await _settle(t);
   }),
+  ShotScreen('player-queue-groups', listen: true, (t, b) async {
+    await _state(t, b, splitQueue());
+    b.emit(const PositionEvent(PlayerPosition(playing: true, positionMs: 64000, durationMs: 305000)));
+    await _settle(t);
+    await _openPlayer(t);
+    await _openPanel(t, S.upNext);
+  }),
+  ShotScreen('player-land-queue-groups', windows: shotLandscape, listen: true, (t, b) async {
+    await _state(t, b, splitQueue());
+    b.emit(const PositionEvent(PlayerPosition(playing: true, positionMs: 64000, durationMs: 305000)));
+    await _settle(t);
+    await _openPlayer(t);
+    await _openPanel(t, S.upNext);
+  }),
   ShotScreen('player-queue-empty', listen: true, prepare: (b) => b.radioResult = SongRadio(tracks: tracks.sublist(1)), (t, b) async {
     await _state(t, b, sampleRoom(local: true, songs: 1));
     b.emit(const PositionEvent(PlayerPosition(playing: true, positionMs: 4000, durationMs: 200000)));

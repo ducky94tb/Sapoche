@@ -288,7 +288,7 @@ void main() {
 
     test('outside a room the songs from files are played like any other', () async {
       await room.playTracks([local]);
-      expect(backend.calls, containsAllInOrder(['clear', 'addMany local:a next=false']));
+      expect(backend.calls, containsAllInOrder(['playList local:a start=0']));
     });
 
     test('a song from a file gets no radio', () async {
@@ -486,7 +486,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         backend.calls,
-        containsAllInOrder(['clear', 'addMany local:b,local:c next=false']),
+        containsAllInOrder(['playList local:a,local:b,local:c start=1 label=On this phone']),
       );
     });
 

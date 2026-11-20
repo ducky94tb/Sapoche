@@ -813,10 +813,18 @@ class _FolderPage extends StatelessWidget {
                     ),
                     if (playlists.isNotEmpty)
                       PlayRow(
-                        onPlay: () =>
-                            playPlaylists(context, playlists, shuffle: false),
-                        onShuffle: () =>
-                            playPlaylists(context, playlists, shuffle: true),
+                        onPlay: () => playPlaylists(
+                          context,
+                          playlists,
+                          shuffle: false,
+                          label: folder?.name,
+                        ),
+                        onShuffle: () => playPlaylists(
+                          context,
+                          playlists,
+                          shuffle: true,
+                          label: folder?.name,
+                        ),
                         // A browser downloads nothing
                         download: folder == null || kIsWeb ? null : OfflineButton.folder(folder),
                         more: _MoreButton(menu),
@@ -1340,7 +1348,10 @@ class _TrackList extends StatelessWidget {
 
         Future<void> playAll({required bool shuffle}) async {
           HapticFeedback.selectionClick();
-          await room.playTracks(shuffle ? ([...tracks]..shuffle()) : tracks);
+          await room.playTracks(
+            shuffle ? ([...tracks]..shuffle()) : tracks,
+            label: title,
+          );
           // In a room the songs are only put on the queue: say so
           if (inRoom) confirm(S.playlistAdded);
         }
@@ -1354,12 +1365,12 @@ class _TrackList extends StatelessWidget {
             track: track,
             subtitle: missing ? S.fileMissing : subtitles?[i],
             dimmed: missing,
-            // Outside a room the song plays with the rest of the list behind it; in a room it is queued
+            // Outside a room the whole list is the queue and the song plays from where it stands; in a room it is queued
             onTap: missing
                 ? () => confirm(S.fileMissing)
                 : inRoom
                 ? () => add(track)
-                : () => room.playTracks(tracks.sublist(i)),
+                : () => playFrom(context, tracks, i, label: title),
             trailing: TrackMenu(
               track: track,
               onAdd: () => add(track),

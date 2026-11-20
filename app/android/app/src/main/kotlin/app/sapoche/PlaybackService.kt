@@ -419,7 +419,7 @@ class PlaybackService : MediaLibraryService() {
 
     /**
      * A car asked for [items] to play. A song of the queue is jumped to; in a room a song is added to the room's queue
-     * (the room is everybody's, a car does not replace it); otherwise the songs become the queue, from the one picked on.
+     * (the room is everybody's, a car does not replace it); otherwise the songs become the queue and play from the one picked.
      */
     private fun playFromCar(items: List<MediaItem>, startIndex: Int) {
         val at = startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
@@ -435,8 +435,7 @@ class PlaybackService : MediaLibraryService() {
             group.requestAddMany(listOf(tracks[at]), true)
             return
         }
-        group.requestClearQueue()
-        group.requestAddMany(tracks.drop(at) + tracks.take(at), false)
+        group.requestPlayList(tracks, at)
     }
 
     /** A car picked a room of its list: this device goes into it, under the name it last used. */

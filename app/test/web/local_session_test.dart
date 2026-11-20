@@ -57,6 +57,63 @@ void main() {
     });
   });
 
+  test('playing a list from a song keeps the songs before it to go back to', () {
+    run(() {
+      session.add([song('9')], next: false);
+      async.elapse(const Duration(milliseconds: 10));
+      session.playList([for (var i = 1; i <= 5; i++) song('$i')], 2);
+      async.elapse(const Duration(milliseconds: 10));
+      expect(titles(), ['Song 1', 'Song 2', 'Song 3', 'Song 4', 'Song 5']);
+      expect(session.snapshot.index, 2);
+      expect(player.playing, isTrue);
+      expect(player.calls.where((c) => c.startsWith('prepare')).last, 'prepare ${session.snapshot.queue[2].id} @0');
+      session.prev();
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 2', reason: 'back goes to the song before the one chosen');
+    });
+  });
+
+  test('a list played from a start outside it is kept inside', () {
+    run(() {
+      session.playList([song('1'), song('2'), song('3')], 9);
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 3');
+      session.playList([song('1'), song('2'), song('3')], -4);
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 1');
+      session.playList(const [], 0);
+      expect(session.snapshot.queue.length, 3, reason: 'nothing to play changes nothing');
+    });
+  });
+
+  test('playing a list with shuffle on starts at the song and mixes the rest', () {
+    run(() {
+      session.setShuffle(true);
+      session.playList([for (var i = 1; i <= 8; i++) song('$i')], 3);
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.index, 0);
+      expect(session.snapshot.current?.title, 'Song 4');
+      expect({...titles()}, {for (var i = 1; i <= 8; i++) 'Song $i'});
+      expect(titles().length, 8);
+      session.setShuffle(false);
+      expect(titles(), ['Song 4', for (final i in [1, 2, 3, 5, 6, 7, 8]) 'Song $i'], reason: 'off puts the rest back in the list order');
+    });
+  });
+
+  test('the end of a list played from the middle wraps to its first song when repeating all', () {
+    run(() {
+      session.setRepeat('all');
+      session.playList([song('1'), song('2'), song('3')], 1);
+      async.elapse(const Duration(milliseconds: 10));
+      session.next();
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 3');
+      session.next();
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 1');
+    });
+  });
+
   test('once the queue has finished all of it may be dropped, oldest first', () {
     run(() {
       session.add([song('1'), song('2'), song('3')], next: false);
@@ -88,7 +145,8 @@ void main() {
 
   test('the same song is not added twice while it is waiting, but may be added again once played', () {
     run(() {
-      session.add([song('1'), song('2')], next: false);
+      session.add([song('1')], next: false);
+      session.add([song('2')], next: false);
       session.add([song('2'), song('3')], next: false);
       expect(titles(), ['Song 1', 'Song 2', 'Song 3']);
       session.next(); // on song 2 now: song 1 was played
@@ -219,7 +277,7 @@ void main() {
     });
   });
 
-  test('shuffle as a mode mixes what is to come, and turning it off puts the songs back, added ones after them', () {
+  test('shuffle as a mode mixes what is to come, and turning it off puts the songs back, queued ones ahead of them', () {
     run(() {
       session.add([for (var i = 1; i <= 8; i++) song('$i')], next: false);
       async.elapse(const Duration(milliseconds: 10));
@@ -228,7 +286,7 @@ void main() {
       expect(titles().toSet(), {for (var i = 1; i <= 8; i++) 'Song $i'});
       session.add([song('9')], next: false);
       session.setShuffle(false);
-      expect(titles(), [for (var i = 1; i <= 9; i++) 'Song $i']);
+      expect(titles(), ['Song 1', 'Song 9', for (var i = 2; i <= 8; i++) 'Song $i']);
     });
   });
 
@@ -396,6 +454,243 @@ void main() {
     });
   });
 
+  void checkInvariant(LocalSnapshot s) {
+    if (s.queue.isEmpty) {
+      expect(s.index, 0);
+      expect(s.queued, isEmpty);
+      expect(s.finished, isFalse);
+      return;
+    }
+    expect(s.index, inInclusiveRange(0, s.queue.length - 1));
+    if (s.finished) {
+      expect(s.queued, isEmpty);
+      expect(s.queue.any((e) => e.auto || e.queued), isFalse);
+      return;
+    }
+    final before = s.queue.take(s.index + 1);
+    final after = s.queue.skip(s.index + 1).toList();
+    expect(before.any((e) => s.queued.contains(e.id) || e.queued || e.auto), isFalse);
+    final afterIds = {for (final e in after) e.id};
+    expect(afterIds.containsAll(s.queued), isTrue);
+    var tier = 0;
+    for (final item in after) {
+      expect(item.queued, s.queued.contains(item.id));
+      final itemTier = s.queued.contains(item.id)
+          ? 0
+          : !item.auto
+          ? 1
+          : 2;
+      if (itemTier == 0) expect(item.auto, isFalse);
+      expect(itemTier, greaterThanOrEqualTo(tier));
+      tier = itemTier;
+    }
+  }
+
+  test('queued songs play before the rest of the list and play next goes to the front of them', () {
+    run(() {
+      session.playList([for (var i = 1; i <= 5; i++) song('$i')], 1, label: 'Lofi Chill');
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('8')], next: false);
+      session.add([song('9')], next: false);
+      session.add([song('7')], next: true);
+      async.elapse(const Duration(milliseconds: 10));
+      final s = session.snapshot;
+      checkInvariant(s);
+      expect(s.label, 'Lofi Chill');
+      expect(titles(), ['Song 1', 'Song 2', 'Song 7', 'Song 8', 'Song 9', 'Song 3', 'Song 4', 'Song 5']);
+      expect([for (final e in s.queue) if (e.queued) e.title], ['Song 7', 'Song 8', 'Song 9']);
+    });
+  });
+
+  test('starting a new list keeps unplayed queued songs right after the chosen song', () {
+    run(() {
+      session.playList([for (var i = 1; i <= 4; i++) song('$i')], 0, label: 'Old');
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('8'), song('9')], next: false);
+      session.next();
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 8');
+      session.playList([for (var i = 10; i <= 12; i++) song('$i')], 1, label: 'New Album');
+      async.elapse(const Duration(milliseconds: 10));
+      final s = session.snapshot;
+      checkInvariant(s);
+      expect(s.label, 'New Album');
+      expect(titles(), ['Song 10', 'Song 11', 'Song 9', 'Song 12']);
+      expect(s.index, 1);
+      expect(s.current?.title, 'Song 11');
+      expect([for (final e in s.queue) if (e.queued) e.title], ['Song 9']);
+    });
+  });
+
+  test('shuffling only mixes the list and leaves queued songs in order', () {
+    run(() {
+      session.playList([for (var i = 1; i <= 8; i++) song('$i')], 0, label: 'Mix');
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('20'), song('21')], next: false);
+      session.setShuffle(true);
+      checkInvariant(session.snapshot);
+      expect(titles().take(3), ['Song 1', 'Song 20', 'Song 21']);
+      session.shuffle();
+      expect(titles().take(3), ['Song 1', 'Song 20', 'Song 21']);
+      session.setShuffle(false);
+      expect(titles(), ['Song 1', 'Song 20', 'Song 21', for (var i = 2; i <= 8; i++) 'Song $i']);
+    });
+  });
+
+  test('played queued songs stay in history for back but repeat all loops only the list and repeat one repeats a queued song', () {
+    run(() {
+      session.playList([song('1'), song('2'), song('3')], 0);
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('9')], next: false);
+      session.setRepeat('one');
+      session.next();
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 9');
+      expect(session.snapshot.queued, isEmpty);
+      player.onEnded?.call();
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 9');
+
+      session.setRepeat('all');
+      session.next();
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 2');
+      session.prev();
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 9');
+      session.next();
+      session.next();
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 3');
+      session.next();
+      async.elapse(const Duration(milliseconds: 10));
+      expect(session.snapshot.current?.title, 'Song 1');
+      expect(titles(), ['Song 1', 'Song 2', 'Song 3']);
+    });
+  });
+
+  test('jumping to a song of the list keeps queued songs waiting right after it', () {
+    run(() {
+      session.playList([for (var i = 1; i <= 5; i++) song('$i')], 0);
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('8'), song('9')], next: false);
+      final song4 = session.snapshot.queue.firstWhere((e) => e.title == 'Song 4').id;
+      session.jump(song4);
+      async.elapse(const Duration(milliseconds: 10));
+      final s = session.snapshot;
+      checkInvariant(s);
+      expect(s.current?.title, 'Song 4');
+      expect(s.index, 3);
+      expect(titles(), ['Song 1', 'Song 2', 'Song 3', 'Song 4', 'Song 8', 'Song 9', 'Song 5']);
+      expect([for (final e in s.queue) if (e.queued) e.title], ['Song 8', 'Song 9']);
+    });
+  });
+
+  test('jumping to a queued song skips earlier queued songs and keeps the list waiting', () {
+    run(() {
+      session.playList([song('1'), song('2'), song('3')], 0);
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('7'), song('8'), song('9')], next: false);
+      final song8 = session.snapshot.queue.firstWhere((e) => e.title == 'Song 8').id;
+      session.jump(song8);
+      async.elapse(const Duration(milliseconds: 10));
+      final s = session.snapshot;
+      checkInvariant(s);
+      expect(s.current?.title, 'Song 8');
+      expect(s.index, 2);
+      expect(titles(), ['Song 1', 'Song 7', 'Song 8', 'Song 9', 'Song 2', 'Song 3']);
+      expect([for (final e in s.queue) if (e.queued) e.title], ['Song 9']);
+    });
+  });
+
+  test('moving a song between the two groups changes which group it belongs to', () {
+    run(() {
+      session.playList([for (var i = 1; i <= 4; i++) song('$i')], 0);
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('8'), song('9')], next: false);
+      final id8 = session.snapshot.queue.firstWhere((e) => e.title == 'Song 8').id;
+      session.move(id8, 3, queued: false);
+      checkInvariant(session.snapshot);
+      expect(titles(), ['Song 1', 'Song 9', 'Song 2', 'Song 8', 'Song 3', 'Song 4']);
+      expect([for (final e in session.snapshot.queue) if (e.queued) e.title], ['Song 9']);
+
+      final id3 = session.snapshot.queue.firstWhere((e) => e.title == 'Song 3').id;
+      session.move(id3, 1, queued: true);
+      checkInvariant(session.snapshot);
+      expect(titles(), ['Song 1', 'Song 3', 'Song 9', 'Song 2', 'Song 8', 'Song 4']);
+      expect([for (final e in session.snapshot.queue) if (e.queued) e.title], ['Song 3', 'Song 9']);
+    });
+  });
+
+  test('clearing the queued group removes only those songs and leaves the list', () {
+    run(() {
+      session.playList([song('1'), song('2'), song('3')], 0, label: 'Album');
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('8'), song('9')], next: false);
+      session.clearQueued();
+      final s = session.snapshot;
+      checkInvariant(s);
+      expect(s.queued, isEmpty);
+      expect(s.label, 'Album');
+      expect(titles(), ['Song 1', 'Song 2', 'Song 3']);
+    });
+  });
+
+  test('autoplay songs stay in the third tier behind queued songs and the list', () {
+    run(() {
+      session.playList([song('1'), song('2')], 1);
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('10'), song('11')], next: false, queued: false, auto: true);
+      session.add([song('8')], next: false);
+      session.add([song('3')], next: false, queued: false);
+      final s = session.snapshot;
+      checkInvariant(s);
+      expect(titles(), ['Song 1', 'Song 2', 'Song 8', 'Song 3', 'Song 10', 'Song 11']);
+      expect([for (final e in s.queue) if (e.auto) e.title], ['Song 10', 'Song 11']);
+    });
+  });
+
+  test('a song in the list can still be added to the queued group, but not twice to the queued group', () {
+    run(() {
+      session.playList([song('1'), song('2'), song('3')], 0);
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('2')], next: false);
+      expect(titles(), ['Song 1', 'Song 2', 'Song 2', 'Song 3']);
+      session.add([song('2')], next: false);
+      expect(titles(), ['Song 1', 'Song 2', 'Song 2', 'Song 3']);
+    });
+  });
+
+  test('saved queue remembers the queued group and the list label and reads old files without them', () {
+    run(() {
+      session.playList([song('1'), song('2'), song('3')], 0, label: 'My List');
+      async.elapse(const Duration(milliseconds: 10));
+      session.add([song('9')], next: false);
+      final lastSaved = saved.last;
+      expect(lastSaved.label, 'My List');
+      expect(lastSaved.queued, hasLength(1));
+
+      final again = SavedQueue.fromJson(lastSaved.toJson())!;
+      final restored = LocalSession(player: FakePlayer(), saved: again, persist: (_) {});
+      checkInvariant(restored.snapshot);
+      expect(restored.snapshot.label, 'My List');
+      expect([for (final e in restored.snapshot.queue) e.title], ['Song 1', 'Song 9', 'Song 2', 'Song 3']);
+      expect([for (final e in restored.snapshot.queue) if (e.queued) e.title], ['Song 9']);
+
+      final old = SavedQueue.fromJson({
+        'queue': [
+          {'id': 'q1', 'videoId': 'aaaaaaaaaaa', 'title': 'One', 'artist': 'x', 'durMs': 1000, 'addedBy': ''},
+        ],
+        'index': 0,
+        'repeat': 'off',
+        'positionMs': 0,
+        'finished': false,
+      })!;
+      expect(old.queued, isEmpty);
+      expect(old.label, isNull);
+    });
+  });
+
   for (final transientOnly in [true, false]) {
     test('random taps among ${transientOnly ? 'random blips never end the queue' : 'every kind of failure never'} or leave it loading for ever', () {
       for (var seed = 1; seed <= 40; seed++) {
@@ -414,7 +709,7 @@ void main() {
             final s = session.snapshot;
             final queue = s.queue;
             final pastTheEnd = s.index + 1 >= queue.length && s.repeat != 'all';
-            switch (random.nextInt(13)) {
+            switch (random.nextInt(18)) {
               case 0 || 1:
                 if (!pastTheEnd) session.next();
               case 2:
@@ -433,10 +728,28 @@ void main() {
                 if (queue.length > 1 && s.index < queue.length - 1) session.remove(queue[random.nextInt(queue.length)].id);
               case 11:
                 player.onError?.call(Exception('403'));
-              default:
+              case 12:
                 session.seek(random.nextInt(100000));
+              case 13:
+                session.setShuffle(random.nextBool());
+              case 14:
+                if (s.index + 1 < queue.length) {
+                  final span = queue.length - (s.index + 1);
+                  final from = s.index + 1 + random.nextInt(span);
+                  final to = s.index + 1 + random.nextInt(span);
+                  session.move(queue[from].id, to, queued: const [null, true, false][random.nextInt(3)]);
+                }
+              case 15:
+                if (queue.skip(s.index + 1).any((e) => !s.queued.contains(e.id))) session.clearQueued();
+              case 16:
+                final count = 2 + random.nextInt(5);
+                session.playList([for (var i = 0; i < count; i++) song('${1 + random.nextInt(30)}')], random.nextInt(count), label: 'L');
+              default:
+                session.add([song('${40 + random.nextInt(20)}')], next: false, queued: false, auto: random.nextBool());
             }
+            checkInvariant(session.snapshot);
             async.elapse(Duration(milliseconds: random.nextInt(5000)));
+            checkInvariant(session.snapshot);
             if (transientOnly) expect(ended, isEmpty, reason: 'seed $seed: a blip ended the queue, which would start autoplay');
           }
           player.failWith = null;

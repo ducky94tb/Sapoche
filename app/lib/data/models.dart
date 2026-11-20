@@ -307,6 +307,7 @@ class QueueEntry extends Track {
     required this.addedBy,
     super.thumb,
     this.auto = false,
+    this.queued = false,
   });
 
   final String id;
@@ -314,6 +315,21 @@ class QueueEntry extends Track {
 
   /// Put on the queue by autoplay, not by a member: it waits behind the songs they chose and goes once played.
   final bool auto;
+
+  /// Added to the personal queue by hand ("Play next", "Add to queue"): plays before the rest of the active list.
+  final bool queued;
+
+  QueueEntry copyWith({bool? auto, bool? queued}) => QueueEntry(
+    id: id,
+    videoId: videoId,
+    title: title,
+    artist: artist,
+    thumb: thumb,
+    durMs: durMs,
+    addedBy: addedBy,
+    auto: auto ?? this.auto,
+    queued: queued ?? this.queued,
+  );
 
   factory QueueEntry.fromJson(Map<String, dynamic> json) => QueueEntry(
     id: json['id'] as String,
@@ -324,6 +340,7 @@ class QueueEntry extends Track {
     durMs: (json['durMs'] as num?)?.toInt() ?? 0,
     addedBy: json['addedBy'] as String? ?? '',
     auto: json['auto'] == true,
+    queued: json['queued'] == true,
   );
 }
 
@@ -489,6 +506,7 @@ class RoomSnapshot {
     this.shuffle,
     this.encrypted = false,
     this.encryptionKey = false,
+    this.label,
   });
 
   /// Room code, or null when this device is not in a room. Outside a room this describes the
@@ -566,6 +584,9 @@ class RoomSnapshot {
   /// This device has the secret that opens the room's sealed chat.
   final bool encryptionKey;
 
+  /// Name of the list playing outside a room (album, playlist), shown as "Next from: …". Null in a room or when none.
+  final String? label;
+
   bool get inRoom => room != null;
 
   /// This device's own player decides what plays: outside a room, or while listening alone.
@@ -591,13 +612,26 @@ class RoomSnapshot {
   QueueEntry? get current =>
       myIndex >= 0 && myIndex < queue.length ? queue[myIndex] : null;
 
-  /// The songs members chose that come after the one playing: the queue as they made it.
+  /// The songs added by hand that come after the one playing ("Next in queue"), outside a room.
+  List<QueueEntry> get queuedUpNext => [
+    if (!inRoom)
+      for (final e in _after)
+        if (e.queued && !e.auto) e,
+  ];
+
+  /// The songs of the active list that come after the queued songs ("Next from: …"), or in a room the members' queue.
+  List<QueueEntry> get contextUpNext => [
+    for (final e in _after)
+      if ((inRoom || !e.queued) && !e.auto) e,
+  ];
+
+  /// The songs that come after the one playing (before autoplay), in the order they will play.
   List<QueueEntry> get upNext => [
     for (final e in _after)
       if (!e.auto) e,
   ];
 
-  /// The songs autoplay lined up behind them. Only a room has any: it keeps them apart from the members' songs.
+  /// The songs autoplay lined up behind the queue and the list.
   List<QueueEntry> get autoUpNext => [
     for (final e in _after)
       if (e.auto) e,
@@ -606,17 +640,23 @@ class RoomSnapshot {
   List<QueueEntry> get _after =>
       myIndex + 1 < queue.length ? queue.sublist(myIndex + 1) : const [];
 
-  /// The song is waiting in the queue: playing now or still to come. One that was played already is not. Its
-  /// video and its audio release count as the same song.
+  /// Whether [track] is already waiting in the user's queue (in a room: playing now or queued by a member; outside a
+  /// room: in the "Next in queue" group, since a song that is only in the playing list may still be queued by hand).
   bool isQueued(Track track) {
     // Outside a room an idle queue has played through
     if (!inRoom && phase == 'idle') return false;
-    return _waiting.any((e) => sameSong(e, track));
+    return _waiting(queuedOnly: !inRoom).any((e) => sameSong(e, track));
   }
 
-  /// The songs waiting in the queue: the one playing and those still to come. What autoplay lined up does not count,
-  /// since a member may pick it themselves, and the room then takes it off.
-  Iterable<QueueEntry> get _waiting sync* {
+  /// The songs waiting in the queue. With [queuedOnly] (outside a room when adding to "Next in queue"), only songs
+  /// already in that group count; otherwise the song playing and every non-autoplay song to come count.
+  Iterable<QueueEntry> _waiting({required bool queuedOnly}) sync* {
+    if (queuedOnly) {
+      for (final e in queue.skip(index + 1)) {
+        if (e.queued && !e.auto) yield e;
+      }
+      return;
+    }
     var first = true;
     for (final e in queue.skip(index)) {
       if (first || !e.auto) yield e;
@@ -627,11 +667,11 @@ class RoomSnapshot {
   /// [tracks] without those that are waiting in the queue already, and without repeats. The same as asking [isQueued] of
   /// each, but the queue is looked through once: a folder of a thousand songs put on a queue of a thousand would otherwise
   /// compare a million pairs.
-  List<T> fresh<T extends Track>(List<T> tracks) {
+  List<T> fresh<T extends Track>(List<T> tracks, {bool? queuedOnly}) {
     if (!inRoom && phase == 'idle') return uniqueSongs(tracks);
     final ids = <String>{};
     final byKey = <String, List<QueueEntry>>{};
-    for (final e in _waiting) {
+    for (final e in _waiting(queuedOnly: queuedOnly ?? !inRoom)) {
       ids.add(e.videoId);
       byKey.putIfAbsent(songKey(e.title, e.artist), () => []).add(e);
     }
@@ -696,6 +736,7 @@ class RoomSnapshot {
     shuffle: json['shuffle'] as bool?,
     encrypted: json['encrypted'] as bool? ?? false,
     encryptionKey: json['encryptionKey'] as bool? ?? false,
+    label: json['label'] as String?,
     queue: [
       for (final e in json['queue'] as List<dynamic>? ?? const [])
         QueueEntry.fromJson(e as Map<String, dynamic>),

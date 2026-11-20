@@ -86,12 +86,80 @@ class UpNextView extends StatelessWidget {
     );
   }
 
+  void _clearQueued(BuildContext context, List<QueueEntry> queued) {
+    final cleared = [...queued];
+    if (cleared.isEmpty) return;
+    HapticFeedback.selectionClick();
+    controller.clearQueued();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(S.queueCleared),
+          action: SnackBarAction(
+            label: S.undo,
+            onPressed: () => controller.addMany(cleared),
+          ),
+          duration: const Duration(milliseconds: 4000),
+        ),
+      );
+  }
+
+  Widget _queuedHeading(BuildContext context, List<QueueEntry> queued) =>
+      SectionHeading(
+        S.nextInQueue,
+        action: TextButton(
+          style: TextButton.styleFrom(
+            minimumSize: const Size(48, 48),
+            tapTargetSize: MaterialTapTargetSize.padded,
+          ),
+          onPressed: () => _clearQueued(context, queued),
+          child: Text(S.clear),
+        ),
+      );
+
   Widget _list(
     BuildContext context,
     RoomSnapshot snapshot,
     List<QueueEntry> upNext,
     QueueEntry? current,
   ) {
+    final inRoom = snapshot.inRoom;
+    final queued = snapshot.queuedUpNext;
+    final contextList = snapshot.contextUpNext;
+    final label = snapshot.label;
+    final contextTitle =
+        !inRoom && label != null && label.isNotEmpty ? S.nextFrom(label) : S.upNext;
+    final twoGroups = !inRoom && queued.isNotEmpty && contextList.isNotEmpty;
+    final itemCount = upNext.length + (twoGroups ? 1 : 0);
+
+    void onReorder(int from, int to) {
+      if (inRoom) {
+        controller.move(upNext[from], snapshot.myIndex + 1 + to);
+        return;
+      }
+      if (!twoGroups) {
+        controller.move(
+          upNext[from],
+          snapshot.myIndex + 1 + to,
+          queued: queued.isNotEmpty,
+        );
+        return;
+      }
+      final divider = queued.length;
+      if (from == divider) return;
+      final entry = upNext[from < divider ? from : from - 1];
+      // After taking the dragged row out, the divider sits at divider - 1 when the row came from above it, else at divider
+      final dividerAfter = from < divider ? divider - 1 : divider;
+      final intoQueued = to <= dividerAfter;
+      final songIndex = intoQueued ? to : to - 1;
+      controller.move(
+        entry,
+        snapshot.myIndex + 1 + songIndex,
+        queued: intoQueued,
+      );
+    }
+
     return CustomScrollView(
       physics: const BouncingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
@@ -100,25 +168,29 @@ class UpNextView extends StatelessWidget {
         // With nothing queued and autoplay on, "Up next" and "nothing is queued" are not said twice over: the one line
         // "Autoplay · plays after your queue" under the buttons is all there is above the suggestions, which are then
         // what the screen is for
-        if (!(upNext.isEmpty && (!snapshot.inRoom || snapshot.roomAutoplay != null)))
-          SliverToBoxAdapter(child: SectionHeading(S.upNext)),
-        // Said whenever nothing is queued and autoplay is not there to say it: a heading with nothing under it reads as
-        // broken
-        if (upNext.isEmpty && snapshot.inRoom && snapshot.roomAutoplay == null)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-              child: Text(
-                S.nothingAfter,
-                style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: context.palette.textSecondary),
+        if (inRoom) ...[
+          if (!(upNext.isEmpty && snapshot.roomAutoplay != null))
+            SliverToBoxAdapter(child: SectionHeading(S.upNext)),
+          // Said whenever nothing is queued and autoplay is not there to say it: a heading with nothing under it reads as
+          // broken
+          if (upNext.isEmpty && snapshot.roomAutoplay == null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Text(
+                  S.nothingAfter,
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: context.palette.textSecondary),
+                ),
               ),
             ),
-          ),
+        ] else if (queued.isNotEmpty)
+          SliverToBoxAdapter(child: _queuedHeading(context, queued))
+        else if (contextList.isNotEmpty)
+          SliverToBoxAdapter(child: SectionHeading(contextTitle)),
         SliverReorderableList(
-          itemCount: upNext.length,
-          onReorderItem: (from, to) =>
-              controller.move(upNext[from], snapshot.myIndex + 1 + to),
+          itemCount: itemCount,
+          onReorderItem: onReorder,
           proxyDecorator: (child, _, animation) => Material(
             color: Colors.transparent,
             elevation: 0,
@@ -128,7 +200,14 @@ class UpNextView extends StatelessWidget {
             ),
           ),
           itemBuilder: (context, i) {
-            final entry = upNext[i];
+            if (twoGroups && i == queued.length) {
+              return SectionHeading(
+                contextTitle,
+                key: const ValueKey('context-heading'),
+              );
+            }
+            final entry =
+                upNext[twoGroups && i > queued.length ? i - 1 : i];
             return Dismissible(
               key: ValueKey(entry.id),
               direction: DismissDirection.endToStart,
@@ -507,7 +586,7 @@ class _SuggestionsState extends State<_Suggestions> {
           final radio = async.data!.tracks
               .where((t) => t.videoId != widget.current.videoId)
               .toList();
-          final songs = snapshot.fresh(radio).take(_shown).toList();
+          final songs = snapshot.fresh(radio, queuedOnly: false).take(_shown).toList();
           body = TrackSection(title: '', tracks: songs);
         }
         return Column(

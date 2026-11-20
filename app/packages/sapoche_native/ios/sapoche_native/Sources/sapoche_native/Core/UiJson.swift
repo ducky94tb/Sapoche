@@ -49,7 +49,8 @@ enum UiJson {
             "soloItemId": snap.soloItemId ?? NSNull(),
             // A song is on its way to play on this device: outside a room, or while listening alone in one
             "loading": inRoom ? snap.loading : local.loading,
-            "queue": queue.map(item),
+            "label": (inRoom ? nil : local.label) ?? NSNull(),
+            "queue": queue.map { item($0, queued: !inRoom && local.queued.contains($0.id)) },
             "members": snap.members.map {
                 ["id": $0.id, "name": $0.name, "ready": $0.ready, "solo": $0.solo, "away": $0.away, "owner": $0.owner,
                  "app": $0.app ?? NSNull(), "weak": $0.weak] as [String: Any]
@@ -158,10 +159,10 @@ enum UiJson {
         JSONText.encode(["type": "error", "code": code, "message": message])
     }
 
-    static func item(_ item: QueueItem) -> [String: Any] {
+    static func item(_ item: QueueItem, queued: Bool = false) -> [String: Any] {
         [
             "id": item.id, "videoId": item.videoId, "title": item.title, "artist": item.artist,
-            "thumb": item.thumb ?? NSNull(), "durMs": item.durMs, "addedBy": item.addedBy, "auto": item.auto,
+            "thumb": item.thumb ?? NSNull(), "durMs": item.durMs, "addedBy": item.addedBy, "auto": item.auto, "queued": queued,
         ]
     }
 

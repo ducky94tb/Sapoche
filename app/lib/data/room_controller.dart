@@ -1278,18 +1278,19 @@ class RoomController extends ChangeNotifier {
         .lastOrNull;
     if (entry != null) await remove(entry);
   }
-  Future<void> move(QueueEntry entry, int toIndex) =>
-      _run(() => _backend.move(entry.id, toIndex));
+  Future<void> move(QueueEntry entry, int toIndex, {bool? queued}) =>
+      _run(() => _backend.move(entry.id, toIndex, queued: queued));
   Future<void> clearQueue() => _run(_backend.clear);
+  Future<void> clearQueued() => _run(_backend.clearQueued);
   Future<void> shuffle() => _run(_backend.shuffle);
 
   Future<void> setShuffle(bool on) => _run(() => _backend.setShuffle(on));
 
   /// Puts [tracks] on the queue and says how many went on: those that were there already, those from files in a room
   /// and those past what the queue holds are left out.
-  Future<int> addMany(List<Track> tracks, {bool playNext = false, String source = ListenSource.chosen}) async {
-    var fresh = _snapshot.fresh(tracks);
+  Future<int> addMany(List<Track> tracks, {bool playNext = false, bool queued = true, String source = ListenSource.chosen}) async {
     final inRoom = _snapshot.inRoom;
+    var fresh = _snapshot.fresh(tracks, queuedOnly: !inRoom && queued);
     // The others in a room do not have the files: only what is on YouTube goes in, and the rest is said
     if (inRoom) {
       final sendable = [
@@ -1310,7 +1311,7 @@ class RoomController extends ChangeNotifier {
     if (fresh.length > space) fresh = fresh.sublist(0, space);
     if (fresh.isEmpty) return 0;
     if (!inRoom) {
-      await _run(() => _backend.addMany(fresh, playNext: playNext, source: source));
+      await _run(() => _backend.addMany(fresh, playNext: playNext, queued: queued, source: source));
       return fresh.length;
     }
     // The server takes so many at a time. Each lot goes right after the song playing when they play next, so the
@@ -1325,28 +1326,29 @@ class RoomController extends ChangeNotifier {
     return fresh.length;
   }
 
-  /// Outside a room: replaces the queue with [tracks] and starts them. In a room the queue belongs
-  /// to everybody, so they are only added to it. Says how many are on the queue now.
-  Future<int> playTracks(List<Track> tracks, {String source = ListenSource.chosen}) {
+  /// Outside a room: replaces the queue with [tracks] and starts them, from song [start] (the others stay on the queue,
+  /// before it and after it). In a room the queue belongs to everybody, so they are only added to it. Says how many
+  /// are on the queue now.
+  Future<int> playTracks(List<Track> tracks, {int start = 0, String? label, String source = ListenSource.chosen}) {
     if (_snapshot.inRoom) return addMany(tracks, source: source);
+    final chosen = start >= 0 && start < tracks.length ? tracks[start].videoId : null;
     final songs = uniqueSongs(tracks);
-    final kept = songs.length > queueMax(inRoom: false)
-        ? songs.sublist(0, queueMax(inRoom: false))
-        : songs;
-    // Taps in quick succession are taken in turn, so that each empties the queue before its songs go in and the
-    // last one is what plays. The songs are not checked against the queue here: until the native side reports
-    // the emptied queue, the snapshot still holds the old one, and every song in it would be left out
-    _replacing = _replacing.then((_) async {
-      await _run(_backend.clear);
-      await _run(() => _backend.addMany(kept, source: source));
-    });
+    final cap = queueMax(inRoom: false);
+    final at = chosen == null ? 0 : max(0, songs.indexWhere((t) => t.videoId == chosen));
+    // A list longer than the queue holds is cut to the songs around the chosen one
+    final from = songs.length > cap ? (at - cap ~/ 2).clamp(0, songs.length - cap) : 0;
+    final kept = songs.length > cap ? songs.sublist(from, from + cap) : songs;
+    // Taps in quick succession are taken in turn, so that the last one is what plays
+    _replacing = _replacing.then(
+      (_) => _run(() => _backend.playList(kept, start: at - from, label: label, source: source)),
+    );
     return _replacing.then((_) => kept.length);
   }
 
   /// Outside a room: plays [track] in place of the queue and lets songs like it follow, as YouTube Music does
   /// when a song is tapped.
   Future<void> playSong(Track track, {String source = ListenSource.chosen}) async {
-    await playTracks([track], source: source);
+    await playTracks([track], label: track.isLocal ? null : 'Radio · ${track.title}', source: source);
     // A song from a file has no radio
     if (track.isLocal) return;
     await _run(() => _backend.fillRadio(track.videoId));

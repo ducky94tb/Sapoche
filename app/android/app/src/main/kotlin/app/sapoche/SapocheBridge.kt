@@ -1025,6 +1025,7 @@ class SapocheBridge(
                     "seek" -> group.requestSeek((call.argument<Number>("ms") ?: 0).toLong())
                     "jump" -> group.requestJump(call.argument<String>("id").orEmpty())
                     "clear" -> group.requestClearQueue()
+                    "clearQueued" -> group.requestClearQueued()
                     "shuffle" -> group.requestShuffle()
                     "setShuffle" -> group.requestShuffleMode(call.argument<Boolean>("on") == true)
                     "radio" -> group.requestRadio(call.argument<String>("videoId").orEmpty())
@@ -1033,10 +1034,21 @@ class SapocheBridge(
                         call.argument<List<Map<String, Any?>>>("tracks").orEmpty().map(::trackRef),
                         call.argument<Boolean>("next") ?: false,
                         call.argument<String>("source") ?: ListenSource.CHOSEN,
+                        call.argument<Boolean>("queued") ?: true,
+                    )
+                    "playList" -> group.requestPlayList(
+                        call.argument<List<Map<String, Any?>>>("tracks").orEmpty().map(::trackRef),
+                        call.argument<Int>("start") ?: 0,
+                        call.argument<String>("label"),
+                        call.argument<String>("source") ?: ListenSource.CHOSEN,
                     )
                     "swap" -> group.requestSwap(call.argument<String>("id").orEmpty(), trackRef(call.argument<Map<String, Any?>>("track")!!))
                     "remove" -> group.requestRemove(call.argument<String>("id").orEmpty())
-                    "move" -> group.requestMove(call.argument<String>("id").orEmpty(), call.argument<Int>("to") ?: 0)
+                    "move" -> group.requestMove(
+                        call.argument<String>("id").orEmpty(),
+                        call.argument<Int>("to") ?: 0,
+                        call.argument<Boolean>("queued"),
+                    )
                     "add" -> group.requestAddMany(
                         listOf(trackRef(call.arguments()!!)),
                         call.argument<Boolean>("next") ?: false,

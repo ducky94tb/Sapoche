@@ -1,0 +1,4 @@
+Phát bất kỳ bài nào trong danh sách mà vẫn giữ cả danh sách, và hàng đợi hai nhóm như Spotify
+- Chạm một bài ở giữa album, danh sách phát, thư viện hay mục Bài hát hàng đầu của nghệ sĩ thì cả danh sách ấy nay trở thành hàng đợi bắt đầu từ bài vừa chọn, giữ nguyên các bài đứng trước để bạn lùi lại được. Với danh sách phát dài, các trang sau tự tải tiếp ở nền và nối vào cuối danh sách.
+- Ngoài phòng, màn Tiếp theo nay chia thành hai nhóm: "Tiếp theo trong hàng đợi" (những bài bạn tự thêm bằng Phát tiếp hoặc Thêm vào hàng đợi, có nút Xóa kèm Hoàn tác) và "Tiếp theo từ: …" cho phần còn lại của album hoặc danh sách đang nghe.
+- Các bài bạn tự thêm sẽ phát trước, rồi mới quay lại danh sách đúng chỗ đang dở. Khi bấm sang một album hay danh sách mới, hoặc khi bật/tắt Trộn bài, các bài tự thêm chưa phát vẫn giữ nguyên thứ tự ngay sau bài đang nghe; bạn cũng có thể kéo thả bài qua lại giữa hai nhóm.

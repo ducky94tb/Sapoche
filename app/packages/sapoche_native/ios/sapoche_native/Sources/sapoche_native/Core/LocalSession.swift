@@ -11,14 +11,18 @@ struct SavedQueue: Equatable, Codable {
     /// Whether shuffle is on, and the order the queue had when it went on.
     var shuffle = false
     var shuffleOrder: [String] = []
+    /// Ids of the songs added to the queue by hand that are still waiting after `index`.
+    var queued: [String] = []
+    /// Name of the list playing (album, playlist), shown above the songs still to come from it.
+    var label: String?
 
     enum CodingKeys: String, CodingKey {
-        case queue, index, positionMs, finished, shuffle, shuffleOrder
+        case queue, index, positionMs, finished, shuffle, shuffleOrder, queued, label
         case repeatMode = "repeat"
     }
 
     init(queue: [QueueItem] = [], index: Int = 0, repeatMode: String = "off", positionMs: Int64 = 0, finished: Bool = false,
-         shuffle: Bool = false, shuffleOrder: [String] = []) {
+         shuffle: Bool = false, shuffleOrder: [String] = [], queued: [String] = [], label: String? = nil) {
         self.queue = queue
         self.index = index
         self.repeatMode = repeatMode
@@ -26,6 +30,8 @@ struct SavedQueue: Equatable, Codable {
         self.finished = finished
         self.shuffle = shuffle
         self.shuffleOrder = shuffleOrder
+        self.queued = queued
+        self.label = label
     }
 
     init(from decoder: Decoder) throws {
@@ -37,6 +43,8 @@ struct SavedQueue: Equatable, Codable {
         finished = try values.decodeIfPresent(Bool.self, forKey: .finished) ?? false
         shuffle = try values.decodeIfPresent(Bool.self, forKey: .shuffle) ?? false
         shuffleOrder = try values.decodeIfPresent([String].self, forKey: .shuffleOrder) ?? []
+        queued = try values.decodeIfPresent([String].self, forKey: .queued) ?? []
+        label = try values.decodeIfPresent(String.self, forKey: .label)
     }
 }
 
@@ -87,6 +95,10 @@ final class LocalSession {
         var finished = false
         /// The current song is on its way to play: the screen shows that something is happening before it is heard.
         var loading = false
+        /// Ids of the songs added by hand that are still waiting after `index`; they play before the rest of the list.
+        var queued: Set<String> = []
+        /// Name of the list playing, or nil when there is none.
+        var label: String?
 
         var current: QueueItem? { queue.indices.contains(index) ? queue[index] : nil }
     }
@@ -139,6 +151,9 @@ final class LocalSession {
 
     /// The ids of the queue in the order it had when shuffle went on: what turning it off goes back to.
     private var shuffleOrder: [String]
+
+    /// Songs added by hand that have played (or been skipped past): back can reach them, but repeat all leaves them out.
+    private var playedQueued = Set<String>()
 
     /// Item handed to the player as the gapless successor of the loaded one.
     private var preloaded: QueueItem?
@@ -295,34 +310,149 @@ final class LocalSession {
     }
 
     func jump(_ id: String) {
-        if let item = snapshot.value.queue.first(where: { $0.id == id }) { load(item, 0, play: true) }
+        let s = snapshot.value
+        guard let at = s.queue.firstIndex(where: { $0.id == id }) else { return }
+        let item = placeTarget(at)
+        load(item, 0, play: true)
+    }
+
+    /// Moves playback to the song at `target` while keeping the three tiers after the new index in order:
+    /// songs in `Snapshot.queued` stay right after the song playing unless the jump is into `Snapshot.queued` itself,
+    /// in which case the queued songs before `target` are skipped past and become played.
+    private func placeTarget(_ target: Int) -> QueueItem {
+        let s = snapshot.value
+        let chosen = s.queue[target]
+        if s.queued.contains(chosen.id) {
+            let dropped = s.queue.prefix(target + 1).compactMap { s.queued.contains($0.id) ? $0.id : nil }
+            playedQueued.formUnion(dropped)
+            let newQueued = s.queued.subtracting(dropped)
+            let queue = s.queue.enumerated().map { i, item -> QueueItem in
+                if i <= target && item.auto { var c = item; c.auto = false; return c }
+                return item
+            }
+            snapshot.update { $0.queue = queue; $0.index = target; $0.queued = newQueued; $0.finished = false }
+            return queue[target]
+        }
+        let waiting = s.finished ? [] : s.queue.dropFirst(s.index + 1).filter { s.queued.contains($0.id) }
+        let waitingIds = Set(waiting.map(\.id))
+        let rest = s.queue.filter { !waitingIds.contains($0.id) }
+        let at = rest.firstIndex(where: { $0.id == chosen.id }) ?? 0
+        let before = rest.prefix(at + 1).map { item -> QueueItem in
+            if item.auto { var c = item; c.auto = false; return c }
+            return item
+        }
+        let after = Array(rest.dropFirst(at + 1))
+        let queue = before + waiting + after
+        snapshot.update { $0.queue = queue; $0.index = at; $0.queued = waitingIds; $0.finished = false }
+        return queue[at]
     }
 
     // ------------------------------------------------------------------ queue
 
-    /// Adds songs at the end, or right after the current one with [next]. With nothing to play, the first one starts.
-    /// A song that is waiting in the queue already is left out.
-    func add(_ tracks: [TrackRef], next: Bool) {
+    /// Adds songs to the queue. By default (`queued` = true) they go into the "Next in queue" group: at the start of it
+    /// with `next`, or at the end of it without, and only a song already in that group is left out. With `queued` = false
+    /// they extend the list itself (before autoplay songs), or with `auto` = true the autoplay tail at the very end.
+    func add(_ tracks: [TrackRef], next: Bool, queued: Bool = true, auto: Bool = false) {
         let s = snapshot.value
         let startNow = s.queue.isEmpty || s.finished
-        let fresh = Queues.fresh(tracks, queue: s.queue, index: s.finished ? s.queue.count : s.index)
+        let fresh: [TrackRef]
+        if queued && !auto {
+            var seen = startNow ? Set<String>() : Set(s.queue.dropFirst(s.index + 1).filter { s.queued.contains($0.id) }.map(\.videoId))
+            fresh = tracks.filter { seen.insert($0.videoId).inserted }
+        } else {
+            fresh = Queues.fresh(tracks, queue: s.queue, index: s.finished ? s.queue.count : s.index)
+        }
         let room = Self.maxQueue - s.queue.count
         if !fresh.isEmpty && room <= 0 { return problem(Problem(kind: .queueFull)) }
-        let items = fresh.prefix(max(room, 0)).map {
-            QueueItem(id: newId(), videoId: $0.videoId, title: $0.title, artist: $0.artist, thumb: $0.thumb, durMs: $0.durMs, addedBy: "")
+        let items = fresh.prefix(max(room, 0)).enumerated().map { i, t in
+            QueueItem(id: newId(), videoId: t.videoId, title: t.title, artist: t.artist, thumb: t.thumb, durMs: t.durMs,
+                      addedBy: "", auto: auto && !(startNow && i == 0))
         }
         guard let first = items.first else { return }
 
-        let at = next && !startNow ? s.index + 1 : s.queue.count
-        var queue = s.queue
-        queue.insert(contentsOf: items, at: at)
-        if s.shuffle && !next && !startNow {
-            // Mixed in among what is to come instead of waiting behind it
-            queue.removeSubrange(at...)
-            for item in items { queue.insert(item, at: Int.random(in: (s.index + 1)...queue.count, using: &random)) }
+        if startNow {
+            let old = s.queue.map { item -> QueueItem in
+                if item.auto { var c = item; c.auto = false; return c }
+                return item
+            }
+            let queue = old + items
+            if s.shuffle && !auto { shuffleOrder += items.map(\.id) }
+            snapshot.update { $0.queue = queue; $0.index = old.count; $0.queued = []; $0.finished = false }
+            load(first, 0, play: true)
+            save()
+            return
         }
-        snapshot.update { $0.queue = queue }
-        if startNow { load(first, 0, play: true) } else { preload() }
+
+        var queue = s.queue
+        var newQueued = s.queued
+        if queued && !auto {
+            let at = min(max(next ? s.index + 1 : s.index + 1 + s.queued.count, 0), queue.count)
+            queue.insert(contentsOf: items, at: at)
+            newQueued.formUnion(items.map(\.id))
+        } else if auto {
+            queue.append(contentsOf: items)
+        } else {
+            let autoStart = ((s.index + 1)..<queue.count).first { queue[$0].auto } ?? queue.count
+            let contextStart = min(s.index + 1 + s.queued.count, autoStart)
+            if s.shuffle && !next {
+                shuffleOrder += items.map(\.id)
+                var end = autoStart
+                for item in items {
+                    queue.insert(item, at: Int.random(in: contextStart...end, using: &random))
+                    end += 1
+                }
+            } else {
+                queue.insert(contentsOf: items, at: next ? contextStart : autoStart)
+            }
+        }
+        snapshot.update { $0.queue = queue; $0.queued = newQueued }
+        preload()
+        save()
+    }
+
+    /// Makes `tracks`, a list the person chose a song from, the active list and plays song `start` of it, keeping any
+    /// unplayed songs added by hand (`Snapshot.queued`) right after that song. With shuffle on, that song is first,
+    /// the queued songs follow, and the rest of the list is mixed behind them.
+    func playList(_ tracks: [TrackRef], start: Int, label: String? = nil) {
+        let s = snapshot.value
+        let waiting = s.finished ? [] : s.queue.dropFirst(s.index + 1).filter { s.queued.contains($0.id) }
+        let cap = max(Self.maxQueue - waiting.count, 0)
+        let items = tracks.prefix(cap).map {
+            QueueItem(id: newId(), videoId: $0.videoId, title: $0.title, artist: $0.artist, thumb: $0.thumb, durMs: $0.durMs, addedBy: "")
+        }
+        guard !items.isEmpty else { return }
+        let first = min(max(start, 0), items.count - 1)
+        let chosen = items[first]
+        let shuffle = s.shuffle
+        let queue: [QueueItem]
+        if shuffle {
+            var rest = items
+            rest.remove(at: first)
+            rest.shuffle(using: &random)
+            queue = [chosen] + waiting + rest
+        } else {
+            queue = Array(items.prefix(first + 1)) + waiting + Array(items.dropFirst(first + 1))
+        }
+        let newIndex = shuffle ? 0 : first
+        let newQueued = Set(waiting.map(\.id))
+        shuffleOrder = shuffle ? items.map(\.id) : []
+        playedQueued.removeAll()
+        skippedInARow = 0 // a new list is a new start
+        let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanLabel = (trimmed?.isEmpty == false) ? trimmed : nil
+        // What plays carries on until the new song is ready, as when a song of the queue is chosen
+        snapshot.update { $0.queue = queue; $0.index = newIndex; $0.queued = newQueued; $0.label = cleanLabel; $0.finished = false }
+        load(chosen, 0, play: true)
+        save()
+    }
+
+    /// Removes only the songs added to the queue by hand ("Next in queue"), leaving the playing list untouched.
+    func clearQueued() {
+        let s = snapshot.value
+        if s.queued.isEmpty { return }
+        let queue = s.queue.filter { !s.queued.contains($0.id) }
+        snapshot.update { $0.queue = queue; $0.queued = [] }
+        preload()
         save()
     }
 
@@ -331,23 +461,33 @@ final class LocalSession {
         guard let at = s.queue.firstIndex(where: { $0.id == id }) else { return }
         var queue = s.queue
         queue.remove(at: at)
+        var newQueued = s.queued
+        newQueued.remove(id)
+        playedQueued.remove(id)
+        if !shuffleOrder.isEmpty { shuffleOrder.removeAll { $0 == id } }
         if at < s.index {
-            snapshot.update { $0.queue = queue; $0.index = s.index - 1 }
+            snapshot.update { $0.queue = queue; $0.index = s.index - 1; $0.queued = newQueued }
         } else if at > s.index {
-            snapshot.update { $0.queue = queue }
+            snapshot.update { $0.queue = queue; $0.queued = newQueued }
         } else if queue.isEmpty {
             stopPlayer()
+            playedQueued.removeAll()
             let repeatMode = snapshot.value.repeatMode
             let shuffle = snapshot.value.shuffle
             snapshot.set(Snapshot(repeatMode: repeatMode, shuffle: shuffle))
         } else if at < queue.count {
             // The next song takes the place of the one removed, and plays if that one was playing
             let play = loadedId == id && player.isPlaying()
-            snapshot.update { $0.queue = queue }
+            let nextItem = queue[at]
+            if newQueued.remove(nextItem.id) != nil {
+                playedQueued.insert(nextItem.id)
+            }
+            if nextItem.auto { queue[at].auto = false }
+            snapshot.update { $0.queue = queue; $0.queued = newQueued }
             if loadedId == id { load(queue[at], 0, play: play) } else { pendingPositionMs = 0 }
         } else {
             stopPlayer()
-            snapshot.update { $0.queue = queue; $0.index = queue.count - 1; $0.finished = true }
+            snapshot.update { $0.queue = queue; $0.index = queue.count - 1; $0.queued = []; $0.finished = true }
         }
         preload()
         save()
@@ -375,15 +515,33 @@ final class LocalSession {
         save()
     }
 
-    func move(_ id: String, toIndex: Int) {
+    /// Moves item `id` to `toIndex`. When `queued` is given, the song also joins (or leaves) the "Next in queue" group
+    /// according to the group it was dropped into; the three tiers after `Snapshot.index` are always kept in order.
+    func move(_ id: String, toIndex: Int, queued: Bool? = nil) {
         let s = snapshot.value
         guard let from = s.queue.firstIndex(where: { $0.id == id }) else { return }
         let currentId = s.current?.id
-        var queue = s.queue
-        let moved = queue.remove(at: from)
-        queue.insert(moved, at: min(max(toIndex, 0), queue.count))
-        let index = currentId.flatMap { current in queue.firstIndex { $0.id == current } } ?? 0
-        snapshot.update { $0.queue = queue; $0.index = index }
+        var list = s.queue
+        let moved = list.remove(at: from)
+        list.insert(moved, at: min(max(toIndex, 0), list.count))
+        let index = currentId.flatMap { current in list.firstIndex { $0.id == current } } ?? 0
+        let landed = list.firstIndex(where: { $0.id == id }) ?? 0
+        var newQueued = s.queued
+        if s.finished || landed <= index {
+            newQueued.remove(id)
+        } else if queued == true {
+            newQueued.insert(id)
+            playedQueued.remove(id)
+            if list[landed].auto { list[landed].auto = false }
+        } else if queued == false {
+            newQueued.remove(id)
+            playedQueued.remove(id)
+            if list[landed].auto { list[landed].auto = false }
+            if s.shuffle && !shuffleOrder.contains(id) { shuffleOrder.append(id) }
+        }
+        let queue = Self.normalize(list, index: index, queuedIds: s.finished ? [] : newQueued, finished: s.finished)
+        let keptQueued = s.finished ? Set<String>() : Set(queue.dropFirst(index + 1).compactMap { newQueued.contains($0.id) ? $0.id : nil })
+        snapshot.update { $0.queue = queue; $0.index = index; $0.queued = keptQueued }
         preload()
         save()
     }
@@ -394,6 +552,8 @@ final class LocalSession {
         let s = snapshot.value
         let drop = min(count, s.finished ? s.queue.count : s.index)
         guard drop > 0 else { return }
+        let dropped = Set(s.queue.prefix(drop).map(\.id))
+        playedQueued.subtract(dropped)
         snapshot.update { $0.queue = Array($0.queue.dropFirst(drop)); $0.index = max($0.index - drop, 0) }
         save()
     }
@@ -401,60 +561,68 @@ final class LocalSession {
     func clear() {
         stopPlayer()
         skippedInARow = 0 // a new list is a new start
+        playedQueued.removeAll()
+        shuffleOrder = []
         let repeatMode = snapshot.value.repeatMode
         let shuffle = snapshot.value.shuffle
         snapshot.set(Snapshot(repeatMode: repeatMode, shuffle: shuffle))
         save()
     }
 
-    /// Mixes up what is still to come, so the song playing carries on. Once the queue has finished it mixes the whole
-    /// list and plays from the top: the way to hear it again in a new order.
+    /// Mixes up what is still to come of the list, so the song playing carries on and any songs added by hand keep their
+    /// order ahead of it. Once the queue has finished it mixes the whole list and plays from the top.
     func shuffle() {
         let s = snapshot.value
         if s.queue.count < 2 { return }
-        var queue = s.queue
         if s.finished {
+            var queue = s.queue
             queue.shuffle(using: &random)
             snapshot.update { $0.queue = queue }
             load(queue[0], 0, play: true)
         } else {
-            let from = s.index + 1
-            var tail = Array(queue[from...])
-            tail.shuffle(using: &random)
-            queue.replaceSubrange(from..., with: tail)
-            snapshot.update { $0.queue = queue }
+            let before = Array(s.queue.prefix(s.index + 1))
+            let after = Array(s.queue.dropFirst(s.index + 1))
+            let waiting = after.filter { s.queued.contains($0.id) }
+            var context = after.filter { !s.queued.contains($0.id) && !$0.auto }
+            context.shuffle(using: &random)
+            let auto = after.filter(\.auto)
+            snapshot.update { $0.queue = before + waiting + context + auto }
             preload()
         }
         save()
     }
 
-    /// Shuffle as a mode, like the room's: on remembers the order and mixes what is still to come; off puts those songs
-    /// back in that order, with the ones added meanwhile after them.
+    /// Shuffle as a mode, like the room's: on remembers the order of the list and mixes what is still to come of it
+    /// (leaving songs added by hand in the order they were added); off puts the list's songs back in that order.
     func setShuffle(_ on: Bool) {
         let s = snapshot.value
         if on == s.shuffle { return }
-        var queue = s.queue
-        let first = s.finished ? 0 : s.index + 1
-        if on {
-            shuffleOrder = queue.map(\.id)
-            // After the queue finished only the mode is set: the list is mixed when it is played again
-            if !s.finished && first < queue.count {
-                var tail = Array(queue[first...])
-                tail.shuffle(using: &random)
-                queue.replaceSubrange(first..., with: tail)
-            }
+        let queue: [QueueItem]
+        if s.finished {
+            shuffleOrder = on ? s.queue.filter { !s.queued.contains($0.id) && !$0.auto }.map(\.id) : []
+            queue = s.queue
         } else {
-            var rank: [String: Int] = [:]
-            for (i, id) in shuffleOrder.enumerated() { rank[id] = i }
-            if first < queue.count {
-                // The sort is made stable by the position, so songs that were not there keep their order, at the end
-                let tail = queue[first...].enumerated().sorted {
+            let before = Array(s.queue.prefix(s.index + 1))
+            let after = Array(s.queue.dropFirst(s.index + 1))
+            let waiting = after.filter { s.queued.contains($0.id) }
+            let context = after.filter { !s.queued.contains($0.id) && !$0.auto }
+            let auto = after.filter(\.auto)
+            let mixed: [QueueItem]
+            if on {
+                shuffleOrder = s.queue.filter { !s.queued.contains($0.id) && !$0.auto }.map(\.id)
+                var c = context
+                c.shuffle(using: &random)
+                mixed = c
+            } else {
+                var rank: [String: Int] = [:]
+                for (i, id) in shuffleOrder.enumerated() { rank[id] = i }
+                shuffleOrder = []
+                mixed = context.enumerated().sorted {
                     let a = rank[$0.element.id] ?? Int.max, b = rank[$1.element.id] ?? Int.max
                     return a != b ? a < b : $0.offset < $1.offset
                 }.map(\.element)
-                queue.replaceSubrange(first..., with: tail)
             }
-            shuffleOrder = []
+            queue = before + waiting + mixed + auto
         }
         snapshot.update { $0.shuffle = on; $0.queue = queue }
         preload()
@@ -473,8 +641,9 @@ final class LocalSession {
     func save() {
         let s = snapshot.value
         let position = loadedId != nil ? player.positionMs() : pendingPositionMs
+        let orderedQueued = s.queue.dropFirst(s.index + 1).compactMap { s.queued.contains($0.id) ? $0.id : nil }
         persist(SavedQueue(queue: s.queue, index: s.index, repeatMode: s.repeatMode, positionMs: position, finished: s.finished,
-                           shuffle: s.shuffle, shuffleOrder: shuffleOrder))
+                           shuffle: s.shuffle, shuffleOrder: shuffleOrder, queued: orderedQueued, label: s.label))
     }
 
     // ------------------------------------------------------------------ playing
@@ -483,20 +652,43 @@ final class LocalSession {
     private func step(_ delta: Int, auto: Bool) {
         let s = snapshot.value
         if s.queue.isEmpty { return }
+        if auto && s.repeatMode == "one" {
+            load(s.queue[s.index], 0, play: true)
+            return
+        }
         var target = s.finished && delta < 0 ? s.index : s.index + delta
-        if auto && s.repeatMode == "one" { target = s.index }
-        if target >= s.queue.count { target = s.repeatMode == "all" ? 0 : -1 }
+        if target >= s.queue.count {
+            if s.repeatMode != "all" { return finish() }
+            // Repeat all loops the list: songs added by hand that already played once do not play a second time
+            let contextOnly = s.queue.filter { !playedQueued.contains($0.id) }
+            if !contextOnly.isEmpty && contextOnly.count < s.queue.count {
+                playedQueued.removeAll()
+                snapshot.update { $0.queue = contextOnly; $0.index = 0; $0.queued = []; $0.finished = false }
+                load(contextOnly[0], 0, play: true)
+                return
+            }
+            target = 0
+        }
         if target < 0 {
             if delta < 0 { target = 0 } else { return finish() }
         }
-        load(s.queue[target], 0, play: true)
+        let item = placeTarget(target)
+        load(item, 0, play: true)
     }
 
     /// Ran out of songs: nothing is current until play starts the list again.
     private func finish() {
         let last = snapshot.value.queue.last
         stopPlayer()
-        snapshot.update { $0.index = $0.queue.count - 1; $0.finished = true }
+        snapshot.update {
+            $0.queue = $0.queue.map { item in
+                if item.auto { var c = item; c.auto = false; return c }
+                return item
+            }
+            $0.index = max($0.queue.count - 1, 0)
+            $0.queued = []
+            $0.finished = true
+        }
         save()
         if let last { onQueueEnd(last) }
     }
@@ -518,28 +710,36 @@ final class LocalSession {
         slowJob?.cancel()
         preloaded = nil
         loadedId = nil
-        guard let at = snapshot.value.queue.firstIndex(where: { $0.id == item.id }) else { return }
+        let s = snapshot.value
+        guard let at = s.queue.firstIndex(where: { $0.id == item.id }) else { return }
+        var newQueued = s.queued
+        if newQueued.remove(item.id) != nil {
+            playedQueued.insert(item.id)
+        }
+        var queue = s.queue
+        if queue[at].auto { queue[at].auto = false }
+        let loaded = queue[at]
         // The person sees the new song at once, and that it is on its way, not only when it has loaded
-        snapshot.update { $0.index = at; $0.finished = false; $0.loading = play }
+        snapshot.update { $0.queue = queue; $0.index = at; $0.queued = newQueued; $0.finished = false; $0.loading = play }
         playOnLoad = play
-        let again = stuckVideoIds.contains(item.videoId)
+        let again = stuckVideoIds.contains(loaded.videoId)
         // A load that takes long is said to be slow, so that waiting does not look like nothing happening
         slowJob = scope.launch { [weak self] in
             try await self?.time.sleep(ms: Self.slowLoadMs)
             guard let self, self.playOnLoad else { return }
-            self.stuckVideoIds.insert(item.videoId)
-            self.problem(Problem(kind: .slow, title: item.title))
+            self.stuckVideoIds.insert(loaded.videoId)
+            self.problem(Problem(kind: .slow, title: loaded.title))
         }
         job = scope.launch { [weak self] in
             guard let self else { return }
             var retried = false
             while true {
                 do {
-                    if again || retried { await self.player.refresh(item.videoId) }
-                    try await self.player.prepare(item, seekToMs: positionMs)
+                    if again || retried { await self.player.refresh(loaded.videoId) }
+                    try await self.player.prepare(loaded, seekToMs: positionMs)
                     self.slowJob?.cancel()
-                    self.stuckVideoIds.remove(item.videoId)
-                    self.loadedId = item.id
+                    self.stuckVideoIds.remove(loaded.videoId)
+                    self.loadedId = loaded.id
                     self.pendingPositionMs = 0
                     self.skippedInARow = 0
                     self.snapshot.update { $0.loading = false }
@@ -550,28 +750,28 @@ final class LocalSession {
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
-                    self.log("could not load '\(item.title)': \(error.localizedDescription)")
+                    self.log("could not load '\(loaded.title)': \(error.localizedDescription)")
                     // Nothing goes on loading in the background, and nothing starts later by itself
                     self.player.stop()
                     // A failure that is neither "YouTube will not give it out" nor "no network" is often a blip: the person
                     // who wants to hear the song gets one more try from a new stream address before it counts as failed
                     if !retried, (error as? LoadFailure) == nil, self.playOnLoad {
                         retried = true
-                        self.log("trying '\(item.title)' once more in \(Self.retryAfterMs)ms")
+                        self.log("trying '\(loaded.title)' once more in \(Self.retryAfterMs)ms")
                         try await self.time.sleep(ms: Self.retryAfterMs)
                         if self.playOnLoad { continue }
                         // Paused meanwhile: there is nothing to tell, and play starts from a new address
                         self.slowJob?.cancel()
-                        self.stuckVideoIds.insert(item.videoId)
+                        self.stuckVideoIds.insert(loaded.videoId)
                         self.pendingPositionMs = positionMs
                         self.snapshot.update { $0.loading = false }
                         return
                     }
                     self.slowJob?.cancel()
-                    self.stuckVideoIds.insert(item.videoId)
+                    self.stuckVideoIds.insert(loaded.videoId)
                     self.pendingPositionMs = positionMs
                     self.snapshot.update { $0.loading = false }
-                    self.loadFailed(item, error)
+                    self.loadFailed(loaded, error)
                     return
                 }
             }
@@ -634,12 +834,19 @@ final class LocalSession {
 
     /// The player moved on to the successor by itself.
     private func onAdvanced() {
-        guard let item = preloaded, let at = snapshot.value.queue.firstIndex(where: { $0.id == item.id }) else { return }
+        let s = snapshot.value
+        guard let item = preloaded, let at = s.queue.firstIndex(where: { $0.id == item.id }) else { return }
         preloaded = nil
         loadedId = item.id
         pendingPositionMs = 0
         recoveries = 0
-        snapshot.update { $0.index = at }
+        var newQueued = s.queued
+        if newQueued.remove(item.id) != nil {
+            playedQueued.insert(item.id)
+        }
+        var queue = s.queue
+        if queue[at].auto { queue[at].auto = false }
+        snapshot.update { $0.queue = queue; $0.index = at; $0.queued = newQueued }
         preload()
         save()
     }
@@ -659,15 +866,46 @@ final class LocalSession {
         load(item, player.positionMs(), play: true)
     }
 
+    private static func normalize(_ list: [QueueItem], index: Int, queuedIds: Set<String>, finished: Bool) -> [QueueItem] {
+        if list.isEmpty { return list }
+        if finished {
+            return list.map { item in
+                if item.auto { var c = item; c.auto = false; return c }
+                return item
+            }
+        }
+        let before = list.prefix(index + 1).map { item -> QueueItem in
+            if item.auto { var c = item; c.auto = false; return c }
+            return item
+        }
+        let after = list.dropFirst(index + 1)
+        let tierQueued = after.filter { queuedIds.contains($0.id) }.map { item -> QueueItem in
+            if item.auto { var c = item; c.auto = false; return c }
+            return item
+        }
+        let tierContext = after.filter { !queuedIds.contains($0.id) && !$0.auto }
+        let tierAuto = after.filter { !queuedIds.contains($0.id) && $0.auto }
+        return before + tierQueued + tierContext + tierAuto
+    }
+
     private static func restore(_ saved: SavedQueue?) -> Snapshot {
         guard let saved else { return Snapshot() }
-        let queue = Array(saved.queue.prefix(maxQueue))
+        let raw = Array(saved.queue.prefix(maxQueue))
+        let index = min(max(saved.index, 0), max(0, raw.count - 1))
+        let finished = saved.finished && !raw.isEmpty
+        let afterIds = finished ? Set<String>() : Set(raw.dropFirst(index + 1).map(\.id))
+        let queued = finished ? Set<String>() : Set(saved.queued.filter { afterIds.contains($0) })
+        let queue = normalize(raw, index: index, queuedIds: queued, finished: finished)
+        let trimmed = saved.label?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = (trimmed?.isEmpty == false && !queue.isEmpty) ? trimmed : nil
         return Snapshot(
             queue: queue,
-            index: min(max(saved.index, 0), max(0, queue.count - 1)),
+            index: index,
             repeatMode: saved.repeatMode == "all" || saved.repeatMode == "one" ? saved.repeatMode : "off",
             shuffle: saved.shuffle,
-            finished: saved.finished && !queue.isEmpty
+            finished: finished,
+            queued: queued,
+            label: label
         )
     }
 

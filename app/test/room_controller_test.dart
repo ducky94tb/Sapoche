@@ -430,18 +430,46 @@ void main() {
         Track(videoId: 'video$i', title: 'Song $i', artist: 'x', durMs: 1);
 
     test(
-      'sends every song, even those the queue being emptied holds',
+      'sends every song, even those the queue being replaced holds',
       () async {
-        // The state that says the queue was emptied has not arrived yet
+        // The state that says the queue was replaced has not arrived yet
         backend.emit(StateEvent(sampleRoom(local: true)));
         await settle();
         await controller.playTracks([song(1), song(2)]);
-        expect(backend.calls.sublist(backend.calls.length - 2), [
-          'clear',
-          'addMany video1,video2 next=false',
-        ]);
+        expect(backend.calls.last, 'playList video1,video2 start=0');
       },
     );
+
+    test('plays from the song asked for, keeping the others on the queue', () async {
+      backend.emit(StateEvent(sampleRoom(local: true)));
+      await settle();
+      await controller.playTracks([song(1), song(2), song(3)], start: 2);
+      expect(backend.calls.last, 'playList video1,video2,video3 start=2');
+    });
+
+    test('a song repeated in the list is found at its first place', () async {
+      backend.emit(StateEvent(sampleRoom(local: true)));
+      await settle();
+      final kept = await controller.playTracks([song(1), song(2), song(1), song(3)], start: 2);
+      expect(kept, 3);
+      expect(backend.calls.last, 'playList video1,video2,video3 start=0');
+    });
+
+    test('a list longer than the queue holds is cut around the song asked for', () async {
+      backend.emit(StateEvent(sampleRoom(local: true)));
+      await settle();
+      final songs = [for (var i = 0; i < 1500; i++) song(i)];
+      final kept = await controller.playTracks(songs, start: 1200);
+      expect(kept, 1000);
+      expect(backend.lastAddedMany.length, 1000);
+      expect(backend.lastAddedMany[700].videoId, 'video1200');
+      expect(backend.calls.last, endsWith('start=700'));
+      await controller.playTracks(songs, start: 1499);
+      expect(backend.lastAddedMany.last.videoId, 'video1499');
+      await controller.playTracks(songs, start: 3);
+      expect(backend.lastAddedMany.first.videoId, 'video0');
+      expect(backend.calls.last, endsWith('start=3'));
+    });
 
     test('quick taps are taken in turn, so the last one plays', () async {
       backend.emit(StateEvent(sampleRoom(local: true)));
@@ -451,12 +479,10 @@ void main() {
         controller.playTracks([song(2)]),
       ]);
       expect(
-        backend.calls.where((c) => c == 'clear' || c.startsWith('addMany')),
+        backend.calls.where((c) => c.startsWith('playList')),
         [
-          'clear',
-          'addMany video0,video1 next=false',
-          'clear',
-          'addMany video2 next=false',
+          'playList video0,video1 start=0',
+          'playList video2 start=0',
         ],
       );
     });
@@ -529,7 +555,7 @@ void main() {
           for (var i = 0; i < 1200; i++) song(i),
         ]);
         expect(kept, 1000);
-        expect(sizes(backend.calls.where((c) => c.startsWith('addMany'))), [
+        expect(sizes(backend.calls.where((c) => c.startsWith('playList'))), [
           1000,
         ]);
       },

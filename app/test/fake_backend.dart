@@ -113,15 +113,30 @@ class FakeBackend implements Backend {
   Future<void> add(Track track, {bool playNext = false, String source = ListenSource.chosen}) =>
       _record('add ${track.videoId} next=$playNext${source == ListenSource.chosen ? '' : ' source=$source'}');
 
-  /// The songs of the last [addMany], as they were given.
+  /// The songs of the last [addMany] or [playList], as they were given.
   List<Track> lastAddedMany = const [];
 
   @override
-  Future<void> addMany(List<Track> tracks, {bool playNext = false, String source = ListenSource.chosen}) {
+  Future<void> addMany(List<Track> tracks, {bool playNext = false, bool queued = true, String source = ListenSource.chosen}) {
     lastAddedMany = tracks;
     return _record(
-      'addMany ${tracks.map((t) => t.videoId).join(',')} next=$playNext${source == ListenSource.chosen ? '' : ' source=$source'}',
+      'addMany ${tracks.map((t) => t.videoId).join(',')} next=$playNext${queued ? '' : ' queued=false'}${source == ListenSource.chosen ? '' : ' source=$source'}',
     );
+  }
+
+  /// What the native side reports once a [playList] is done, for a test that looks at the queue it left.
+  void Function(List<Track> tracks)? afterPlayList;
+
+  @override
+  Future<void> playList(List<Track> tracks, {int start = 0, String? label, String source = ListenSource.chosen}) async {
+    lastAddedMany = tracks;
+    await _record(
+      'playList ${tracks.map((t) => t.videoId).join(',')} start=$start${label == null ? '' : ' label=$label'}${source == ListenSource.chosen ? '' : ' source=$source'}',
+    );
+    final after = afterPlayList;
+    if (after == null) return;
+    after(tracks);
+    await Future<void>.delayed(Duration.zero);
   }
 
   @override
@@ -140,11 +155,14 @@ class FakeBackend implements Backend {
   Future<void> remove(String itemId) => _record('remove $itemId');
 
   @override
-  Future<void> move(String itemId, int toIndex) =>
-      _record('move $itemId $toIndex');
+  Future<void> move(String itemId, int toIndex, {bool? queued}) =>
+      _record('move $itemId $toIndex${queued == null ? '' : ' queued=$queued'}');
 
   @override
   Future<void> clear() => _record('clear');
+
+  @override
+  Future<void> clearQueued() => _record('clearQueued');
 
   @override
   Future<void> shuffle() => _record('shuffle');
@@ -1136,6 +1154,9 @@ RoomSnapshot sampleRoom({
   /// Outside a room: the personal queue.
   bool local = false,
   bool loading = false,
+
+  /// Instead of [songs] made up songs.
+  List<QueueEntry>? queue,
 }) => RoomSnapshot(
   room: local ? null : 'ABC234',
   link: Link.connected,
@@ -1167,15 +1188,17 @@ RoomSnapshot sampleRoom({
         Member(id: 'me', name: 'Anna', ready: true),
         Member(id: 'b', name: 'Binh', ready: true),
       ],
-  queue: [
-    for (var i = 0; i < songs; i++)
-      QueueEntry(
-        id: 'q$i',
-        videoId: 'video$i',
-        title: 'Song $i',
-        artist: 'Artist $i',
-        durMs: 200000 + i * 1000,
-        addedBy: i.isEven ? 'me' : 'b',
-      ),
-  ],
+  queue:
+      queue ??
+      [
+        for (var i = 0; i < songs; i++)
+          QueueEntry(
+            id: 'q$i',
+            videoId: 'video$i',
+            title: 'Song $i',
+            artist: 'Artist $i',
+            durMs: 200000 + i * 1000,
+            addedBy: i.isEven ? 'me' : 'b',
+          ),
+      ],
 );

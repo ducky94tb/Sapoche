@@ -192,7 +192,7 @@ class _HomeChipsState extends State<HomeChips> {
                   own: true,
                   onTap: () {
                     stats.touched(_part, 'me:${chip.id}');
-                    playMix(context, chip.tracks);
+                    playMix(context, chip.tracks, label: chip.label);
                   },
                 );
               }
@@ -379,7 +379,7 @@ class _WideMix extends StatelessWidget {
         child: InkWell(
           key: ValueKey('mix-${mix.number}'),
           borderRadius: BorderRadius.circular(SapocheTheme.cardRadius),
-          onTap: () => playMix(context, mix.tracks),
+          onTap: () => playMix(context, mix.tracks, label: S.dailyMix(mix.number)),
           child: Padding(
             padding: const EdgeInsets.all(10),
             child: Row(
@@ -449,7 +449,7 @@ class _MixCard extends StatelessWidget {
     final theme = Theme.of(context).textTheme;
     return InkWell(
       key: ValueKey('mix-${mix.number}'),
-      onTap: () => playMix(context, mix.tracks),
+      onTap: () => playMix(context, mix.tracks, label: S.dailyMix(mix.number)),
       borderRadius: BorderRadius.circular(16),
       child: SizedBox(
         width: size,

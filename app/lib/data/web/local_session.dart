@@ -16,6 +16,8 @@ class SavedQueue {
     this.finished = false,
     this.shuffle = false,
     this.shuffleOrder = const [],
+    this.queued = const [],
+    this.label,
   });
 
   final List<QueueEntry> queue;
@@ -29,6 +31,12 @@ class SavedQueue {
   /// Whether shuffle is on, and the order the queue had when it went on.
   final bool shuffle;
   final List<String> shuffleOrder;
+
+  /// Ids of the songs added to the queue by hand that are still waiting after [index].
+  final List<String> queued;
+
+  /// Name of the list playing (album, playlist), shown above the songs still to come from it.
+  final String? label;
 
   Map<String, Object?> toJson() => {
     'queue': [
@@ -50,6 +58,8 @@ class SavedQueue {
     'finished': finished,
     'shuffle': shuffle,
     'shuffleOrder': shuffleOrder,
+    'queued': queued,
+    if (label != null) 'label': label,
   };
 
   /// What was written down, or null when it is no queue this app wrote.
@@ -64,12 +74,16 @@ class SavedQueue {
         finished: json['finished'] as bool? ?? false,
         shuffle: json['shuffle'] as bool? ?? false,
         shuffleOrder: [for (final id in json['shuffleOrder'] as List<dynamic>? ?? const []) id as String],
+        queued: [for (final id in json['queued'] as List<dynamic>? ?? const []) id as String],
+        label: json['label'] as String?,
       );
     } on Object {
       return null;
     }
   }
 }
+
+const _keepLabel = Object();
 
 class LocalSnapshot {
   const LocalSnapshot({
@@ -79,6 +93,8 @@ class LocalSnapshot {
     this.shuffle = false,
     this.finished = false,
     this.loading = false,
+    this.queued = const {},
+    this.label,
   });
 
   final List<QueueEntry> queue;
@@ -96,17 +112,33 @@ class LocalSnapshot {
   /// The current song is on its way to play: the screen shows that something is happening before it is heard.
   final bool loading;
 
+  /// Ids of the songs added by hand that are still waiting after [index]; they play before the rest of the list.
+  final Set<String> queued;
+
+  /// Name of the list playing, or null when there is none.
+  final String? label;
+
   QueueEntry? get current => index >= 0 && index < queue.length ? queue[index] : null;
 
-  LocalSnapshot copyWith({List<QueueEntry>? queue, int? index, String? repeat, bool? shuffle, bool? finished, bool? loading}) =>
-      LocalSnapshot(
-        queue: queue ?? this.queue,
-        index: index ?? this.index,
-        repeat: repeat ?? this.repeat,
-        shuffle: shuffle ?? this.shuffle,
-        finished: finished ?? this.finished,
-        loading: loading ?? this.loading,
-      );
+  LocalSnapshot copyWith({
+    List<QueueEntry>? queue,
+    int? index,
+    String? repeat,
+    bool? shuffle,
+    bool? finished,
+    bool? loading,
+    Set<String>? queued,
+    Object? label = _keepLabel,
+  }) => LocalSnapshot(
+    queue: queue ?? this.queue,
+    index: index ?? this.index,
+    repeat: repeat ?? this.repeat,
+    shuffle: shuffle ?? this.shuffle,
+    finished: finished ?? this.finished,
+    loading: loading ?? this.loading,
+    queued: queued ?? this.queued,
+    label: identical(label, _keepLabel) ? this.label : label as String?,
+  );
 }
 
 /// What the person should be told about a song: what happened ([kind]) and to which ([title]).
@@ -216,6 +248,9 @@ class LocalSession {
   /// The ids of the queue in the order it had when shuffle went on: what turning it off goes back to.
   List<String> _shuffleOrder;
 
+  /// Songs added by hand that have played (or been skipped past): back can reach them, but repeat all leaves them out.
+  final _playedQueued = <String>{};
+
   /// Item handed to the player as the gapless successor of the loaded one.
   QueueEntry? _preloaded;
 
@@ -272,7 +307,7 @@ class LocalSession {
       player.play();
     } else if (s.queue.isEmpty) {
       return;
-    } else if (s.finished) {
+    } else if (s.finished || s.queue.isEmpty) {
       // After the last song, play means "again": from the top of the list
       _load(s.queue[0], 0, play: true);
     } else {
@@ -308,48 +343,186 @@ class LocalSession {
   }
 
   void jump(String id) {
-    for (final e in _snapshot.queue) {
-      if (e.id == id) {
-        _load(e, 0, play: true);
-        return;
-      }
+    final s = _snapshot;
+    final at = s.queue.indexWhere((e) => e.id == id);
+    if (at < 0) return;
+    final item = _placeTarget(at);
+    _load(item, 0, play: true);
+  }
+
+  /// Moves playback to the song at [target] while keeping the three tiers after the new index in order:
+  /// songs in [LocalSnapshot.queued] stay right after the song playing unless the jump is into [LocalSnapshot.queued]
+  /// itself, in which case the queued songs before [target] are skipped past and become played.
+  QueueEntry _placeTarget(int target) {
+    final s = _snapshot;
+    final chosen = s.queue[target];
+    if (s.queued.contains(chosen.id)) {
+      final dropped = <String>{
+        for (final e in s.queue.take(target + 1))
+          if (s.queued.contains(e.id)) e.id,
+      };
+      _playedQueued.addAll(dropped);
+      final newQueued = {...s.queued}..removeAll(dropped);
+      final queue = [
+        for (final (i, e) in s.queue.indexed)
+          i <= target ? e.copyWith(auto: false, queued: false) : e.copyWith(queued: newQueued.contains(e.id)),
+      ];
+      _update((s) => s.copyWith(queue: queue, index: target, queued: newQueued, finished: false));
+      return queue[target];
     }
+    final waiting = [
+      if (!s.finished)
+        for (final e in s.queue.skip(s.index + 1))
+          if (s.queued.contains(e.id)) e.copyWith(auto: false, queued: true),
+    ];
+    final waitingIds = {for (final e in waiting) e.id};
+    final rest = [
+      for (final e in s.queue)
+        if (!waitingIds.contains(e.id)) e,
+    ];
+    final at = max(0, rest.indexWhere((e) => e.id == chosen.id));
+    final before = [for (final e in rest.take(at + 1)) e.copyWith(auto: false, queued: false)];
+    final after = [for (final e in rest.skip(at + 1)) e.copyWith(queued: false)];
+    final queue = [...before, ...waiting, ...after];
+    _update((s) => s.copyWith(queue: queue, index: at, queued: waitingIds, finished: false));
+    return queue[at];
   }
 
   // ------------------------------------------------------------------ queue
 
-  /// Adds songs at the end, or right after the current one with [next]. With nothing to play, the first one starts. A
-  /// song that is waiting in the queue already is left out.
-  void add(List<TrackRef> tracks, {required bool next}) {
+  /// Adds songs to the queue. By default ([queued] = true) they go into the "Next in queue" group: at the start of it
+  /// with [next], or at the end of it without, and only a song already in that group is left out. With [queued] = false
+  /// they extend the list itself (before autoplay songs), or with [auto] = true the autoplay tail at the very end.
+  void add(List<TrackRef> tracks, {required bool next, bool queued = true, bool auto = false}) {
     final s = _snapshot;
     final startNow = s.queue.isEmpty || s.finished;
-    final fresh = freshTracks(tracks, s.queue, s.finished ? s.queue.length : s.index);
+    final List<TrackRef> fresh;
+    if (queued && !auto) {
+      final seen = <String>{
+        if (!startNow)
+          for (final e in s.queue.skip(s.index + 1))
+            if (s.queued.contains(e.id)) e.videoId,
+      };
+      fresh = [
+        for (final t in tracks)
+          if (seen.add(t.videoId)) t,
+      ];
+    } else {
+      fresh = freshTracks(tracks, s.queue, s.finished ? s.queue.length : s.index);
+    }
     final room = maxQueue - s.queue.length;
     if (fresh.isNotEmpty && room <= 0) {
       problem(const Problem(ProblemKind.queueFull));
       return;
     }
     final items = [
-      for (final t in fresh.take(room < 0 ? 0 : room))
-        QueueEntry(id: _newId(), videoId: t.videoId, title: t.title, artist: t.artist, thumb: t.thumb, durMs: t.durMs, addedBy: ''),
+      for (final (i, t) in fresh.take(room < 0 ? 0 : room).indexed)
+        QueueEntry(
+          id: _newId(),
+          videoId: t.videoId,
+          title: t.title,
+          artist: t.artist,
+          thumb: t.thumb,
+          durMs: t.durMs,
+          addedBy: '',
+          auto: auto && !(startNow && i == 0),
+          queued: !startNow && queued && !auto,
+        ),
     ];
     if (items.isEmpty) return;
 
-    final at = next && !startNow ? s.index + 1 : s.queue.length;
-    final queue = [...s.queue]..insertAll(at, items);
-    if (s.shuffle && !next && !startNow) {
-      // Mixed in among what is to come instead of waiting behind it
-      queue.removeRange(at, queue.length);
-      for (final item in items) {
-        queue.insert(s.index + 1 + _random.nextInt(queue.length - s.index), item);
+    if (startNow) {
+      final old = [for (final e in s.queue) e.copyWith(auto: false, queued: false)];
+      final queue = [...old, ...items];
+      if (s.shuffle && !auto) _shuffleOrder = [..._shuffleOrder, for (final e in items) e.id];
+      _update((s) => s.copyWith(queue: queue, index: old.length, queued: const {}, finished: false));
+      _load(items.first, 0, play: true);
+      save();
+      return;
+    }
+
+    final queue = [...s.queue];
+    var newQueued = s.queued;
+    if (queued && !auto) {
+      final at = (next ? s.index + 1 : s.index + 1 + s.queued.length).clamp(0, queue.length);
+      queue.insertAll(at, items);
+      newQueued = {...s.queued, for (final e in items) e.id};
+    } else if (auto) {
+      queue.addAll(items);
+    } else {
+      var autoStart = queue.length;
+      for (var i = s.index + 1; i < queue.length; i++) {
+        if (queue[i].auto) {
+          autoStart = i;
+          break;
+        }
+      }
+      final contextStart = min(s.index + 1 + s.queued.length, autoStart);
+      if (s.shuffle && !next) {
+        _shuffleOrder = [..._shuffleOrder, for (final e in items) e.id];
+        var end = autoStart;
+        for (final item in items) {
+          queue.insert(contextStart + _random.nextInt(end - contextStart + 1), item);
+          end++;
+        }
+      } else {
+        queue.insertAll(next ? contextStart : autoStart, items);
       }
     }
-    _update((s) => s.copyWith(queue: queue));
-    if (startNow) {
-      _load(items.first, 0, play: true);
+    _update((s) => s.copyWith(queue: queue, queued: newQueued));
+    _preload();
+    save();
+  }
+
+  /// Makes [tracks], a list the person chose a song from, the active list and plays song [start] of it, keeping any
+  /// unplayed songs added by hand ([LocalSnapshot.queued]) right after that song. With shuffle on, that song is first,
+  /// the queued songs follow, and the rest of the list is mixed behind them.
+  void playList(List<TrackRef> tracks, int start, {String? label}) {
+    final s = _snapshot;
+    final waiting = [
+      if (!s.finished)
+        for (final e in s.queue.skip(s.index + 1))
+          if (s.queued.contains(e.id)) e.copyWith(auto: false, queued: true),
+    ];
+    final cap = max(maxQueue - waiting.length, 0);
+    final items = [
+      for (final t in tracks.take(cap))
+        QueueEntry(id: _newId(), videoId: t.videoId, title: t.title, artist: t.artist, thumb: t.thumb, durMs: t.durMs, addedBy: ''),
+    ];
+    if (items.isEmpty) return;
+    final first = start.clamp(0, items.length - 1);
+    final chosen = items[first];
+    final shuffle = s.shuffle;
+    final List<QueueEntry> queue;
+    if (shuffle) {
+      final rest = [...items]..removeAt(first)..shuffle(_random);
+      queue = [chosen, ...waiting, ...rest];
     } else {
-      _preload();
+      queue = [...items.sublist(0, first + 1), ...waiting, ...items.sublist(first + 1)];
     }
+    final newIndex = shuffle ? 0 : first;
+    final newQueued = {for (final e in waiting) e.id};
+    _shuffleOrder = shuffle ? [for (final e in items) e.id] : const [];
+    _playedQueued.clear();
+    _skippedInARow = 0; // a new list is a new start
+    final trimmed = label?.trim();
+    final cleanLabel = trimmed != null && trimmed.isNotEmpty ? trimmed : null;
+    // What plays carries on until the new song is ready, as when a song of the queue is chosen
+    _update((s) => s.copyWith(queue: queue, index: newIndex, queued: newQueued, label: cleanLabel, finished: false));
+    _load(chosen, 0, play: true);
+    save();
+  }
+
+  /// Removes only the songs added to the queue by hand ("Next in queue"), leaving the playing list untouched.
+  void clearQueued() {
+    final s = _snapshot;
+    if (s.queued.isEmpty) return;
+    final queue = [
+      for (final e in s.queue)
+        if (!s.queued.contains(e.id)) e,
+    ];
+    _update((s) => s.copyWith(queue: queue, queued: const {}));
+    _preload();
     save();
   }
 
@@ -358,17 +531,26 @@ class LocalSession {
     final at = s.queue.indexWhere((e) => e.id == id);
     if (at < 0) return;
     final queue = [...s.queue]..removeAt(at);
+    final newQueued = {...s.queued}..remove(id);
+    _playedQueued.remove(id);
+    if (_shuffleOrder.isNotEmpty) _shuffleOrder = [for (final e in _shuffleOrder) if (e != id) e];
     if (at < s.index) {
-      _update((s) => s.copyWith(queue: queue, index: s.index - 1));
+      _update((s) => s.copyWith(queue: queue, index: s.index - 1, queued: newQueued));
     } else if (at > s.index) {
-      _update((s) => s.copyWith(queue: queue));
+      _update((s) => s.copyWith(queue: queue, queued: newQueued));
     } else if (queue.isEmpty) {
       _stopPlayer();
+      _playedQueued.clear();
       _update((s) => LocalSnapshot(repeat: s.repeat, shuffle: s.shuffle));
     } else if (at < queue.length) {
       // The next song takes the place of the one removed, and plays if that one was playing
       final play = _loadedId == id && player.isPlaying();
-      _update((s) => s.copyWith(queue: queue));
+      final nextItem = queue[at];
+      if (newQueued.remove(nextItem.id)) {
+        _playedQueued.add(nextItem.id);
+      }
+      queue[at] = nextItem.copyWith(auto: false, queued: false);
+      _update((s) => s.copyWith(queue: queue, queued: newQueued));
       if (_loadedId == id) {
         _load(queue[at], 0, play: play);
       } else {
@@ -376,7 +558,7 @@ class LocalSession {
       }
     } else {
       _stopPlayer();
-      _update((s) => s.copyWith(queue: queue, index: queue.length - 1, finished: true));
+      _update((s) => s.copyWith(queue: queue, index: queue.length - 1, queued: const {}, finished: true));
     }
     _preload();
     save();
@@ -398,6 +580,7 @@ class LocalSession {
       durMs: track.durMs,
       addedBy: old.addedBy,
       auto: old.auto,
+      queued: old.queued,
     );
     _update((s) => s.copyWith(queue: [...s.queue]..[at] = item));
     if (_loadedId == id) {
@@ -410,16 +593,38 @@ class LocalSession {
     save();
   }
 
-  void move(String id, int toIndex) {
+  /// Moves item [id] to [toIndex]. When [queued] is given, the song also joins (or leaves) the "Next in queue" group
+  /// according to the group it was dropped into; the three tiers after [LocalSnapshot.index] are always kept in order.
+  void move(String id, int toIndex, {bool? queued}) {
     final s = _snapshot;
     final from = s.queue.indexWhere((e) => e.id == id);
     if (from < 0) return;
     final currentId = s.current?.id;
-    final queue = [...s.queue];
-    final moved = queue.removeAt(from);
-    queue.insert(toIndex.clamp(0, queue.length), moved);
-    final index = currentId == null ? 0 : max(0, queue.indexWhere((e) => e.id == currentId));
-    _update((s) => s.copyWith(queue: queue, index: index));
+    final list = [...s.queue];
+    final moved = list.removeAt(from);
+    list.insert(toIndex.clamp(0, list.length), moved);
+    final index = currentId == null ? 0 : max(0, list.indexWhere((e) => e.id == currentId));
+    final landed = list.indexWhere((e) => e.id == id);
+    final newQueued = {...s.queued};
+    if (s.finished || landed <= index) {
+      newQueued.remove(id);
+    } else if (queued == true) {
+      newQueued.add(id);
+      _playedQueued.remove(id);
+      list[landed] = list[landed].copyWith(auto: false, queued: true);
+    } else if (queued == false) {
+      newQueued.remove(id);
+      _playedQueued.remove(id);
+      list[landed] = list[landed].copyWith(auto: false, queued: false);
+      if (s.shuffle && !_shuffleOrder.contains(id)) _shuffleOrder = [..._shuffleOrder, id];
+    }
+    final queue = _normalize(list, index, s.finished ? const {} : newQueued, s.finished);
+    final keptQueued = <String>{
+      if (!s.finished)
+        for (final e in queue.skip(index + 1))
+          if (newQueued.contains(e.id)) e.id,
+    };
+    _update((s) => s.copyWith(queue: queue, index: index, queued: keptQueued));
     _preload();
     save();
   }
@@ -430,6 +635,9 @@ class LocalSession {
     final s = snapshot;
     final drop = min(count, s.finished ? s.queue.length : s.index);
     if (drop <= 0) return;
+    for (final e in s.queue.take(drop)) {
+      _playedQueued.remove(e.id);
+    }
     _update((s) => s.copyWith(queue: s.queue.sublist(drop), index: max(s.index - drop, 0)));
     save();
   }
@@ -437,52 +645,60 @@ class LocalSession {
   void clear() {
     _stopPlayer();
     _skippedInARow = 0; // a new list is a new start
+    _playedQueued.clear();
+    _shuffleOrder = const [];
     _update((s) => LocalSnapshot(repeat: s.repeat, shuffle: s.shuffle));
     save();
   }
 
-  /// Mixes up what is still to come, so the song playing carries on. Once the queue has finished it mixes the whole
-  /// list and plays from the top: the way to hear it again in a new order.
+  /// Mixes up what is still to come of the list, so the song playing carries on and any songs added by hand keep their
+  /// order ahead of it. Once the queue has finished it mixes the whole list and plays from the top.
   void shuffle() {
     final s = _snapshot;
     if (s.queue.length < 2) return;
-    final queue = [...s.queue];
-    if (s.finished) {
-      queue.shuffle(_random);
+    if (s.finished || s.queue.isEmpty) {
+      final queue = [...s.queue]..shuffle(_random);
       _update((s) => s.copyWith(queue: queue));
       _load(queue[0], 0, play: true);
     } else {
-      final rest = queue.sublist(s.index + 1)..shuffle(_random);
-      queue.replaceRange(s.index + 1, queue.length, rest);
-      _update((s) => s.copyWith(queue: queue));
+      final before = s.queue.sublist(0, s.index + 1);
+      final after = s.queue.sublist(s.index + 1);
+      final waiting = [for (final e in after) if (s.queued.contains(e.id)) e];
+      final context = [for (final e in after) if (!s.queued.contains(e.id) && !e.auto) e]..shuffle(_random);
+      final auto = [for (final e in after) if (e.auto) e];
+      _update((s) => s.copyWith(queue: [...before, ...waiting, ...context, ...auto]));
       _preload();
     }
     save();
   }
 
-  /// Shuffle as a mode, like the room's: on remembers the order and mixes what is still to come; off puts those songs
-  /// back in that order, with the ones added meanwhile after them.
+  /// Shuffle as a mode, like the room's: on remembers the order of the list and mixes what is still to come of it
+  /// (leaving songs added by hand in the order they were added); off puts the list's songs back in that order.
   void setShuffle(bool on) {
     final s = _snapshot;
     if (on == s.shuffle) return;
-    final queue = [...s.queue];
-    final first = s.finished ? 0 : s.index + 1;
-    if (on) {
-      _shuffleOrder = [for (final e in queue) e.id];
-      // After the queue finished only the mode is set: the list is mixed when it is played again
-      if (!s.finished && first < queue.length) {
-        final rest = queue.sublist(first)..shuffle(_random);
-        queue.replaceRange(first, queue.length, rest);
-      }
+    final List<QueueEntry> queue;
+    if (s.finished || s.queue.isEmpty) {
+      _shuffleOrder = on ? [for (final e in s.queue) if (!s.queued.contains(e.id) && !e.auto) e.id] : const [];
+      queue = s.queue;
     } else {
-      final rank = {for (final (i, id) in _shuffleOrder.indexed) id: i};
-      if (first < queue.length) {
-        final rest = queue.sublist(first);
-        // Those that had a place go back to it; the ones added meanwhile follow them in their own order
-        final placed = rest.where((e) => rank.containsKey(e.id)).toList()..sort((a, b) => rank[a.id]!.compareTo(rank[b.id]!));
-        queue.replaceRange(first, queue.length, [...placed, ...rest.where((e) => !rank.containsKey(e.id))]);
+      final before = s.queue.sublist(0, s.index + 1);
+      final after = s.queue.sublist(s.index + 1);
+      final waiting = [for (final e in after) if (s.queued.contains(e.id)) e];
+      final context = [for (final e in after) if (!s.queued.contains(e.id) && !e.auto) e];
+      final auto = [for (final e in after) if (e.auto) e];
+      final List<QueueEntry> mixed;
+      if (on) {
+        _shuffleOrder = [for (final e in s.queue) if (!s.queued.contains(e.id) && !e.auto) e.id];
+        mixed = [...context]..shuffle(_random);
+      } else {
+        final rank = {for (final (i, id) in _shuffleOrder.indexed) id: i};
+        _shuffleOrder = const [];
+        final placed = context.where((e) => rank.containsKey(e.id)).toList()
+          ..sort((a, b) => rank[a.id]!.compareTo(rank[b.id]!));
+        mixed = [...placed, ...context.where((e) => !rank.containsKey(e.id))];
       }
-      _shuffleOrder = const [];
+      queue = [...before, ...waiting, ...mixed, ...auto];
     }
     _update((s) => s.copyWith(shuffle: on, queue: queue));
     _preload();
@@ -501,7 +717,23 @@ class LocalSession {
   void save() {
     final s = _snapshot;
     final position = _loadedId != null ? player.positionMs() : _pendingPositionMs;
-    persist(SavedQueue(queue: s.queue, index: s.index, repeat: s.repeat, positionMs: position, finished: s.finished, shuffle: s.shuffle, shuffleOrder: _shuffleOrder));
+    final orderedQueued = [
+      for (final e in s.queue.skip(s.index + 1))
+        if (s.queued.contains(e.id)) e.id,
+    ];
+    persist(
+      SavedQueue(
+        queue: s.queue,
+        index: s.index,
+        repeat: s.repeat,
+        positionMs: position,
+        finished: s.finished,
+        shuffle: s.shuffle,
+        shuffleOrder: _shuffleOrder,
+        queued: orderedQueued,
+        label: s.label,
+      ),
+    );
   }
 
   // ------------------------------------------------------------------ playing
@@ -510,9 +742,26 @@ class LocalSession {
   void _step(int delta, {required bool auto}) {
     final s = _snapshot;
     if (s.queue.isEmpty) return;
+    if (auto && s.repeat == 'one') {
+      _load(s.queue[s.index], 0, play: true);
+      return;
+    }
     var target = s.finished && delta < 0 ? s.index : s.index + delta;
-    if (auto && s.repeat == 'one') target = s.index;
-    if (target >= s.queue.length) target = s.repeat == 'all' ? 0 : -1;
+    if (target >= s.queue.length) {
+      if (s.repeat != 'all') return _finish();
+      // Repeat all loops the list: songs added by hand that already played once do not play a second time
+      final contextOnly = [
+        for (final e in s.queue)
+          if (!_playedQueued.contains(e.id)) e.copyWith(queued: false),
+      ];
+      if (contextOnly.isNotEmpty && contextOnly.length < s.queue.length) {
+        _playedQueued.clear();
+        _update((s) => s.copyWith(queue: contextOnly, index: 0, queued: const {}, finished: false));
+        _load(contextOnly[0], 0, play: true);
+        return;
+      }
+      target = 0;
+    }
     if (target < 0) {
       if (delta < 0) {
         target = 0;
@@ -520,14 +769,18 @@ class LocalSession {
         return _finish();
       }
     }
-    _load(s.queue[target], 0, play: true);
+    final item = _placeTarget(target);
+    _load(item, 0, play: true);
   }
 
   /// Ran out of songs: nothing is current until play starts the list again.
   void _finish() {
     final last = _snapshot.queue.isEmpty ? null : _snapshot.queue.last;
     _stopPlayer();
-    _update((s) => s.copyWith(index: s.queue.length - 1, finished: true));
+    _update((s) {
+      final clean = [for (final e in s.queue) e.copyWith(auto: false, queued: false)];
+      return s.copyWith(queue: clean, index: max(clean.length - 1, 0), queued: const {}, finished: true);
+    });
     save();
     if (last != null) onQueueEnd(last);
   }
@@ -547,29 +800,38 @@ class LocalSession {
     _job?.cancel();
     _preloaded = null;
     _loadedId = null;
-    final at = _snapshot.queue.indexWhere((e) => e.id == item.id);
+    final s = _snapshot;
+    final at = s.queue.indexWhere((e) => e.id == item.id);
     if (at < 0) return;
+    var newQueued = s.queued;
+    if (s.queued.contains(item.id)) {
+      _playedQueued.add(item.id);
+      newQueued = {...s.queued}..remove(item.id);
+    }
+    final queue = [...s.queue];
+    if (queue[at].auto || queue[at].queued) queue[at] = queue[at].copyWith(auto: false, queued: false);
+    final loaded = queue[at];
     // The person sees the new song at once, and that it is on its way, not only when it has loaded
-    _update((s) => s.copyWith(index: at, finished: false, loading: play));
+    _update((s) => s.copyWith(queue: queue, index: at, queued: newQueued, finished: false, loading: play));
     _playOnLoad = play;
-    final again = _stuckVideoIds.contains(item.videoId);
+    final again = _stuckVideoIds.contains(loaded.videoId);
     _job = Job.launch((job) async {
       // A load that takes long is said to be slow, so that waiting does not look like nothing happening
       final slow = Job.launch((j) async {
         await j.delay(_slowLoad);
         if (_playOnLoad) {
-          _stuckVideoIds.add(item.videoId);
-          problem(Problem(ProblemKind.slow, item.title));
+          _stuckVideoIds.add(loaded.videoId);
+          problem(Problem(ProblemKind.slow, loaded.title));
         }
       });
       var retried = false;
       while (true) {
         try {
-          if (again || retried) player.refresh(item.videoId);
-          await job.guard(player.prepare(item, positionMs));
+          if (again || retried) player.refresh(loaded.videoId);
+          await job.guard(player.prepare(loaded, positionMs));
           slow.cancel();
-          _stuckVideoIds.remove(item.videoId);
-          _loadedId = item.id;
+          _stuckVideoIds.remove(loaded.videoId);
+          _loadedId = loaded.id;
           _pendingPositionMs = 0;
           _skippedInARow = 0;
           _update((s) => s.copyWith(loading: false));
@@ -581,14 +843,14 @@ class LocalSession {
           slow.cancel();
           rethrow;
         } catch (e) {
-          log("could not load '${item.title}': $e");
+          log("could not load '${loaded.title}': $e");
           // Nothing goes on loading in the background, and nothing starts later by itself
           player.stop();
           // A failure that is neither "YouTube will not give it out" nor "no network" is often a blip: the person who
           // wants to hear the song gets one more try from a new stream address before it counts as failed
           if (!retried && LoadFailure.of(e) == null && _playOnLoad) {
             retried = true;
-            log("trying '${item.title}' once more in ${retryAfter.inMilliseconds}ms");
+            log("trying '${loaded.title}' once more in ${retryAfter.inMilliseconds}ms");
             try {
               await job.delay(retryAfter);
             } on Cancelled {
@@ -598,16 +860,16 @@ class LocalSession {
             if (_playOnLoad) continue;
             // Paused meanwhile: there is nothing to tell, and play starts from a new address
             slow.cancel();
-            _stuckVideoIds.add(item.videoId);
+            _stuckVideoIds.add(loaded.videoId);
             _pendingPositionMs = positionMs;
             _update((s) => s.copyWith(loading: false));
             return;
           }
           slow.cancel();
-          _stuckVideoIds.add(item.videoId);
+          _stuckVideoIds.add(loaded.videoId);
           _pendingPositionMs = positionMs;
           _update((s) => s.copyWith(loading: false));
-          _loadFailed(item, e);
+          _loadFailed(loaded, e);
           return;
         }
       }
@@ -660,13 +922,21 @@ class LocalSession {
   void _onAdvanced() {
     final item = _preloaded;
     if (item == null) return;
-    final at = _snapshot.queue.indexWhere((e) => e.id == item.id);
+    final s = _snapshot;
+    final at = s.queue.indexWhere((e) => e.id == item.id);
     if (at < 0) return;
     _preloaded = null;
     _loadedId = item.id;
     _pendingPositionMs = 0;
     _recoveries = 0;
-    _update((s) => s.copyWith(index: at));
+    var newQueued = s.queued;
+    if (s.queued.contains(item.id)) {
+      _playedQueued.add(item.id);
+      newQueued = {...s.queued}..remove(item.id);
+    }
+    final queue = [...s.queue];
+    if (queue[at].auto || queue[at].queued) queue[at] = queue[at].copyWith(auto: false, queued: false);
+    _update((s) => s.copyWith(queue: queue, index: at, queued: newQueued));
     _preload();
     save();
   }
@@ -687,15 +957,49 @@ class LocalSession {
     _load(current, player.positionMs(), play: true);
   }
 
+  static List<QueueEntry> _normalize(List<QueueEntry> list, int index, Set<String> queuedIds, bool finished) {
+    if (list.isEmpty) return list;
+    if (finished) return [for (final e in list) e.copyWith(auto: false, queued: false)];
+    final before = [for (final e in list.take(index + 1)) e.copyWith(auto: false, queued: false)];
+    final after = list.skip(index + 1);
+    final tierQueued = [
+      for (final e in after)
+        if (queuedIds.contains(e.id)) e.copyWith(auto: false, queued: true),
+    ];
+    final tierContext = [
+      for (final e in after)
+        if (!queuedIds.contains(e.id) && !e.auto) e.copyWith(queued: false),
+    ];
+    final tierAuto = [
+      for (final e in after)
+        if (!queuedIds.contains(e.id) && e.auto) e.copyWith(queued: false),
+    ];
+    return [...before, ...tierQueued, ...tierContext, ...tierAuto];
+  }
+
   static LocalSnapshot _restore(SavedQueue? saved) {
     if (saved == null) return const LocalSnapshot();
-    final queue = saved.queue.length > maxQueue ? saved.queue.sublist(0, maxQueue) : saved.queue;
+    final raw = saved.queue.length > maxQueue ? saved.queue.sublist(0, maxQueue) : saved.queue;
+    final int index = saved.index.clamp(0, max(0, raw.length - 1));
+    final finished = saved.finished && raw.isNotEmpty;
+    final afterIds = finished ? const <String>{} : {for (final e in raw.skip(index + 1)) e.id};
+    final queued = finished
+        ? const <String>{}
+        : {
+            for (final id in saved.queued)
+              if (afterIds.contains(id)) id,
+          };
+    final queue = _normalize(raw, index, queued, finished);
+    final trimmed = saved.label?.trim();
+    final label = trimmed != null && trimmed.isNotEmpty && queue.isNotEmpty ? trimmed : null;
     return LocalSnapshot(
       queue: queue,
-      index: saved.index.clamp(0, max(0, queue.length - 1)),
+      index: index,
       repeat: saved.repeat == 'all' || saved.repeat == 'one' ? saved.repeat : 'off',
-      finished: saved.finished && queue.isNotEmpty,
+      finished: finished,
       shuffle: saved.shuffle,
+      queued: queued,
+      label: label,
     );
   }
 

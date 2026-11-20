@@ -248,15 +248,22 @@ abstract class Backend {
   /// Puts [track] on the queue. [source] says where it was chosen (see [ListenSource]): the home page's shelves
   /// say `shelf`, so the listen can be counted against them.
   Future<void> add(Track track, {bool playNext = false, String source = ListenSource.chosen});
-  Future<void> addMany(List<Track> tracks, {bool playNext = false, String source = ListenSource.chosen});
+  Future<void> addMany(List<Track> tracks, {bool playNext = false, bool queued = true, String source = ListenSource.chosen});
+
+  /// Outside a room: makes [tracks], a list a song was chosen from, the whole queue and plays song [start] of it, in one
+  /// step. In a room the queue is everybody's, so they are only added to it.
+  Future<void> playList(List<Track> tracks, {int start = 0, String? label, String source = ListenSource.chosen});
   Future<void> setRepeat(Repeat mode);
   Future<void> remove(String itemId);
 
   /// Puts [track], another release of the same song, in place of the queue item [itemId]; the one playing carries
   /// on from the same moment. In a room it changes for everybody.
   Future<void> swap(String itemId, Track track);
-  Future<void> move(String itemId, int toIndex);
+  Future<void> move(String itemId, int toIndex, {bool? queued});
   Future<void> clear();
+
+  /// Removes only the songs added to the personal queue by hand ("Next in queue"), leaving the playing list.
+  Future<void> clearQueued();
 
   /// Videos matching [query]; with [songsOnly] just what YouTube Music lists as songs. Up to [limit] of them, over as
   /// many pages of the search as it takes (a page when null).
@@ -843,10 +850,20 @@ class NativeBackend implements Backend {
       _call('add', {...track.toMap(), 'next': playNext, 'source': source});
 
   @override
-  Future<void> addMany(List<Track> tracks, {bool playNext = false, String source = ListenSource.chosen}) =>
+  Future<void> addMany(List<Track> tracks, {bool playNext = false, bool queued = true, String source = ListenSource.chosen}) =>
       _call('addMany', {
         'tracks': [for (final t in tracks) t.toMap()],
         'next': playNext,
+        if (!queued) 'queued': false,
+        'source': source,
+      });
+
+  @override
+  Future<void> playList(List<Track> tracks, {int start = 0, String? label, String source = ListenSource.chosen}) =>
+      _call('playList', {
+        'tracks': [for (final t in tracks) t.toMap()],
+        'start': start,
+        'label': ?label,
         'source': source,
       });
 
@@ -861,11 +878,14 @@ class NativeBackend implements Backend {
       _call('swap', {'id': itemId, 'track': track.toMap()});
 
   @override
-  Future<void> move(String itemId, int toIndex) =>
-      _call('move', {'id': itemId, 'to': toIndex});
+  Future<void> move(String itemId, int toIndex, {bool? queued}) =>
+      _call('move', {'id': itemId, 'to': toIndex, 'queued': ?queued});
 
   @override
   Future<void> clear() => _call('clear');
+
+  @override
+  Future<void> clearQueued() => _call('clearQueued');
 
   @override
   Future<void> shuffle() => _call('shuffle');

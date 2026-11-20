@@ -313,8 +313,7 @@ void main() {
     expect(
       backend.calls,
       containsAllInOrder([
-        'clear',
-        'addMany ${beck.videoId} next=false source=shelf',
+        'playList ${beck.videoId} start=0 label=Radio · Loser source=shelf',
         'radio ${beck.videoId}',
       ]),
     );
@@ -366,8 +365,7 @@ void main() {
     expect(
       backend.calls,
       containsAllInOrder([
-        'clear',
-        'addMany ${anna.videoId},r1aaaaaaaaa next=false source=shelf',
+        'playList ${anna.videoId},r1aaaaaaaaa start=0 label=Adele Mix source=shelf',
       ]),
     );
   });
@@ -389,7 +387,7 @@ void main() {
       expect(find.text('Couldn’t start the mix'), findsOneWidget);
       expect(
         backend.calls,
-        containsAllInOrder(['clear', 'addMany ${anna.videoId} next=false source=shelf']),
+        containsAllInOrder(['playList ${anna.videoId} start=0 label=Adele Mix source=shelf']),
       );
     },
   );
@@ -536,7 +534,7 @@ void main() {
     await tester.pump();
     expect(
       backend.calls,
-      containsAllInOrder(['clear', 'addMany pl2aaaaaaaa next=false']),
+      containsAllInOrder(['playList pl1aaaaaaaa,pl2aaaaaaaa start=1 label=Chill Mix']),
     );
     await tester.pumpAndSettle();
   });

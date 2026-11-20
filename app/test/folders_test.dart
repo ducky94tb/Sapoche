@@ -126,12 +126,10 @@ void main() {
         backend.calls.clear();
         await tester.tap(find.text('Play'));
         await tester.pumpAndSettle();
-        final sent = backend.calls
-            .where((c) => c == 'clear' || c.startsWith('addMany'))
-            .toList();
-        expect(sent.first, 'clear');
+        final sent = backend.calls.where((c) => c.startsWith('playList')).toList();
+        expect(sent.length, 1);
         // Gym was changed after Trip, so it is listed first and plays first
-        final ids = sent.last.split(' ')[1].split(',');
+        final ids = sent.single.split(' ')[1].split(',');
         expect(ids.length, 5);
         expect(ids.take(3).every((id) => id.startsWith('g')), isTrue);
         expect(ids.skip(3).every((id) => id.startsWith('t')), isTrue);
@@ -148,7 +146,7 @@ void main() {
       await tester.tap(find.byTooltip('Shuffle'));
       await tester.pumpAndSettle();
       final ids = backend.calls
-          .firstWhere((c) => c.startsWith('addMany'))
+          .firstWhere((c) => c.startsWith('playList'))
           .split(' ')[1]
           .split(',');
       expect(ids.length, 60);
@@ -173,7 +171,7 @@ void main() {
       await tester.tap(find.byTooltip('Shuffle'));
       await tester.pumpAndSettle();
       final ids = backend.calls
-          .firstWhere((c) => c.startsWith('addMany'))
+          .firstWhere((c) => c.startsWith('playList'))
           .split(' ')[1]
           .split(',');
       expect(ids.length, 1000);

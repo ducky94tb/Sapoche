@@ -493,7 +493,7 @@ final class GroupController {
                     // Carrying on only adds: what has been played makes room when the new songs would not fit
                     self.local.dropPlayed(self.local.snapshot.value.queue.count + more.count - LocalSession.maxQueue)
                     self.sources.mark(more.map(\.videoId), source: ListenSource.auto)
-                    self.local.add(more, next: false)
+                    self.local.add(more, next: false, queued: false, auto: true)
                 } catch is CancellationError {
                     return
                 } catch {
@@ -697,11 +697,12 @@ final class GroupController {
                     try await self.time.sleep(ms: Self.radioWaitStepMs)
                 }
                 let more = try await self.moreLike([videoId], [videoId], Self.radioCount)
-                let queue = self.local.snapshot.value.queue
-                if more.isEmpty || self.session != nil || queue.count != 1 || queue[0].videoId != videoId { return }
+                let snap = self.local.snapshot.value
+                let contextOnly = snap.queue.filter { !snap.queued.contains($0.id) }
+                if more.isEmpty || self.session != nil || contextOnly.count != 1 || contextOnly[0].videoId != videoId { return }
                 EventLog.d("local", "radio adds \(more.count) songs like \(videoId)")
                 self.sources.mark(more.map(\.videoId), source: ListenSource.auto)
-                self.local.add(more, next: false)
+                self.local.add(more, next: false, queued: false)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -1100,6 +1101,7 @@ final class GroupController {
     }
 
     @discardableResult func requestClearQueue() -> Bool { onQueue({ $0.clear() }) { send(Wire.queueClear()) } }
+    @discardableResult func requestClearQueued() -> Bool { onQueue({ $0.clearQueued() }) { false } }
     @discardableResult func requestShuffle() -> Bool { onQueue({ $0.shuffle() }) { send(Wire.queueShuffle()) } }
     /// Shuffle as a mode. A server older than protocol 11 has none, so there it mixes the queue once, as it always did.
     @discardableResult func requestShuffleMode(_ on: Bool) -> Bool {
@@ -1109,12 +1111,20 @@ final class GroupController {
         }
     }
     @discardableResult func requestRepeat(_ mode: String) -> Bool { onQueue({ $0.setRepeat(mode) }) { send(Wire.repeatMode(mode)) } }
-    @discardableResult func requestAddMany(_ tracks: [TrackRef], playNext: Bool, source: String = ListenSource.chosen) -> Bool {
+    @discardableResult func requestAddMany(_ tracks: [TrackRef], playNext: Bool, source: String = ListenSource.chosen, queued: Bool = true) -> Bool {
         sources.mark(tracks.map(\.videoId), source: source)
-        return onQueue({ $0.add(tracks, next: playNext) }) {
+        return onQueue({ $0.add(tracks, next: playNext, queued: queued) }) {
             // What is waiting in the room's queue is not added twice
             let fresh = Queues.fresh(tracks, queue: queue(), index: session?.snapshot.value.state?.index ?? 0)
             return fresh.isEmpty || send(Wire.queueAddMany(fresh, playNext: playNext))
+        }
+    }
+    /// Outside a room [tracks] become the queue and play from song [start]; a room's queue is shared, so they are only added to it.
+    @discardableResult func requestPlayList(_ tracks: [TrackRef], start: Int, label: String? = nil, source: String = ListenSource.chosen) -> Bool {
+        sources.mark(tracks.map(\.videoId), source: source)
+        return onQueue({ $0.playList(tracks, start: start, label: label) }) {
+            let fresh = Queues.fresh(tracks, queue: queue(), index: session?.snapshot.value.state?.index ?? 0)
+            return fresh.isEmpty || send(Wire.queueAddMany(fresh, playNext: false))
         }
     }
     /// Plays [track], another release of the song, in place of the queue item [itemId]. What is playing carries on while
@@ -1129,7 +1139,7 @@ final class GroupController {
         return true
     }
     @discardableResult func requestRemove(_ itemId: String) -> Bool { onQueue({ $0.remove(itemId) }) { send(Wire.queueRemove(itemId)) } }
-    @discardableResult func requestMove(_ itemId: String, _ toIndex: Int) -> Bool { onQueue({ $0.move(itemId, toIndex: toIndex) }) { send(Wire.queueMove(itemId, toIndex: toIndex)) } }
+    @discardableResult func requestMove(_ itemId: String, _ toIndex: Int, queued: Bool? = nil) -> Bool { onQueue({ $0.move(itemId, toIndex: toIndex, queued: queued) }) { send(Wire.queueMove(itemId, toIndex: toIndex)) } }
 
     // Only meaningful in a room
     @discardableResult func requestKick(_ memberId: String) -> Bool { send(Wire.kick(memberId)) }
