@@ -41,9 +41,11 @@ class AudioOutputs(private val context: Context) {
     }
 
     private val devices = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = refresh()
-        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) = refresh()
+        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = refreshSettling()
+        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) = refreshSettling()
     }
+
+    private val settle = Runnable { refresh() }
 
     /** Kept to be let go of; a `MediaRouter2.ControllerCallback`, which Android 10 and older do not have. */
     private var routes: Any? = null
@@ -70,6 +72,17 @@ class AudioOutputs(private val context: Context) {
         _volume.value = readVolume()
     }
 
+    /**
+     * A device that has just connected is announced before the system has routed the music to it: read at once, the
+     * phone's speaker is still where the sound goes, and nothing tells it again. So it is read again a few times while
+     * the routing settles.
+     */
+    private fun refreshSettling() {
+        refresh()
+        main.removeCallbacks(settle)
+        for (delay in SETTLE_MS) main.postDelayed(settle, delay)
+    }
+
     /** Sets the volume of the music to [level], 0 to 1, as the buttons of the phone would, without the system's slider. */
     fun setVolume(level: Float) {
         val top = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
@@ -84,6 +97,7 @@ class AudioOutputs(private val context: Context) {
 
     fun release() {
         audio.unregisterAudioDeviceCallback(devices)
+        main.removeCallbacks(settle)
         context.contentResolver.unregisterContentObserver(volumeWatch)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             (routes as? MediaRouter2.ControllerCallback)?.let { MediaRouter2.getInstance(context).unregisterControllerCallback(it) }
@@ -111,7 +125,9 @@ class AudioOutputs(private val context: Context) {
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build()
-            audio.getAudioDevicesForAttributes(music).firstOrNull()
+            // Empty while no stream is open on some phones, though a headset is connected: then it is as before Android 13
+            audio.getAudioDevicesForAttributes(music).minByOrNull { rank(it.type) }
+                ?: audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).minByOrNull { rank(it.type) }
         } else {
             // Before that the system does not say; what is plugged in or paired is where it goes, the speaker otherwise
             audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).minByOrNull { rank(it.type) }
@@ -135,5 +151,10 @@ class AudioOutputs(private val context: Context) {
         "headphones" -> 1
         "other" -> 2
         else -> 3
+    }
+
+    private companion object {
+        /** When the routing is read again after a device came or went, in milliseconds. */
+        val SETTLE_MS = longArrayOf(400, 1200, 3000)
     }
 }

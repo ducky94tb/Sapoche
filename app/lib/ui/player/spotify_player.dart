@@ -141,6 +141,9 @@ class _TallState extends State<_Tall> {
     final theme = Theme.of(context).textTheme;
     final panel = widget.panel;
     final current = widget.current;
+    // Beside the pages the card is narrow, and the cover is all it has to show
+    final docked = PlayerLookScope.dockedOf(context);
+    final margin = docked ? playerDockMargin : _margin;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: playerColumnMax),
@@ -212,10 +215,10 @@ class _TallState extends State<_Tall> {
                     key: const ValueKey('cover'),
                     controller: _c,
                     current: current,
-                    margin: _margin,
+                    margin: margin,
                     showMore: false,
                     // The cover is as wide as the title: what the rest of the face costs is kept to a little
-                    gap: 14,
+                    gap: docked ? 10 : 14,
                     // The running line of the lyrics stands between the cover and the title, and costs its height
                     bottom: _c.snapshot.video ? 4 : 4 + 28 + 24,
                     betweenGap: 24,
@@ -235,7 +238,7 @@ class _TallState extends State<_Tall> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: _margin),
+              padding: EdgeInsets.symmetric(horizontal: margin),
               child: Column(
                 children: [
                   const SizedBox(height: 2),
@@ -252,7 +255,7 @@ class _TallState extends State<_Tall> {
                     const SizedBox(height: 6),
                     RoomStrip(controller: _c),
                   ],
-                  const SizedBox(height: 12),
+                  SizedBox(height: docked ? 4 : 12),
                 ],
               ),
             ),

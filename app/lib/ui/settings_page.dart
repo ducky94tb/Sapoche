@@ -943,6 +943,9 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
   ScrobbleState _state = const ScrobbleState();
   Timer? _refresh;
 
+  /// The token has gone to ListenBrainz and the answer has not come back: on a slow network that takes a while.
+  bool _connecting = false;
+
   @override
   void initState() {
     super.initState();
@@ -974,10 +977,14 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
       maxLength: 80,
       capitalization: TextCapitalization.none,
     );
-    if (token == null || token.trim().isEmpty) return;
+    if (token == null || token.trim().isEmpty || _connecting) return;
+    setState(() => _connecting = true);
     final state = await widget.room.scrobbleConnect(token);
     if (!mounted) return;
-    setState(() => _state = state);
+    setState(() {
+      _state = state;
+      _connecting = false;
+    });
     _say(switch (state.result) {
       'ok' => S.scrobbleConnectedAs(state.user ?? ''),
       'invalid' => S.scrobbleBadToken,
@@ -1026,7 +1033,9 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final icon = Icon(Icons.edit_outlined, size: 18, color: p.textSecondary);
+    final icon = _connecting
+        ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+        : Icon(Icons.edit_outlined, size: 18, color: p.textSecondary);
     if (!_state.connected) {
       return _Group(
         footer: S.scrobbleHelp,
@@ -1047,9 +1056,9 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
           _Row(
             key: const ValueKey('scrobble-paste'),
             label: S.scrobbleEnterToken,
-            value: S.scrobbleNotConnected,
+            value: _connecting ? S.scrobbleConnecting : S.scrobbleNotConnected,
             trailing: icon,
-            onTap: _connect,
+            onTap: _connecting ? null : _connect,
           ),
         ],
       );
@@ -1071,7 +1080,7 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
                 color: _state.reconnect ? p.error : p.primary,
               ),
               trailing: _state.reconnect ? icon : null,
-              onTap: _state.reconnect ? _connect : null,
+              onTap: _state.reconnect && !_connecting ? _connect : null,
             ),
             if (_state.pending > 0)
               _Row(
@@ -2585,17 +2594,31 @@ class _SettingQualityChips extends StatelessWidget {
       (h) => h <= snapshot.videoHeight,
       orElse: () => options.first,
     );
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+    // The heights share the width evenly, in one row or, when there are many, in rows of about the same count
+    final rows = (options.length / 4).ceil();
+    final perRow = (options.length / rows).ceil();
+    return Column(
       children: [
-        for (final h in options)
-          ChoiceChip(
-            key: ValueKey('setting-quality-$h'),
-            label: Text(qualityName(h)),
-            selected: chosen == h,
-            onSelected: (_) => onPick(h),
+        for (var start = 0; start < options.length; start += perRow) ...[
+          if (start > 0) const SizedBox(height: 8),
+          Row(
+            children: [
+              for (final h in options.skip(start).take(perRow)) ...[
+                if (h != options[start]) const SizedBox(width: 8),
+                Expanded(
+                  child: ChoiceChip(
+                    key: ValueKey('setting-quality-$h'),
+                    label: FittedBox(fit: BoxFit.scaleDown, child: Text(qualityName(h))),
+                    // The tick would take the room of the label in a chip that is a fourth of the width
+                    showCheckmark: false,
+                    selected: chosen == h,
+                    onSelected: (_) => onPick(h),
+                  ),
+                ),
+              ],
+            ],
           ),
+        ],
       ],
     );
   }

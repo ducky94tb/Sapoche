@@ -47,8 +47,8 @@ class PlayRow extends StatelessWidget {
     this.inline = false,
   });
 
-  /// Beside a cover, on a wide screen: the buttons keep their own size and start at the left, instead of Play taking
-  /// the width of the page.
+  /// Beside a cover, on a wide screen: the row is no wider than [_inlineMax], and starts at the left, instead of Play
+  /// taking the width of the page.
   final bool inline;
 
   final VoidCallback onPlay;
@@ -59,6 +59,12 @@ class PlayRow extends StatelessWidget {
   /// Keeps the page's songs on the phone (an `OfflineButton`).
   final Widget? download;
 
+  /// The widest an [inline] row gets: Play takes what the round buttons leave, up to this.
+  static const _inlineMax = 420.0;
+
+  /// A column narrower than this puts the round buttons under Play.
+  static const _stackBelow = 380.0;
+
   static const _spinner = SizedBox.square(
     dimension: 20,
     child: CircularProgressIndicator(strokeWidth: 2),
@@ -67,40 +73,73 @@ class PlayRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final play = FilledButton.icon(
+    final shuffle = IconButton(
+      onPressed: onShuffle,
+      tooltip: S.shuffle,
+      style: roundButtonStyle(context),
+      icon: working == PlayWorking.shuffle
+          ? _spinner
+          : const Icon(Icons.shuffle_rounded),
+    );
+    FilledButton playButton({required bool narrow}) => FilledButton.icon(
       onPressed: onPlay,
       style: FilledButton.styleFrom(
         backgroundColor: p.text,
         foregroundColor: p.base,
         shape: const StadiumBorder(),
         // Beside a cover with four buttons, the narrower Play keeps them in the column at large text
-        padding: inline ? EdgeInsets.symmetric(horizontal: download == null ? 32 : 20) : null,
+        padding: narrow ? EdgeInsets.symmetric(horizontal: download == null ? 32 : 20) : null,
       ),
       icon: working == PlayWorking.play
           ? _spinner
           : const Icon(Icons.play_arrow_rounded),
-      label: Text(S.play),
+      // In the narrow column beside a cover Play may be given less than its words: they shrink rather than overflow
+      label: narrow ? FittedBox(fit: BoxFit.scaleDown, child: Text(S.play)) : Text(S.play),
     );
+    Widget buttons({required bool narrow}) => Row(
+      children: [
+        shuffle,
+        const SizedBox(width: 12),
+        Expanded(child: playButton(narrow: narrow)),
+        if (download != null) ...[const SizedBox(width: 12), download!],
+        if (more != null) ...[const SizedBox(width: 12), more!],
+      ],
+    );
+    if (!inline) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(24, 18, 24, 4),
+        child: buttons(narrow: false),
+      );
+    }
     return Padding(
-      padding: inline
-          ? const EdgeInsets.only(top: 18)
-          : const EdgeInsets.fromLTRB(24, 18, 24, 4),
-      child: Row(
-        mainAxisSize: inline ? MainAxisSize.min : MainAxisSize.max,
-        children: [
-          IconButton(
-            onPressed: onShuffle,
-            tooltip: S.shuffle,
-            style: roundButtonStyle(context),
-            icon: working == PlayWorking.shuffle
-                ? _spinner
-                : const Icon(Icons.shuffle_rounded),
-          ),
-          const SizedBox(width: 12),
-          if (inline) play else Expanded(child: play),
-          if (download != null) ...[const SizedBox(width: 12), download!],
-          if (more != null) ...[const SizedBox(width: 12), more!],
-        ],
+      padding: const EdgeInsets.only(top: 18),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _inlineMax),
+        child: LayoutBuilder(
+          builder: (context, box) {
+            // Four buttons in a column as narrow as the cover leave Play little: it takes the whole width, and the
+            // round ones go under it. Not on a phone on its side, which has no height to spare
+            final stacked =
+                box.maxWidth < _stackBelow &&
+                (download != null || more != null) &&
+                MediaQuery.sizeOf(context).height >= 480;
+            if (!stacked) return buttons(narrow: true);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                playButton(narrow: false),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    shuffle,
+                    if (download != null) ...[const SizedBox(width: 12), download!],
+                    if (more != null) ...[const SizedBox(width: 12), more!],
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

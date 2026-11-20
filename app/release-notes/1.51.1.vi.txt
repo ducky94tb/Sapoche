@@ -1,0 +1,6 @@
+Bìa lớn hơn trên tablet, Cài đặt gọn hơn
+- Trên tablet, player nằm cạnh trang nay cho bìa nhiều chỗ hơn, và kiểu Tràn bìa không còn lộ cạnh vuông với những bài có ảnh nằm trong khung đen.
+- Ở trang rộng, nút Play của playlist, album hay nghệ sĩ chiếm cả bề ngang thay vì bị các nút bên cạnh chèn ép.
+- Cài đặt: ghi chú dưới mỗi mục ngắn hơn, và các mức chất lượng hình chia đều bề ngang.
+- Kết nối ListenBrainz nay hiện đang xử lý trong lúc chờ mạng.
+- Android 15: nút đầu ra nay đổi theo thiết bị Bluetooth sau khi nối, thay vì cứ hiện loa điện thoại.

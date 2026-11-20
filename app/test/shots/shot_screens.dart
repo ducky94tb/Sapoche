@@ -260,6 +260,12 @@ final shotScreens = <ShotScreen>[
       await _tab(t, S.tabLibrary);
       await _tab(t, 'Road trip');
     }),
+  // The pages beside the docked player: a playlist, with Play and its round buttons in the room that is left
+  ShotScreen('playlist-dock', windows: shotDockPages, listen: true, prepare: (b) => _keptPlaylist(b, kept: true, done: 2), (t, b) async {
+    await _playing(t, b);
+    await _tab(t, S.tabLibrary);
+    await _tab(t, 'Road trip');
+  }),
   ShotScreen('playlist-offline-stop', prepare: (b) => _keptPlaylist(b, kept: true, done: 5), (t, b) async {
     await _state(t, b, const RoomSnapshot());
     await _tab(t, S.tabLibrary);
@@ -360,6 +366,19 @@ final shotScreens = <ShotScreen>[
     await t.tap(find.byKey(const ValueKey('settings-scrobble')));
     await _settle(t);
   }),
+  // The heights of the picture, shared across the width, and the notes under the cards
+  ShotScreen('settings-video', windows: const [ShotSize('w411', 411, 914)], (t, b) async {
+    await _state(t, b, const RoomSnapshot());
+    await t.tap(find.text(S.tabHome));
+    await _settle(t);
+    await _openSettings(t);
+    await _settle(t);
+    await t.tap(find.byKey(const ValueKey('settings-playback')));
+    await _settle(t);
+    await t.scrollUntilVisible(find.byKey(const ValueKey('setting-quality-720')), 300);
+    await t.drag(find.byType(Scrollable).last, const Offset(0, -150));
+    await _settle(t);
+  }),
   ShotScreen('settings-equalizer', (t, b) async {
     await _state(t, b, const RoomSnapshot());
     await t.tap(find.text(S.tabHome));
@@ -427,7 +446,7 @@ List<ShotScreen> _dockScreens() => [
     (PlayerStyle.spotify, '-spotify'),
     (PlayerStyle.appleMusic, '-apple'),
   ]) ...[
-    ShotScreen('player-dock$suffix', style: style, windows: shotDock, listen: true, (t, b) async {
+    ShotScreen('player-dock$suffix', style: style, windows: shotDock, prepare: (b) => b.lyricsResult = lyricsData, listen: true, (t, b) async {
       await _playing(t, b);
     }),
     ShotScreen('player-dock-queue$suffix', style: style, windows: shotDock, listen: true, (t, b) async {

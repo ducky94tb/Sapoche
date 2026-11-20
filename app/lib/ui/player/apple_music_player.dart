@@ -331,14 +331,23 @@ class _FullCoverState extends State<_FullCover> {
                   ).createShader(rect),
                   child: CoverSlot(
                     controller: sheet,
-                    child: Artwork(
-                      key: sheet.pageCover,
-                      url: current.thumb,
-                      size: height,
-                      width: box.maxWidth,
-                      radius: 0,
-                      sharp: true,
-                      crossfade: true,
+                    // A box wider than tall (the card of a tablet) shows the picture square, as wide as the box and
+                    // cut at the top and foot: a wide crop of a square cover held in the black of a 16:9 thumbnail
+                    // shows the black at the sides, and the square's edges
+                    child: ClipRect(
+                      child: OverflowBox(
+                        minHeight: max(height, box.maxWidth),
+                        maxHeight: max(height, box.maxWidth),
+                        child: Artwork(
+                          key: sheet.pageCover,
+                          url: current.thumb,
+                          size: max(height, box.maxWidth),
+                          width: box.maxWidth,
+                          radius: 0,
+                          sharp: true,
+                          crossfade: true,
+                        ),
+                      ),
                     ),
                   ),
                 ),

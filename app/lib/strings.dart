@@ -344,8 +344,8 @@ abstract final class S {
     'Trình duyệt chưa đồng ý. Có thể nó sẽ đồng ý khi trang được cài hoặc dùng thường xuyên hơn.',
   );
   static String get browserStorageHelp => _t(
-    'Your library, queue and settings are kept in this browser, and nowhere else. A browser may clear them when the device runs short of space, or when its site data is cleared. Songs are not saved here: they are streamed from YouTube each time.',
-    'Thư viện, hàng đợi và cài đặt được giữ trong trình duyệt này, không ở đâu khác. Trình duyệt có thể xóa chúng khi máy thiếu chỗ, hoặc khi bạn xóa dữ liệu trang. Bài hát không được lưu ở đây: mỗi lần nghe đều phát trực tiếp từ YouTube.',
+    'Your library, queue and settings stay in this browser only, and are lost if the browser runs short of space or site data is cleared. Songs are streamed, not saved.',
+    'Thư viện, hàng đợi và cài đặt chỉ nằm trong trình duyệt này, và mất nếu trình duyệt thiếu chỗ hoặc bạn xóa dữ liệu trang. Bài hát được phát trực tiếp, không lưu.',
   );
   static String get webQualityHelp => _t(
     'YouTube picks the quality of the sound in a browser, by your connection. It cannot be set here.',
@@ -878,12 +878,12 @@ abstract final class S {
   static String get encryptionTitle =>
       _t('End-to-end encrypted chat', 'Chat mã hoá đầu cuối');
   static String get encryptionOffHelp => _t(
-    'Only people with the invitation link can read the messages. The server cannot, nor the pictures and the photo behind the chat. The room name, the queue and profile pictures are not encrypted.',
-    'Chỉ người có liên kết mời đọc được tin nhắn. Máy chủ cũng không đọc được, kể cả ảnh gửi trong chat và ảnh nền chat. Tên phòng, hàng đợi và ảnh đại diện thì không được mã hoá.',
+    'Only people with the invitation link can read the messages and photos in the chat, not even the server. Room name, queue and profile pictures are not encrypted.',
+    'Chỉ người có liên kết mời đọc được tin nhắn và ảnh trong chat, máy chủ cũng không. Tên phòng, hàng đợi và ảnh đại diện không được mã hoá.',
   );
   static String get encryptionOnHelp => _t(
-    'Only people with the invitation link can read the messages. The server cannot, nor the pictures and the photo behind the chat, and it cannot be turned off. The room name, the queue and profile pictures are not encrypted.',
-    'Chỉ người có liên kết mời đọc được tin nhắn. Máy chủ không đọc được, kể cả ảnh gửi trong chat và ảnh nền chat, và không thể tắt. Tên phòng, hàng đợi và ảnh đại diện thì không được mã hoá.',
+    'Only people with the invitation link can read the messages and photos in the chat, not even the server; it cannot be turned off. Room name, queue and profile pictures are not encrypted.',
+    'Chỉ người có liên kết mời đọc được tin nhắn và ảnh trong chat, máy chủ cũng không; không thể tắt. Tên phòng, hàng đợi và ảnh đại diện không được mã hoá.',
   );
   static String get encryptionShort => _t(
     'Only people with the invitation link can read it.',
@@ -1121,8 +1121,8 @@ abstract final class S {
       _t('about 128 kbps', 'khoảng 128 kbps');
   static String get audioQualityMaxRate => _t('up to 160 kbps', 'đến 160 kbps');
   static String get audioQualityHelp => _t(
-    'Applies from the next song. YouTube offers nothing above about 160 kbps, so Highest is the best there is. Songs already saved on this phone keep the quality they were fetched in until they are cleared in Storage, and downloaded songs stay as they were downloaded. An iPhone plays only AAC, so some steps can sound the same there. This is the most: when the network is weak, songs are fetched in a lower quality by themselves.',
-    'Áp dụng từ bài sau. YouTube không có gì cao hơn khoảng 160 kbps, nên Cao nhất là mức tốt nhất có thể. Bài đã lưu sẵn trên máy giữ chất lượng lúc lấy cho đến khi xóa ở Bộ nhớ, và bài đã tải về giữ nguyên như lúc tải. iPhone chỉ phát được AAC nên ở đó vài mức có thể nghe giống nhau. Đây là mức cao nhất: khi mạng yếu, bài được lấy ở chất lượng thấp hơn một cách tự động.',
+    'Applies from the next song. YouTube has nothing above about 160 kbps. Songs already saved or downloaded keep their quality. On a weak network it drops by itself.',
+    'Áp dụng từ bài sau. YouTube không có mức nào cao hơn khoảng 160 kbps. Bài đã lưu hoặc đã tải giữ chất lượng cũ. Mạng yếu thì chất lượng tự hạ.',
   );
 
   static String get normalizeVolume =>
@@ -1133,8 +1133,8 @@ abstract final class S {
     'Bài to được hạ xuống để các bài nghe to bằng nhau.',
   );
   static String get normalizeVolumeHelp => _t(
-    'Loud songs are turned down to the level YouTube plays them at, so that songs sound about equally loud. Quiet songs are left as they are. Turn it off to hear songs as they were mastered. Songs from files on this phone are not changed.',
-    'Bài to được hạ xuống đúng mức YouTube vẫn phát, để các bài nghe to bằng nhau. Bài nhỏ giữ nguyên. Tắt đi để nghe bài đúng như lúc được thu. Bài từ tệp trên máy không bị đổi.',
+    'Loud songs are turned down to the level YouTube plays them at; quiet ones stay as they are. Files on this phone are not changed.',
+    'Bài to được hạ xuống mức YouTube vẫn phát; bài nhỏ giữ nguyên. Tệp trên máy không bị đổi.',
   );
 
   static String get crossfade => _t('Soft song change', 'Chuyển bài mềm');
@@ -1142,8 +1142,8 @@ abstract final class S {
   static String crossfadeSeconds(int seconds) =>
       _t('$seconds s', '$seconds giây');
   static String get crossfadeHelp => _t(
-    'The end of a song fades out and the start of the next one fades in. Songs never overlap, so everyone in a room stays in step. It does not apply when you press Next or choose a song, to songs shorter than three times this long, or while the video is shown.',
-    'Cuối bài nhỏ dần, đầu bài kế to dần. Hai bài không chồng lên nhau nên cả phòng vẫn cùng nhịp. Không áp dụng khi bấm Next hoặc chọn bài, với bài ngắn hơn ba lần thời gian này, hay khi đang hiện video.',
+    'The end of a song fades out and the next fades in, without overlapping, so a room stays in step. Not used for Next, short songs or video.',
+    'Cuối bài nhỏ dần, đầu bài kế to dần, không chồng nhau nên cả phòng vẫn cùng nhịp. Không áp dụng khi bấm Next, bài ngắn hoặc khi hiện video.',
   );
 
   static String get equalizer => _t('Equalizer', 'Bộ chỉnh âm');
@@ -1168,12 +1168,12 @@ abstract final class S {
   static String get eqSystem =>
       _t('Open the equalizer of this phone', 'Mở bộ chỉnh âm của điện thoại');
   static String get eqHelp => _t(
-    'Six bands, up to 12 dB each way. It is only on this phone and changes nothing for the others in a room. Boosting turns the whole sound down a little first, so that loud songs do not crackle.',
-    'Sáu dải, mỗi dải tăng hoặc giảm tối đa 12 dB. Chỉ có trên điện thoại này, không ảnh hưởng người khác trong phòng. Khi tăng, cả bài được hạ nhẹ trước để bài to không bị vỡ tiếng.',
+    'Six bands, up to 12 dB each way, on this phone only. Boosting turns the whole sound down a little first, so that it does not crackle.',
+    'Sáu dải, mỗi chiều tối đa 12 dB, chỉ trên máy này. Khi tăng, cả bài được hạ nhẹ trước để không vỡ tiếng.',
   );
   static String get eqHelpIos => _t(
-    'On iPhone it works for songs played from a file on the phone (downloaded, or already saved). The song that starts a listen before it is saved, and videos, play without it.',
-    'Trên iPhone chỉ có với bài phát từ tệp trên máy (đã tải, hoặc đã lưu). Bài mở đầu khi chưa lưu và video phát không qua bộ chỉnh âm.',
+    'On iPhone only songs played from a file (downloaded or saved) go through it; videos do not.',
+    'Trên iPhone chỉ bài phát từ tệp (đã tải hoặc đã lưu) đi qua bộ chỉnh âm; video thì không.',
   );
 
   // ListenBrainz
@@ -1182,14 +1182,15 @@ abstract final class S {
   static String scrobbleConnectedAs(String user) =>
       _t('Connected as $user', 'Đã kết nối: $user');
   static String get scrobbleHelp => _t(
-    'Sends the songs you listen to on this phone to your ListenBrainz account, so they show up in your listening history there. Nothing is sent until you connect. Only the song goes out, nothing about the room or who is in it. Your listens may be public on ListenBrainz.',
-    'Gửi các bài bạn nghe trên điện thoại này lên tài khoản ListenBrainz của bạn, để chúng hiện trong lịch sử nghe ở đó. Chưa kết nối thì không gửi gì. Chỉ bài hát được gửi đi, không có gì về phòng hay người trong phòng. Lượt nghe của bạn có thể công khai trên ListenBrainz.',
+    'Sends the songs you play on this phone to your ListenBrainz account. Nothing is sent until you connect, and nothing about the room. Listens may be public there.',
+    'Gửi các bài bạn nghe trên máy này lên tài khoản ListenBrainz. Chưa kết nối thì không gửi gì, và không có gì về phòng. Lượt nghe có thể công khai ở đó.',
   );
   static String get scrobbleGetToken =>
       _t('Open ListenBrainz to get your token', 'Mở ListenBrainz để lấy token');
   static String get scrobbleEnterToken =>
       _t('Paste your token', 'Dán token của bạn');
   static String get scrobbleTokenHint => _t('User token', 'Token người dùng');
+  static String get scrobbleConnecting => _t('Connecting…', 'Đang kết nối…');
   static String get scrobbleBadToken => _t(
     'That token is not valid. Copy it again from your ListenBrainz settings.',
     'Token không hợp lệ. Hãy sao chép lại từ trang cài đặt ListenBrainz của bạn.',
@@ -1222,12 +1223,12 @@ abstract final class S {
   static String get videoSection => _t('Video', 'Video');
   static String get videoQuality => _t('Picture quality', 'Chất lượng hình');
   static String get videoQualityHelp => _t(
-    'A change applies at once, without stopping the song. This is the most: on a slow connection the picture is lowered by itself to keep up. Higher quality uses more data; above 1080p only on Wi-Fi. Music keeps playing when the screen is off; the picture does not.',
-    'Đổi là áp dụng ngay, bài không dừng. Đây là mức cao nhất: khi mạng chậm, hình tự hạ xuống để theo kịp. Chất lượng cao hơn tốn nhiều dữ liệu hơn; trên 1080p chỉ khi dùng Wi-Fi. Nhạc vẫn phát khi tắt màn hình; hình thì không.',
+    'Applies at once, without stopping the song. This is the most: a slow connection lowers it by itself. Above 1080p only on Wi-Fi. The picture stops when the screen is off; the music does not.',
+    'Áp dụng ngay, bài không dừng. Đây là mức cao nhất: mạng chậm thì hình tự hạ. Trên 1080p chỉ khi có Wi-Fi. Tắt màn hình thì hình dừng, nhạc vẫn phát.',
   );
   static String get videoQualityHelpWeb => _t(
-    'A higher quality applies at once; a lower one loads the picture again for a moment. A browser does not show a picture below 480p, so 480p is the lowest; the connection can still bring less. Higher quality uses more data.',
-    'Lên cao hơn thì áp dụng ngay; xuống thấp hơn thì hình tải lại một chút. Trình duyệt không phát hình thấp hơn 480p nên 480p là mức thấp nhất; đường truyền yếu vẫn có thể cho hình kém hơn. Chất lượng cao hơn tốn nhiều dữ liệu hơn.',
+    'A higher quality applies at once; a lower one reloads the picture for a moment. A browser plays no picture below 480p.',
+    'Cao hơn thì áp dụng ngay; thấp hơn thì hình tải lại một chút. Trình duyệt không phát hình dưới 480p.',
   );
   static String get videoApplyNow => _t(
     'Applies at once; the song keeps playing',
@@ -1416,8 +1417,8 @@ abstract final class S {
   };
   static String get lightEffects => _t('Light effects', 'Hiệu ứng nhẹ');
   static String get lightEffectsHelp => _t(
-    'For older phones: the bars are solid instead of frosted glass, the player background stands still, loading rows do not shimmer and less memory is kept for pictures. Phones with little memory start with this on.',
-    'Cho máy cũ: thanh dưới đặc thay vì kính mờ, nền player đứng yên, hàng chờ tải không lấp lánh và dành ít bộ nhớ hơn cho ảnh. Máy ít bộ nhớ mặc định bật.',
+    'For older phones: solid bars instead of frosted glass, a still player background, no shimmer, less memory for pictures. On by default on phones with little memory.',
+    'Cho máy cũ: thanh đặc thay vì kính mờ, nền player đứng yên, không lấp lánh, ít bộ nhớ cho ảnh hơn. Máy ít bộ nhớ mặc định bật.',
   );
   static String get languageLabel => _t('Language', 'Ngôn ngữ');
   static String get languageSystem => _t('System', 'Theo hệ thống');
@@ -1695,8 +1696,8 @@ abstract final class S {
   static String get checkVersionUnknown =>
       _t('The server version is not known', 'Chưa biết phiên bản máy chủ');
   static String get serverHelp => _t(
-    'Where your Sapoche server is and the group key it asks for. They stay on this phone and are not part of the app. Easiest: on a phone that already works, open Settings > Set up another phone, and point this phone’s camera at the code.',
-    'Địa chỉ máy chủ Sapoche của bạn và khoá nhóm nó yêu cầu. Chúng chỉ nằm trên máy này, không nằm trong ứng dụng. Dễ nhất: trên máy đã dùng được, mở Cài đặt > Cài đặt cho máy khác, rồi đưa camera của máy này vào mã.',
+    'The address of your Sapoche server and the group key. They stay on this phone. Easiest: on a phone that already works, open Settings > Set up another phone and scan the code.',
+    'Địa chỉ máy chủ Sapoche và khoá nhóm, chỉ nằm trên máy này. Dễ nhất: trên máy đã dùng được, mở Cài đặt > Cài đặt cho máy khác rồi quét mã.',
   );
   static String get serverHelpWeb => _t(
     'Where your Sapoche server is and the group key it asks for. They stay in this browser: clearing the site’s data removes them.',

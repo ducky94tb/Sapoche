@@ -31,6 +31,14 @@ const shotLandscape = [ShotSize('l844', 844, 390), ShotSize('l732', 732, 360)];
 /// A tablet and a computer, where the player beside the pages is the upright one of its style.
 const shotDock = [ShotSize('t1180', 1180, 820, dpr: 1), ShotSize('t1024', 1024, 768, dpr: 1)];
 
+/// Tablets on their side with a song playing: the pages beside the player (a Galaxy Tab's 1280 by 800 and an iPad's).
+const shotDockPages = [
+  ShotSize('t1280', 1280, 800, dpr: 1),
+  ShotSize('t1180', 1180, 820, dpr: 1),
+  ShotSize('t1024', 1024, 768, dpr: 1),
+  ShotSize('t1600', 1600, 900, dpr: 1),
+];
+
 const shotSizes = [
   ShotSize('w360', 360, 800),
   ShotSize('w411', 411, 914),

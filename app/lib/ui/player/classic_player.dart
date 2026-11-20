@@ -22,18 +22,23 @@ import 'parts.dart';
 
 /// Side of the full player's cover. It depends only on the screen, so the cover can be decoded
 /// at this size before the player is ever opened.
-double coverSize(MediaQueryData media, {double margin = playerMargin}) {
+double coverSize(MediaQueryData media, {double margin = playerMargin, bool docked = false}) {
+  final across = min(media.size.width, playerColumnMax) - 2 * margin;
+  // Beside the pages the card is as tall as the window and the stage that holds the cover measures what height is left
+  // (`PlayerCoverStage`): only the width is asked here
+  if (docked) return across.clamp(140.0, playerColumnMax - 2 * margin);
   // Everything except the cover needs about this much height (the seek bar, the buttons, the volume, the icons); the
   // cover takes what is left. Its side margins are the ones of Apple Music, 32 on each side
   final otherContent = 460.0 * playerScale(media);
-  return [
-    min(media.size.width, playerColumnMax) - 2 * margin,
-    media.size.height - media.padding.vertical - otherContent,
-  ].reduce((a, b) => a < b ? a : b).clamp(140.0, playerColumnMax - 2 * margin);
+  return min(across, media.size.height - media.padding.vertical - otherContent)
+      .clamp(140.0, playerColumnMax - 2 * margin);
 }
 
 /// The side margin of the full player: the cover, the title, the seek bar and the buttons all start and end on it.
 const playerMargin = 32.0;
+
+/// The same beside the pages, in a card that is only a third of a tablet's width.
+const playerDockMargin = 16.0;
 
 /// How wide the upright player's column gets. On a tablet it does not stretch across the screen: a cover that is a
 /// third of the screen is out of proportion with buttons the size of a phone's.
@@ -176,6 +181,8 @@ class ClassicPlayer extends StatelessWidget {
   }
 
   Widget _tallColumn(Palette p, QueueEntry current, {required bool docked}) {
+    // Beside the pages the card is narrow and the cover is all it has to show: its margins are smaller
+    final margin = docked ? playerDockMargin : playerMargin;
     return Column(
       children: [
         // Beside the pages the player is not pulled down: no handle
@@ -197,6 +204,10 @@ class ClassicPlayer extends StatelessWidget {
                 key: const ValueKey('cover'),
                 controller: _c,
                 current: current,
+                margin: margin,
+                // The card has no height to spare: the cover has what these would take
+                gap: docked ? 16 : _coverGap,
+                bottom: docked ? 6 : 16,
               ),
               _ => PlayerPanelStage(
                 key: ValueKey(panel),
@@ -209,12 +220,12 @@ class ClassicPlayer extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: playerMargin),
+          padding: EdgeInsets.symmetric(horizontal: margin),
           child: Column(
             children: [
-              const SizedBox(height: 14),
+              SizedBox(height: docked ? 8 : 14),
               PlaybackBar(controller: _c),
-              const SizedBox(height: 14),
+              SizedBox(height: docked ? 8 : 14),
               TransportRow(controller: _c),
               const SizedBox(height: 6),
               // A browser has no volume of its own to set: the tab follows the computer's
@@ -228,7 +239,7 @@ class ClassicPlayer extends StatelessWidget {
                 const SizedBox(height: 6),
                 RoomStrip(controller: _c),
               ],
-              const SizedBox(height: playerBottomGap),
+              SizedBox(height: docked ? 14 : playerBottomGap),
             ],
           ),
         ),
@@ -278,7 +289,8 @@ class PlayerCoverStage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final artSize = coverSize(MediaQuery.of(context), margin: margin);
+    final docked = PlayerLookScope.dockedOf(context);
+    final artSize = coverSize(MediaQuery.of(context), margin: margin, docked: docked);
     if (controller.snapshot.video) {
       // The picture takes all the height there is and keeps its own shape in it: a wide one is as wide as the
       // column, an upright one as tall as the place, never over the title and the controls
@@ -400,13 +412,14 @@ class PlayerPanelStage extends StatelessWidget {
     final p = context.palette;
     final theme = Theme.of(context).textTheme;
     final look = PlayerLookScope.of(context);
-    final side = compact ? 16.0 : playerMargin;
+    final margin = PlayerLookScope.dockedOf(context) ? playerDockMargin : playerMargin;
+    final side = compact ? 16.0 : margin;
     return Column(
       children: [
         Padding(
           padding: compact
               ? const EdgeInsets.fromLTRB(16, 0, 12, 6)
-              : const EdgeInsets.fromLTRB(playerMargin, 14, 20, 8),
+              : EdgeInsets.fromLTRB(margin, 14, 20, 8),
           child: Row(
             children: [
               Semantics(
@@ -479,7 +492,7 @@ class PlayerPanelStage extends StatelessWidget {
             // The queue has 20 of its own at each side, and the song above it 32: the difference is made up here
             _ => Padding(
               padding: EdgeInsets.symmetric(
-                horizontal: compact ? 0 : playerMargin - 20,
+                horizontal: compact ? 0 : max(0.0, margin - 20),
               ),
               child: UpNextView(controller: controller),
             ),

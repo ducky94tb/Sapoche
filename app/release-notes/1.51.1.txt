@@ -1,0 +1,6 @@
+Bigger covers on tablets, tidier Settings
+- On a tablet the player beside the page now gives the cover more room, and Full cover no longer shows square edges for songs whose picture sits in a black frame.
+- On wide pages the Play button of a playlist, album or artist takes the full width instead of being squeezed by the buttons next to it.
+- Settings: the notes under each option are shorter, and the picture quality choices share the width evenly.
+- Connecting ListenBrainz now shows that it is working while it waits for the network.
+- Android 15: the output button now follows a Bluetooth device after it connects, instead of staying on the phone speaker.
