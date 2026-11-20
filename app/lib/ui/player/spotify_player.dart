@@ -18,11 +18,21 @@ import '../widgets/low_rate_timer.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/playback_bar.dart';
 import '../widgets/transport.dart';
+import '../widgets/whole_pixel_clip.dart';
 import 'classic_player.dart';
 import 'look.dart';
 import 'lyrics_ticker.dart';
 import 'parts.dart';
 import 'up_next_view.dart' show RepeatButton, ShuffleButton;
+
+/// What the head of the card says the song is playing from: its album, else the room, else who made it (a song with no
+/// album would have the head say only "Now playing"). Null where none of them is known.
+String? _playingFrom(RoomController c, QueueEntry current, String? album) {
+  if (album != null) return album;
+  if (c.snapshot.inRoom) return S.room;
+  final artist = current.artist.trim();
+  return artist.isEmpty ? null : artist;
+}
 
 /// The player of the style of cards: the face of the song (the cover, the seek bar, the buttons with shuffle and repeat
 /// beside the play button) fills the screen, and below it, as the page is scrolled, are cards: the lyrics, the artist,
@@ -171,8 +181,8 @@ class _TallState extends State<_Tall> {
                         final album = async.data
                             ?.songOf(current.videoId)
                             ?.album;
-                        final line =
-                            album ?? (_c.snapshot.inRoom ? S.room : null);
+                        // A song with no album shows who made it, as Spotify's "playing from" does
+                        final line = _playingFrom(_c, current, album);
                         return Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -368,7 +378,7 @@ class _Compact extends StatelessWidget {
                   : AppScope.of(context).music.radio(current.videoId),
               builder: (context, async) {
                 final album = async.data?.songOf(current.videoId)?.album;
-                final line = album ?? (_c.snapshot.inRoom ? S.room : null);
+                final line = _playingFrom(_c, current, album);
                 return Text(
                   line == null
                       ? S.nowPlaying.toUpperCase()
@@ -497,7 +507,8 @@ class _Scrolling extends StatelessWidget {
             colors: [Color(0xFF000000), Color(0xFF000000), Color(0x00000000)],
             stops: [0, 0.88, 1],
           ).createShader(rect),
-          child: SingleChildScrollView(
+          // Under the mask: it ends on a whole pixel row, or the row it ends in is part unmasked
+          child: WholePixelClip(child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               children: [
@@ -525,7 +536,7 @@ class _Scrolling extends StatelessWidget {
                 ),
               ],
             ),
-          ),
+          )),
         );
       },
     );

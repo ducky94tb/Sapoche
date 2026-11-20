@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'whole_pixel_clip.dart';
+
 /// Fades what [child] draws out at its top and its bottom edge, so that a list that goes on under something is not cut
 /// off with a line. It lets what is behind show through, which a veil of the page's colour cannot: the player's page is
 /// tinted by the cover, and a veil of the plain background shows on it as a pale band.
@@ -38,6 +40,7 @@ class EdgeFade extends StatelessWidget {
         ],
       ).createShader(rect);
     },
-    child: child,
+    // The box may end part-way through a pixel row, which the mask would leave partly unmasked
+    child: WholePixelClip(child: child),
   );
 }

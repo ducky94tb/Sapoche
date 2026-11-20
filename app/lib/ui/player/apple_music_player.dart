@@ -237,6 +237,14 @@ class AppleMusicPlayer extends StatelessWidget {
 /// The space at each side of the bars, the buttons and the song.
 const _margin = 22.0;
 
+/// [value] cut down to a whole number of device pixels. A mask that ends part-way through a pixel row leaves that row
+/// partly unmasked, and the picture's last row then shows as a thin line across the screen (on a tablet whose pixel
+/// ratio is not a whole number, the Tab S7); the same is done for the glow of `PlayerBackdrop`.
+double _wholePixels(BuildContext context, double value) {
+  final scale = MediaQuery.devicePixelRatioOf(context);
+  return (value * scale).floor() / scale;
+}
+
 /// The cover across the whole width and as tall as the place gives it, its foot melting into what is behind; the song
 /// stands over that foot, so that nothing is left empty between the cover and the seek bar.
 class _FullCover extends StatefulWidget {
@@ -304,9 +312,12 @@ class _FullCoverState extends State<_FullCover> {
       builder: (context, box) {
         // The picture fills the width and what height there is, cropped to it; not taller than 1.4 of its width, where
         // the screen is much taller than it is wide
-        final height = min(
-          box.maxWidth * 1.4,
-          max(0.0, box.maxHeight - _titleHeight(context) + _overlap),
+        final height = _wholePixels(
+          context,
+          min(
+            box.maxWidth * 1.4,
+            max(0.0, box.maxHeight - _titleHeight(context) + _overlap),
+          ),
         );
         return SizedBox(
           height: box.maxHeight,
@@ -361,7 +372,7 @@ class _FullCoverState extends State<_FullCover> {
                   left: 0,
                   right: 0,
                   top: 0,
-                  height: top + _blurFade,
+                  height: _wholePixels(context, top + _blurFade),
                   child: ShaderMask(
                     blendMode: BlendMode.dstIn,
                     shaderCallback: (rect) => const LinearGradient(
@@ -511,7 +522,10 @@ class _CompactCover extends StatelessWidget {
             ],
           );
         }
-        final height = max(0.0, box.maxHeight - _titleHeight + _overlap);
+        final height = _wholePixels(
+          context,
+          max(0.0, box.maxHeight - _titleHeight + _overlap),
+        );
         return Stack(
           children: [
             Positioned(

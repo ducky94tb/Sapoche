@@ -2594,31 +2594,20 @@ class _SettingQualityChips extends StatelessWidget {
       (h) => h <= snapshot.videoHeight,
       orElse: () => options.first,
     );
-    // The heights share the width evenly, in one row or, when there are many, in rows of about the same count
-    final rows = (options.length / 4).ceil();
-    final perRow = (options.length / rows).ceil();
-    return Column(
+    // The heights as they come, one after the other from the start, on to the next line when there is no more room
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        for (var start = 0; start < options.length; start += perRow) ...[
-          if (start > 0) const SizedBox(height: 8),
-          Row(
-            children: [
-              for (final h in options.skip(start).take(perRow)) ...[
-                if (h != options[start]) const SizedBox(width: 8),
-                Expanded(
-                  child: ChoiceChip(
-                    key: ValueKey('setting-quality-$h'),
-                    label: FittedBox(fit: BoxFit.scaleDown, child: Text(qualityName(h))),
-                    // The tick would take the room of the label in a chip that is a fourth of the width
-                    showCheckmark: false,
-                    selected: chosen == h,
-                    onSelected: (_) => onPick(h),
-                  ),
-                ),
-              ],
-            ],
+        for (final h in options)
+          ChoiceChip(
+            key: ValueKey('setting-quality-$h'),
+            label: Text(qualityName(h)),
+            // The chip would grow by the tick when chosen, and move the ones after it
+            showCheckmark: false,
+            selected: chosen == h,
+            onSelected: (_) => onPick(h),
           ),
-        ],
       ],
     );
   }

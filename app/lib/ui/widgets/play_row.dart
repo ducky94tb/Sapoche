@@ -62,6 +62,13 @@ class PlayRow extends StatelessWidget {
   /// The widest an [inline] row gets: Play takes what the round buttons leave, up to this.
   static const _inlineMax = 420.0;
 
+  /// The round buttons are this wide, with this between them (see `roundButtonStyle`).
+  static const _round = 52.0;
+  static const _gap = 12.0;
+
+  /// The least Play is given to keep its word: with less it is a round button.
+  static const _playLeast = 112.0;
+
   /// A column narrower than this puts the round buttons under Play.
   static const _stackBelow = 380.0;
 
@@ -96,14 +103,38 @@ class PlayRow extends StatelessWidget {
       // In the narrow column beside a cover Play may be given less than its words: they shrink rather than overflow
       label: narrow ? FittedBox(fit: BoxFit.scaleDown, child: Text(S.play)) : Text(S.play),
     );
-    Widget buttons({required bool narrow}) => Row(
-      children: [
-        shuffle,
-        const SizedBox(width: 12),
-        Expanded(child: playButton(narrow: narrow)),
-        if (download != null) ...[const SizedBox(width: 12), download!],
-        if (more != null) ...[const SizedBox(width: 12), more!],
-      ],
+    Widget buttons({required bool narrow}) => LayoutBuilder(
+      builder: (context, box) {
+        // What the round buttons leave Play. Squeezed under [_playLeast] (the player beside the pages, a phone on its
+        // side) it is a round button as well, with the triangle only, rather than a pill that shrinks its word
+        final others = 1 + (download == null ? 0 : 1) + (more == null ? 0 : 1);
+        final round = box.maxWidth - others * (_round + _gap) < _playLeast;
+        return Row(
+          mainAxisAlignment: round && !inline
+              ? MainAxisAlignment.center
+              : MainAxisAlignment.start,
+          children: [
+            shuffle,
+            const SizedBox(width: _gap),
+            if (round)
+              IconButton(
+                onPressed: onPlay,
+                tooltip: S.play,
+                style: roundButtonStyle(context).copyWith(
+                  backgroundColor: WidgetStatePropertyAll(p.text),
+                  foregroundColor: WidgetStatePropertyAll(p.base),
+                ),
+                icon: working == PlayWorking.play
+                    ? _spinner
+                    : const Icon(Icons.play_arrow_rounded, size: 30),
+              )
+            else
+              Expanded(child: playButton(narrow: narrow)),
+            if (download != null) ...[const SizedBox(width: _gap), download!],
+            if (more != null) ...[const SizedBox(width: _gap), more!],
+          ],
+        );
+      },
     );
     if (!inline) {
       return Padding(

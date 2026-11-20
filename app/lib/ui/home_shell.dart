@@ -1026,13 +1026,16 @@ class _Side extends StatelessWidget {
     final right = padding.right;
     final inset =
         left + (rail ? edge + railWidth + edge : _gap + _Sidebar.width + _gap);
-    final bottom =
-        padding.bottom +
-        (compact
-            ? compactBottom
-            : rail
-            ? 16
-            : _gap);
+    // The player beside the pages stands as far from the window's foot as it does from its top, over the system's bar
+    // rather than above it (the pages go under it too): above it the card left a band the height of a tablet's
+    // navigation bar. What is in the card keeps above the bar (`bottomInset`). The rail and the sidebar keep above it:
+    // Settings is at their foot and would be under the bar
+    final frame = compact
+        ? compactBottom
+        : rail
+        ? 16.0
+        : _gap;
+    final bottom = padding.bottom + frame;
     // The player beside the pages: its width, and the space between it and the window's edge and the pages, which is the
     // one the rail has
     final edgeSide = rail ? edge : _gap;
@@ -1094,9 +1097,12 @@ class _Side extends StatelessWidget {
               Positioned(
                 right: right + edgeSide,
                 top: padding.top + edgeSide,
-                bottom: bottom,
+                bottom: frame,
                 width: dock,
-                child: const NowPlayingPage(docked: true),
+                child: NowPlayingPage(
+                  docked: true,
+                  bottomInset: math.max(0.0, padding.bottom - frame),
+                ),
               ),
             // The mini player floats in the middle of the pages, the player bar runs along them. Not with the player
             // beside them, which has all of it

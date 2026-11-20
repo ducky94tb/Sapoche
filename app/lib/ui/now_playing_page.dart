@@ -19,9 +19,13 @@ import 'widgets/reactions.dart';
 /// The full player. [docked] is the one that stands beside the pages of a window wider than it is tall, a card of its
 /// own: it is always there, so it has no handle to pull it down and no way out, and it is laid out for its own size.
 class NowPlayingPage extends StatelessWidget {
-  const NowPlayingPage({super.key, this.docked = false});
+  const NowPlayingPage({super.key, this.docked = false, this.bottomInset = 0});
 
   final bool docked;
+
+  /// For the docked card: how far up the system's bar comes into it, when the card stands lower than the bar's top (it
+  /// is to be as far from the edge of the window as it is at the top). What is in the card keeps above it.
+  final double bottomInset;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +39,9 @@ class NowPlayingPage extends StatelessWidget {
         // Icons in the status bar and the navigation bar that show on the backdrop, light or dark like the app
         final icons = dark ? Brightness.light : Brightness.dark;
         // Beside the pages the status bar is theirs
-        if (docked) return _PlayerPage(style: style, docked: true);
+        if (docked) {
+          return _PlayerPage(style: style, docked: true, bottomInset: bottomInset);
+        }
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: SystemUiOverlayStyle(
             statusBarIconBrightness: icons,
@@ -49,10 +55,15 @@ class NowPlayingPage extends StatelessWidget {
 }
 
 class _PlayerPage extends StatelessWidget {
-  const _PlayerPage({required this.style, required this.docked});
+  const _PlayerPage({
+    required this.style,
+    required this.docked,
+    this.bottomInset = 0,
+  });
 
   final PlayerStyle style;
   final bool docked;
+  final double bottomInset;
 
   /// The corners of the card the docked player is.
   static const cardRadius = 26.0;
@@ -81,13 +92,14 @@ class _PlayerPage extends StatelessWidget {
       },
     );
     if (docked) {
-      // A card of its own size: what is inside it reads that size, with no notch or bar of the window's
+      // A card of its own size: what is inside it reads that size, with no notch or bar of the window's, but the one
+      // that is under the foot of it
       return LayoutBuilder(
         builder: (context, box) => MediaQuery(
           data: MediaQuery.of(context).copyWith(
             size: box.biggest,
-            padding: EdgeInsets.zero,
-            viewPadding: EdgeInsets.zero,
+            padding: EdgeInsets.only(bottom: bottomInset),
+            viewPadding: EdgeInsets.only(bottom: bottomInset),
             viewInsets: EdgeInsets.zero,
           ),
           child: Material(

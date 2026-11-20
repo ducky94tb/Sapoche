@@ -123,24 +123,28 @@ class _LyricsTickerState extends State<LyricsTicker> {
         duration: const Duration(milliseconds: 200),
         alignment: Alignment.topCenter,
         child: show
-            ? GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () =>
-                    PlayerLookScope.panelOf(context)
-                        ?.call(NowPlayingPanel.lyrics),
-                child: Semantics(
-                  button: true,
-                  label: S.lyrics,
-                  excludeSemantics: true,
-                  child: SizedBox(
-                    height: widget.height,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: _Lines(
-                        lines: done ? lyrics!.lines : const [],
-                        active: active,
-                        positionMs: _c.positionMs(),
-                        playing: _c.isPlaying,
+            // A line that runs sideways repaints every frame: in a layer of its own, so that the cover and the colours
+            // behind (a mask, a blur) are not drawn again with it
+            ? RepaintBoundary(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () =>
+                      PlayerLookScope.panelOf(context)
+                          ?.call(NowPlayingPanel.lyrics),
+                  child: Semantics(
+                    button: true,
+                    label: S.lyrics,
+                    excludeSemantics: true,
+                    child: SizedBox(
+                      height: widget.height,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _Lines(
+                          lines: done ? lyrics!.lines : const [],
+                          active: active,
+                          positionMs: _c.positionMs(),
+                          playing: _c.isPlaying,
+                        ),
                       ),
                     ),
                   ),

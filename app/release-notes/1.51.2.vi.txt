@@ -1,0 +1,6 @@
+Player trên tablet vừa màn hình, bìa sạch hơn
+- Tablet: player nằm cạnh trang nay chạy xuống sát đáy màn hình thay vì chừa một khoảng trống phía trên thanh điều hướng.
+- Tràn bìa: sửa đường kẻ mảnh có thể chạy ngang màn hình dưới bìa trên một số tablet.
+- Ở trang hẹp, nút Play của playlist, album hay thư mục thành nút tròn thay vì bị chèn ép.
+- Cài đặt: các mức chất lượng hình xếp lần lượt và xuống dòng khi hết chỗ.
+- Đầu của kiểu Thẻ ghi tên nghệ sĩ khi bài không có album, thay vì chỉ hiện "Đang phát".

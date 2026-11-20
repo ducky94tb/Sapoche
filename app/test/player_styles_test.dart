@@ -147,6 +147,21 @@ void main() {
   });
 
   group('cards', () {
+    testWidgets('the head names the room, or who made a song that has no album', (
+      tester,
+    ) async {
+      final backend = await openStyled(tester, PlayerStyle.spotify);
+      final artist = sampleRoom().current!.artist;
+      // In the room the head names the room
+      expect(find.text(S.room), findsOneWidget);
+      final inRoom = find.text(artist).evaluate().length;
+      // On its own, with a song that has no album: the artist too, so that the head is not left with only "Now playing"
+      backend.emit(StateEvent(sampleRoom(local: true)));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.text(S.room), findsNothing);
+      expect(find.text(artist), findsNWidgets(inRoom + 1));
+    });
+
     testWidgets('the face has shuffle and repeat by the play button', (
       tester,
     ) async {
@@ -319,6 +334,35 @@ void main() {
   });
 
   group('full cover', () {
+    testWidgets(
+      'the cover ends on a whole device pixel, so that no row of it is left unmasked',
+      (tester) async {
+        // A tablet whose pixel ratio is not a whole number (the Tab S7): a cover that ends part-way through a pixel row
+        // leaves that row partly unmasked, and the picture's last row shows as a thin line across the screen
+        addTearDown(tester.view.reset);
+        await openStyled(tester, PlayerStyle.appleMusic);
+        tester.view.devicePixelRatio = 1.7125;
+        tester.view.physicalSize = const Size(1600, 2560);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 600));
+        final masks = find.descendant(
+          of: find.byType(AppleMusicPlayer),
+          matching: find.byType(ShaderMask),
+        );
+        expect(masks, findsWidgets);
+        // The cover's (the title's fade at its edge is small)
+        final tall = [
+          for (final mask in masks.evaluate())
+            (mask.renderObject! as RenderBox).size.height,
+        ].where((h) => h > 300);
+        expect(tall, isNotEmpty);
+        for (final h in tall) {
+          final px = h * 1.7125;
+          expect((px - px.roundToDouble()).abs(), lessThan(1e-6));
+        }
+      },
+    );
+
     testWidgets(
       'lyrics, a pill of output, sleep timer and comments, and the queue; plain buttons',
       (tester) async {
@@ -604,6 +648,11 @@ void main() {
         expect(text('line four'), findsOneWidget);
         expect(text('line five'), findsNothing);
         expect(text('line two'), findsNothing);
+        // The line repaints every frame, so it has a layer of its own: the cover and the colours are not drawn again
+        expect(
+          find.descendant(of: ticker, matching: find.byType(RepaintBoundary)),
+          findsWidgets,
+        );
         // A touch opens the page of the lyrics
         await tester.tap(ticker);
         await tester.pump(const Duration(milliseconds: 600));

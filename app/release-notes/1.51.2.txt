@@ -1,0 +1,6 @@
+Tablet player fits the screen, cleaner covers
+- Tablets: the player beside the page now runs down to the bottom of the screen instead of leaving a gap above the navigation bar.
+- Full cover: a thin line that could cross the screen under the cover on some tablets is fixed.
+- On a narrow page the Play button of a playlist, album or folder turns into a round button instead of being squeezed.
+- Settings: the picture quality choices now sit one after another and wrap to the next line.
+- The Cards player's header names the artist when a song has no album, instead of showing only "Now playing".
