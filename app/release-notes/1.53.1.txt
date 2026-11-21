@@ -1,0 +1,2 @@
+Android: now also for phones with a 32-bit Android
+- Phones with a 32-bit Android (for example the Galaxy J7 Prime) could install Sapoche but it crashed as soon as it opened. Every Android release now comes in two files, one for 64-bit phones and one for 32-bit phones, and the app updates itself with the right one. Nothing changes for 64-bit phones.

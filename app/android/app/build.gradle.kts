@@ -59,6 +59,15 @@ android {
         val noKey = System.getenv("SAPOCHE_NO_KEY") == "1"
         buildConfigField("String", "ROOM_KEY", "\"${if (noKey) "" else localProperties.getProperty("sapoche.roomKey", "")}\"")
         buildConfigField("boolean", "NEEDS_SETUP", noKey.toString())
+        // One APK per kind of phone (release.sh builds the 64-bit and the 32-bit one): a library that ships the code of every
+        // ABI would let a 32-bit phone install the 64-bit APK, and the app would crash at launch (libflutter.so is not there)
+        // instead of the installer saying it does not fit. Without a --target-platform (an IDE build) nothing is left out.
+        (findProperty("target-platform") as String?)?.split(",")?.singleOrNull()?.let { platform ->
+            mapOf("android-arm" to "armeabi-v7a", "android-arm64" to "arm64-v8a", "android-x64" to "x86_64")[platform]?.let {
+                // Flutter's plugin has put every ABI it knows in the list: it is replaced, not added to
+                ndk { abiFilters.clear(); abiFilters += it }
+            }
+        }
     }
 
     // The release key lives next to sapoche.properties and is not committed. Without it the release

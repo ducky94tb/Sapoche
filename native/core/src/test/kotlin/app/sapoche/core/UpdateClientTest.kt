@@ -258,4 +258,25 @@ class UpdateClientTest {
         assertEquals("x.apk.gz", withGz.gzFile)
         assertEquals(5L, withGz.gzSize)
     }
+
+    @Test
+    fun `a 32-bit phone reads its own file from the arm32 entry and never the 64-bit one`() {
+        val text = """{"versionCode":7,"versionName":"1.3.0","sha256":"64","size":9,"file":"sapoche-1.3.0.apk","gzFile":"sapoche-1.3.0.apk.gz","gzSize":5,
+            "notes":"n","arm32":{"sha256":"32","size":8,"file":"sapoche-1.3.0-arm32.apk"}}"""
+        val own = UpdateClient.parse(text, arm32 = true)
+        assertEquals("sapoche-1.3.0-arm32.apk", own.file)
+        assertEquals("32", own.sha256)
+        assertEquals(8L, own.size)
+        assertEquals("", own.gzFile)
+        assertEquals(0L, own.gzSize)
+        assertEquals("n", own.notes)
+        assertEquals("sapoche-1.3.0.apk", UpdateClient.parse(text).file)
+    }
+
+    @Test
+    fun `a release without a 32-bit build is not offered to a 32-bit phone`() = runTest {
+        latestBody = """{"versionCode":7,"versionName":"1.3.0","sha256":"ab","size":9,"file":"sapoche-1.3.0.apk"}"""
+        assertNull(UpdateClient(server.url("/").toString(), headers = { emptyMap() }, arm32 = true).latest())
+        assertEquals("sapoche-1.3.0.apk", client().latest()?.file)
+    }
 }

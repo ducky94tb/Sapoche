@@ -68,10 +68,13 @@ data class ReleaseNote(val version: String, val notes: String, val notesVi: Stri
 /**
  * Asks the server which release is the newest and fetches it. The file comes from a private bucket (see
  * server/src/update.ts), so every call carries the room key in [headers], asked for at each call (the key can be set while the app runs).
+ * A phone with no 64-bit support ([arm32]) is offered the 32-bit build that `latest.json` lists under `arm32`; when the
+ * release has none, nothing is offered, because the 64-bit file would install on such a phone and crash at launch.
  */
 class UpdateClient(
     private val baseUrl: String,
     private val headers: () -> Map<String, String>,
+    private val arm32: Boolean = false,
     private val client: OkHttpClient = OkHttpClient.Builder().callTimeout(0, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build(),
 ) {
 
@@ -80,7 +83,7 @@ class UpdateClient(
         client.newCall(request("latest.json")).execute().use { response ->
             if (response.code == 404) return@use null
             if (!response.isSuccessful) throw IOException("update info: HTTP ${response.code}")
-            parse(response.body.string())
+            parseOrNull(response.body.string(), arm32)
         }
     }
 
@@ -168,8 +171,22 @@ class UpdateClient(
     companion object {
         private const val BUFFER = 64 * 1024
 
-        fun parse(text: String): Release {
-            val json = Json.parseToJsonElement(text).jsonObject
+        /** What describes the 64-bit file: none of it may leak into a 32-bit release that leaves one out (the gzipped copy). */
+        private val FILE_FIELDS = setOf("file", "sha256", "size", "gzFile", "gzSize")
+
+        fun parse(text: String, arm32: Boolean = false): Release =
+            parseOrNull(text, arm32) ?: throw IOException("update info has no 32-bit build")
+
+        /** The release for a phone of this kind; null when it is a 32-bit phone and the release has no build for it. */
+        fun parseOrNull(text: String, arm32: Boolean = false): Release? {
+            val root = Json.parseToJsonElement(text).jsonObject
+            // The 32-bit build is its own file with its own checksum; the version and the notes are the release's
+            val json = if (arm32) {
+                val own = root["arm32"] as? JsonObject ?: return null
+                JsonObject(root - FILE_FIELDS + own)
+            } else {
+                root
+            }
             fun text(key: String) = json[key]?.jsonPrimitive?.contentOrNull ?: throw IOException("update info has no $key")
             return Release(
                 versionCode = json["versionCode"]?.jsonPrimitive?.long ?: throw IOException("update info has no versionCode"),

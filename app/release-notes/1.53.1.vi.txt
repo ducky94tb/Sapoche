@@ -1,0 +1,2 @@
+Android: thêm bản cho máy dùng Android 32-bit
+- Các máy dùng Android 32-bit (ví dụ Galaxy J7 Prime) cài được Sapoche nhưng app văng ngay khi mở. Từ nay mỗi bản Android có hai tệp, một cho máy 64-bit và một cho máy 32-bit, và app tự cập nhật đúng tệp của máy. Máy 64-bit không có gì thay đổi.

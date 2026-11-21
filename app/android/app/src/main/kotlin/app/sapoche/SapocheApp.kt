@@ -71,7 +71,7 @@ class SapocheApp : Application() {
         roomKeys = RoomKeys(this)
         chatNotifier = ChatNotifier(this)
         heat = Heat(this)
-        updater = Updater(this, UpdateClient(Config.SERVER, headers = { Config.authHeaders }))
+        updater = Updater(this, UpdateClient(Config.SERVER, headers = { Config.authHeaders }, arm32 = android.os.Build.SUPPORTED_64_BIT_ABIS.isEmpty()))
         updateNotifier = UpdateNotifier(this)
         watchMetered()
         // The phone's decoders are listed once, now, instead of while a song waits for its picture

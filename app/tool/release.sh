@@ -6,7 +6,9 @@
 #   The notes people read under Settings > Updates come from app/release-notes/<version>.txt (English) and
 #   <version>.vi.txt (Vietnamese; shown when the app speaks Vietnamese). A line starting with "- " is a bullet, any
 #   other line is a heading. Lines given on the command line replace the English file.
-#   without --publish: builds into ~/sapoche-release-arm64-<version>.apk and writes the update files next to it
+#   Two APKs are built every time, one per kind of phone: arm64 (most phones) and arm32 (phones with a 32-bit Android, such
+#   as the Galaxy J7 Prime). A 32-bit phone cannot run the first, and the file for it is listed under "arm32" in latest.json.
+#   without --publish: builds into ~/sapoche-release-arm64-<version>.apk and ~/sapoche-release-arm32-<version>.apk and writes the update files next to them
 #   with --publish:    first opens the APK on the emulator (app/tool/smoke.sh) and stops if it crashes; then
 #                      puts the files in the private R2 bucket (needs `wrangler login`; the APK first, then
 #                      latest.json, so a phone never reads news of a file that is not there yet; the file is
@@ -43,36 +45,60 @@ cd "$APP"
 SYMBOLS=$HOME/sapoche-symbols/$NAME
 mkdir -p "$SYMBOLS"
 SHRINK=(--split-debug-info="$SYMBOLS" --obfuscate)
-"$FLUTTER" build apk --release --target-platform android-arm64 "${SHRINK[@]}"
+# Builds the APK of one kind of phone into $HOME/sapoche-release-<abi>-<version>.apk and checks it. It sets OUT (the file),
+# SHA, SIZE and GZSIZE (the gzipped copy next to it, for the phones that know how to unpack it: about a third less to
+# fetch; the plain apk stays for older ones).
+build_apk() {
+  local abi=$1 platform=$2 lib=$3
+  "$FLUTTER" build apk --release --target-platform "$platform" "${SHRINK[@]}"
+  OUT=$HOME/sapoche-release-$abi-$NAME.apk
+  cp build/app/outputs/flutter-apk/app-release.apk "$OUT"
+  [ "$abi" = arm64 ] && cp build/app/outputs/mapping/release/mapping.txt "$SYMBOLS/mapping.txt"
 
-OUT=$HOME/sapoche-release-arm64-$NAME.apk
-cp build/app/outputs/flutter-apk/app-release.apk "$OUT"
-cp build/app/outputs/mapping/release/mapping.txt "$SYMBOLS/mapping.txt"
+  # Signed with the release key, not the debug one: the debug key would install but could never update the real app
+  "$BUILD_TOOLS/apksigner" verify --print-certs "$OUT" | grep "SHA-256" | head -1
+  if "$BUILD_TOOLS/apksigner" verify --print-certs "$OUT" | grep -q "Android Debug"; then
+    echo "signed with the debug key; sapoche.properties has no release keystore"; exit 1
+  fi
+  local badging
+  badging=$("$BUILD_TOOLS/aapt2" dump badging "$OUT")
+  echo "$badging" | grep -q "versionCode='$CODE'" || { echo "the APK does not carry build number $CODE"; exit 1; }
+  echo "$badging" | grep -q "application-debuggable" && { echo "the APK is debuggable"; exit 1; }
+  check_abi "$OUT" "$lib"
 
-# Signed with the release key, not the debug one: the debug key would install but could never update the real app
-"$BUILD_TOOLS/apksigner" verify --print-certs "$OUT" | grep "SHA-256" | head -1
-if "$BUILD_TOOLS/apksigner" verify --print-certs "$OUT" | grep -q "Android Debug"; then
-  echo "signed with the debug key; sapoche.properties has no release keystore"; exit 1
-fi
-BADGING=$("$BUILD_TOOLS/aapt2" dump badging "$OUT")
-echo "$BADGING" | grep -q "versionCode='$CODE'" || { echo "the APK does not carry build number $CODE"; exit 1; }
-echo "$BADGING" | grep -q "application-debuggable" && { echo "the APK is debuggable"; exit 1; }
+  SHA=$(sha256sum "$OUT" | cut -d' ' -f1)
+  SIZE=$(stat -c %s "$OUT")
+  # The size is watched: a library or a font that came in with a change should be a choice, not a surprise. It is compared
+  # with the newest APK of this kind this script built before this one (the app takes a long time to download on a slow connection).
+  local before
+  before=$(ls "$HOME"/sapoche-release-"$abi"-*.apk 2>/dev/null | grep -v -- "-$NAME.apk" | sort -V | tail -1 || true)
+  if [ -n "$before" ] && [ "$SIZE_OK" = 0 ] && [ "$SIZE" -gt $(( $(stat -c %s "$before") + 200000 )) ]; then
+    echo "the $abi APK is $(( SIZE - $(stat -c %s "$before") )) bytes bigger than $(basename "$before"); run again with --size-ok if that is meant"; exit 1
+  fi
+  gzip -9 -n -c "$OUT" > "$OUT.gz"
+  GZSIZE=$(stat -c %s "$OUT.gz")
+}
 
-SHA=$(sha256sum "$OUT" | cut -d' ' -f1)
-SIZE=$(stat -c %s "$OUT")
-# The size is watched: a library or a font that came in with a change should be a choice, not a surprise. It is compared
-# with the newest APK this script built before this one (the app takes a long time to download on a slow connection).
-BEFORE=$(ls "$HOME"/sapoche-release-arm64-*.apk 2>/dev/null | grep -v -- "-$NAME.apk" | sort -V | tail -1 || true)
-if [ -n "$BEFORE" ] && [ "$SIZE_OK" = 0 ] && [ "$SIZE" -gt $(( $(stat -c %s "$BEFORE") + 200000 )) ]; then
-  echo "the APK is $(( SIZE - $(stat -c %s "$BEFORE") )) bytes bigger than $(basename "$BEFORE"); run again with --size-ok if that is meant"; exit 1
-fi
-# A copy gzipped for the phones that know how to unpack it (about a third less to fetch); the plain apk stays for older ones
-gzip -9 -n -c "$OUT" > "$OUT.gz"
-GZSIZE=$(stat -c %s "$OUT.gz")
+# A 32-bit phone that is let install the 64-bit APK crashes when the app opens (no libflutter.so for it), and the other way
+# round the app cannot start at all: an APK must carry the native code of its own kind of phone and of no other
+check_abi() {
+  local apk=$1 lib=$2 libs
+  libs=$(unzip -Z1 "$apk" 'lib/*')
+  echo "$libs" | grep -qx "lib/$lib/libflutter.so" || { echo "$(basename "$apk") has no lib/$lib/libflutter.so"; exit 1; }
+  if echo "$libs" | grep -v "^lib/$lib/" | grep -q .; then
+    echo "$(basename "$apk") holds native code of another kind of phone:"; echo "$libs" | grep -v "^lib/$lib/"; exit 1
+  fi
+}
+
+build_apk arm64 android-arm64 arm64-v8a
+OUT64=$OUT; SHA64=$SHA; SIZE64=$SIZE; GZSIZE64=$GZSIZE
+build_apk arm32 android-arm armeabi-v7a
+OUT32=$OUT; SHA32=$SHA; SIZE32=$SIZE; GZSIZE32=$GZSIZE
+OUT=$OUT64; SHA=$SHA64; SIZE=$SIZE64; GZSIZE=$GZSIZE64
 LATEST=$(dirname "$OUT")/sapoche-latest-$NAME.json
-python3 - "$LATEST" "$CODE" "$NAME" "$SHA" "$SIZE" "$GZSIZE" "$APP/release-notes" "${NOTES_ARGS[@]+"${NOTES_ARGS[@]}"}" <<'PY'
+python3 - "$LATEST" "$CODE" "$NAME" "$SHA" "$SIZE" "$GZSIZE" "$SHA32" "$SIZE32" "$GZSIZE32" "$APP/release-notes" "${NOTES_ARGS[@]+"${NOTES_ARGS[@]}"}" <<'PY'
 import json, os, sys
-path, code, name, sha, size, gz_size, folder, *lines = sys.argv[1:]
+path, code, name, sha, size, gz_size, sha32, size32, gz_size32, folder, *lines = sys.argv[1:]
 
 def read(file):
     full = os.path.join(folder, file)
@@ -81,6 +107,9 @@ def read(file):
 notes = "\n".join(lines).strip() or read(f"{name}.txt")
 notes_vi = read(f"{name}.vi.txt")
 latest = {"versionCode": int(code), "versionName": name, "sha256": sha, "size": int(size), "file": f"sapoche-{name}.apk", "gzFile": f"sapoche-{name}.apk.gz", "gzSize": int(gz_size), "notes": notes}
+# The file of the phones with a 32-bit Android (they cannot run the one above); a phone that does not know this field
+# is a 64-bit one. Only added: older apps read the rest as before.
+latest["arm32"] = {"sha256": sha32, "size": int(size32), "file": f"sapoche-{name}-arm32.apk", "gzFile": f"sapoche-{name}-arm32.apk.gz", "gzSize": int(gz_size32)}
 if notes_vi:
     latest["notesVi"] = notes_vi
 # The notes of the last few versions too, so that a phone that is several versions behind can read all it has missed
@@ -108,6 +137,7 @@ if not notes:
 json.dump(latest, open(path, "w"), ensure_ascii=False)
 PY
 echo "built $OUT ($SIZE bytes, $GZSIZE gzipped, sha256 $SHA)"
+echo "built $OUT32 ($SIZE32 bytes, $GZSIZE32 gzipped, sha256 $SHA32)"
 
 if [ "$PUBLISH" = 1 ]; then
   # A phone never goes back to a lower build number, so a release that crashes at launch must not leave this computer.
@@ -119,30 +149,40 @@ if [ "$PUBLISH" = 1 ]; then
   # The copy for GitHub, which anybody can download: the same code, signed the same, with no key inside (SAPOCHE_NO_KEY).
   # It is given its key by a setup link. The key must not be anywhere in it, which is checked before it can leave.
   PUBLIC_APK=$HOME/sapoche-$NAME-android.apk
+  PUBLIC_APK32=$HOME/sapoche-$NAME-android-arm32.apk
   SAPOCHE_NO_KEY=1 "$FLUTTER" build apk --release --target-platform android-arm64 --split-debug-info="$SYMBOLS/public" --obfuscate
   cp build/app/outputs/flutter-apk/app-release.apk "$PUBLIC_APK"
+  SAPOCHE_NO_KEY=1 "$FLUTTER" build apk --release --target-platform android-arm --split-debug-info="$SYMBOLS/public" --obfuscate
+  cp build/app/outputs/flutter-apk/app-release.apk "$PUBLIC_APK32"
+  check_abi "$PUBLIC_APK" arm64-v8a
+  check_abi "$PUBLIC_APK32" armeabi-v7a
   KEY=$(sed -n 's/^sapoche\.roomKey=//p' "$APP/android/sapoche.properties")
   if [ -n "$KEY" ]; then
-    for apk in "$OUT" "$PUBLIC_APK"; do
+    for apk in "$OUT64" "$OUT32" "$PUBLIC_APK" "$PUBLIC_APK32"; do
       found=0
       for dex in $(unzip -Z1 "$apk" 'classes*.dex'); do
         # Not grep -q: it stops at the first match, unzip then dies of SIGPIPE and pipefail calls the whole line a failure
         unzip -p "$apk" "$dex" | grep -aF -- "$KEY" >/dev/null && found=1
       done
-      [ "$apk" = "$OUT" ] && [ "$found" = 0 ] && { echo "the check for the key does not find it in the APK that has it: it cannot be trusted"; exit 1; }
-      [ "$apk" = "$PUBLIC_APK" ] && [ "$found" = 1 ] && { echo "the key is inside the APK made for GitHub: not published"; exit 1; }
+      case "$apk" in
+        "$OUT64"|"$OUT32") [ "$found" = 0 ] && { echo "the check for the key does not find it in $(basename "$apk"), which has it: it cannot be trusted"; exit 1; } ;;
+        *) [ "$found" = 1 ] && { echo "the key is inside $(basename "$apk"), made for GitHub: not published"; exit 1; } ;;
+      esac
     done
   fi
   "$BUILD_TOOLS/apksigner" verify "$PUBLIC_APK" >/dev/null
+  "$BUILD_TOOLS/apksigner" verify "$PUBLIC_APK32" >/dev/null
   cd "$SERVER"
   npx wrangler r2 object put "sapoche-releases/sapoche-$NAME.apk" --remote --file "$OUT" --content-type application/vnd.android.package-archive
   npx wrangler r2 object put "sapoche-releases/sapoche-$NAME.apk.gz" --remote --file "$OUT.gz" --content-type application/gzip
+  npx wrangler r2 object put "sapoche-releases/sapoche-$NAME-arm32.apk" --remote --file "$OUT32" --content-type application/vnd.android.package-archive
+  npx wrangler r2 object put "sapoche-releases/sapoche-$NAME-arm32.apk.gz" --remote --file "$OUT32.gz" --content-type application/gzip
   npx wrangler r2 object put "sapoche-releases/latest.json" --remote --file "$LATEST" --content-type application/json
   echo "published $NAME ($CODE)"
   # Also on the release of this repository (tag v<version>), beside the iPhone build the CI puts there. Not having the
   # token is not a failure: the release above is complete without it.
   status=0
-  "$APP/tool/github_release.py" "v$NAME" "$APP/release-notes/$NAME.txt" "$PUBLIC_APK" || status=$?
+  "$APP/tool/github_release.py" "v$NAME" "$APP/release-notes/$NAME.txt" "$PUBLIC_APK" "$PUBLIC_APK32" || status=$?
   [ "$status" = 3 ] && echo "NOT on GitHub: see app/tool/github_release.py for the token" || [ "$status" = 0 ] || exit "$status"
 else
   echo "not published; run again with --publish to put it in the bucket"
