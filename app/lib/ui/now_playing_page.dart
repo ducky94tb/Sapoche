@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../data/app_settings.dart';
 import '../data/models.dart';
 import '../data/room_controller.dart';
+import '../theme/palette.dart';
 import '../theme/theme.dart';
 import 'player/apple_music_player.dart';
 import 'player/classic_player.dart';
@@ -27,27 +28,49 @@ class NowPlayingPage extends StatelessWidget {
   /// is to be as far from the edge of the window as it is at the top). What is in the card keeps above it.
   final double bottomInset;
 
+  /// Dark theme kept for the full-cover player while the app is in the light theme, built again only when the accent
+  /// changes so `_BodyState._onCoverTheme` keeps its cached copy.
+  static Color? _darkAccent;
+  static ThemeData? _darkTheme;
+
+  static ThemeData _darkFor(Color? accent) {
+    if (_darkTheme != null && _darkAccent == accent) return _darkTheme!;
+    _darkAccent = accent;
+    return _darkTheme = buildTheme(Palette.forAccent(accent, Brightness.dark));
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = AppScope.of(context).settings;
     return ListenableBuilder(
-      // The style has a notifier of its own (the accent, which the dark theme of the cards is made in, is in the settings)
+      // The style has a notifier of its own (the accent, which the dark theme of the full cover is made in, is in the settings)
       listenable: Listenable.merge([settings, settings.playerStyleListenable]),
       builder: (context, _) {
         final style = settings.playerStyle;
-        final dark = Theme.of(context).brightness == Brightness.dark;
-        // Icons in the status bar and the navigation bar that show on the backdrop, light or dark like the app
+        // Full cover always uses white text and controls on the deep colours of the cover, as Apple Music does: dark
+        // covers stay deep and the title over the cover's foot always reads clearly even in the light theme
+        final forceDark = style == PlayerStyle.appleMusic;
+        final appDark = Theme.of(context).brightness == Brightness.dark;
+        final dark = appDark || forceDark;
+        // Icons in the status bar and the navigation bar: light on a dark player, dark on a light one
         final icons = dark ? Brightness.light : Brightness.dark;
-        // Beside the pages the status bar is theirs
-        if (docked) {
-          return _PlayerPage(style: style, docked: true, bottomInset: bottomInset);
+        Widget page = _PlayerPage(
+          style: style,
+          docked: docked,
+          bottomInset: docked ? bottomInset : 0,
+        );
+        if (forceDark && !appDark) {
+          page = Theme(data: _darkFor(settings.accent), child: page);
         }
+        // Beside the pages the status bar is theirs
+        if (docked) return page;
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: SystemUiOverlayStyle(
+            statusBarBrightness: dark ? Brightness.dark : Brightness.light,
             statusBarIconBrightness: icons,
             systemNavigationBarIconBrightness: icons,
           ),
-          child: _PlayerPage(style: style, docked: false),
+          child: page,
         );
       },
     );
@@ -203,51 +226,38 @@ class _BodyState extends State<_Body> {
     };
     return ValueListenableBuilder<NowPlayingPanel>(
       valueListenable: shown,
-      builder: (context, panel, _) {
-        final onPicture =
-            bleed && panel == NowPlayingPanel.cover && !_c.snapshot.video;
-        final page = PlayerLookScope(
-          look: look,
-          onPanel: _choose,
-          docked: docked,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // The colours drift while the song plays, as Apple Music's do
-              if (look.flatBackdrop)
-                FlatBackdrop(coverUrl: widget.current.thumb)
-              else
-                ListenableBuilder(
-                  listenable: _c.playState,
-                  builder: (context, _) => PlayerBackdrop(
-                    coverUrl: widget.current.thumb,
-                    moving: _c.isPlaying,
-                    // The full cover melts into the colours: in the light theme they are kept strong, not pale
-                    vivid: widget.style == PlayerStyle.appleMusic,
-                  ),
-                ),
-              // The safe area keeps the player clear of a notch at the side. Reactions in the room fly up over all of
-              // it. What is on the colours of the cover is in the colours made for it (`Palette.onCover`), not in the
-              // greys of a plain page
-              Theme(
-                data: _onCoverTheme(context),
-                child: ReactionShower(
-                  controller: _c,
-                  child: SafeArea(top: !bleed, child: player(panel)),
+      builder: (context, panel, _) => PlayerLookScope(
+        look: look,
+        onPanel: _choose,
+        docked: docked,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // The colours drift while the song plays, as Apple Music's do
+            if (look.flatBackdrop)
+              FlatBackdrop(coverUrl: widget.current.thumb)
+            else
+              ListenableBuilder(
+                listenable: _c.playState,
+                builder: (context, _) => PlayerBackdrop(
+                  coverUrl: widget.current.thumb,
+                  moving: _c.isPlaying,
+                  vivid: widget.style == PlayerStyle.appleMusic,
                 ),
               ),
-            ],
-          ),
-        );
-        return onPicture
-            ? AnnotatedRegion<SystemUiOverlayStyle>(
-                value: const SystemUiOverlayStyle(
-                  statusBarIconBrightness: Brightness.light,
-                ),
-                child: page,
-              )
-            : page;
-      },
+            // The safe area keeps the player clear of a notch at the side. Reactions in the room fly up over all of
+            // it. What is on the colours of the cover is in the colours made for it (`Palette.onCover`), not in the
+            // greys of a plain page
+            Theme(
+              data: _onCoverTheme(context),
+              child: ReactionShower(
+                controller: _c,
+                child: SafeArea(top: !bleed, child: player(panel)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

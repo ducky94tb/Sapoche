@@ -1,0 +1,2 @@
+Trình phát Tràn bìa: luôn dùng chữ và nút màu trắng ở cả giao diện sáng
+- Trình phát Tràn bìa nay luôn dùng chữ và nút điều khiển màu trắng trên nền màu bìa sâu kể cả khi app đang ở chủ đề sáng, giúp các bài có ảnh bìa tối luôn dễ đọc.

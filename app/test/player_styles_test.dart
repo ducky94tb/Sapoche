@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sapoche/data/app_settings.dart';
@@ -9,6 +10,7 @@ import 'package:sapoche/strings.dart';
 import 'package:sapoche/ui/now_playing_page.dart';
 import 'package:sapoche/ui/player/apple_music_player.dart';
 import 'package:sapoche/ui/player/classic_player.dart';
+import 'package:sapoche/ui/player/parts.dart';
 import 'package:sapoche/ui/player/spotify_player.dart';
 import 'package:sapoche/ui/player/lyrics_ticker.dart';
 import 'package:sapoche/ui/player/lyrics_view.dart';
@@ -897,6 +899,43 @@ void main() {
 
     testWidgets('classic: the cover flies as it always has', (tester) async {
       expect(await coverWhilePulled(tester, PlayerStyle.classic), 0);
+    });
+  });
+
+  group('full cover stays white-on-colour in the light theme', () {
+    testWidgets('uses the dark on-cover palette and light system bars when the app is light', (
+      tester,
+    ) async {
+      await openStyled(tester, PlayerStyle.appleMusic);
+      final player = tester.element(find.byType(AppleMusicPlayer));
+      expect(Theme.of(player).brightness, Brightness.dark);
+
+      final region = tester.widget<AnnotatedRegion<SystemUiOverlayStyle>>(
+        find.descendant(
+          of: find.byType(NowPlayingPage),
+          matching: find.byType(AnnotatedRegion<SystemUiOverlayStyle>),
+        ),
+      );
+      expect(region.value.statusBarIconBrightness, Brightness.light);
+      expect(region.value.systemNavigationBarIconBrightness, Brightness.light);
+      expect(region.value.statusBarBrightness, Brightness.dark);
+    });
+
+    testWidgets('classic and cards still follow the light theme of the app', (
+      tester,
+    ) async {
+      for (final style in [PlayerStyle.classic, PlayerStyle.spotify]) {
+        await openStyled(tester, style);
+        final backdrop = tester.element(find.byType(NowPlayingPage));
+        expect(Theme.of(backdrop).brightness, Brightness.light);
+        final inner = tester.element(
+          find.descendant(
+            of: find.byType(NowPlayingPage),
+            matching: find.byType(TransportRow),
+          ),
+        );
+        expect(Theme.of(inner).brightness, Brightness.light);
+      }
     });
   });
 }

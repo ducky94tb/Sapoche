@@ -1,0 +1,2 @@
+Full cover player: white text and controls in the light theme too
+- The Full cover player now always uses white text and controls on the deep colours of the cover, even when the app is in the light theme, so songs with dark covers stay easy to read.
