@@ -401,6 +401,22 @@ void main() {
     expect(jsonDecode(body)['context']['client']['gl'], 'US');
   });
 
+  test('explicit badge and release year are read from watchNext, search and home', () async {
+    final next = await client({'next': 'next_explicit'}).watchNext('H4RELGc9su8');
+    expect(next.tracks, hasLength(3));
+    expect(next.tracks[0].explicit, isTrue);
+    expect(next.tracks[0].year, '2017');
+    expect(next.tracks[1].explicit, isTrue);
+    expect(next.tracks[1].year, '2024');
+    expect(next.tracks[2].explicit, isFalse);
+    expect(next.tracks[2].year, '2024');
+
+    final home = await client({'browse': 'home_chips'}).home();
+    final homeTracks = home.shelves.expand((s) => s.tracks).toList();
+    expect(homeTracks.firstWhere((t) => t.videoId == 'KvLs5WSz4yI').explicit, isTrue);
+    expect(homeTracks.any((t) => !t.explicit), isTrue);
+  });
+
   test('the completions of a search are the words that would be searched for', () async {
     final (music, asked) = recording('suggestions');
     final found = await music.suggestions('son tung');

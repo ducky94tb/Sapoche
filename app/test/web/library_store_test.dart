@@ -331,5 +331,22 @@ void main() {
       expect(old.skipped(), isEmpty);
       expect(old.blocked(), isEmpty);
     });
+
+    test('explicit and year persist across reloads and stay kept when re-added without them', () async {
+      final disk = _Disk();
+      final first = LibraryStore(disk: disk, nowMs: () => 100);
+      first.setLiked(const Track(videoId: 'ex1', title: 'Explicit', artist: 'A', durMs: 180000, explicit: true, year: '2017'), true);
+      first.setLiked(const Track(videoId: 'ex1', title: 'Explicit', artist: 'A', durMs: 180000), true);
+      first.setLiked(const Track(videoId: 'cl1', title: 'Clean', artist: 'B', durMs: 180000), true);
+      await first.flush();
+
+      final second = LibraryStore(stored: disk.json);
+      final ex = second.liked().firstWhere((t) => t.videoId == 'ex1');
+      final cl = second.liked().firstWhere((t) => t.videoId == 'cl1');
+      expect(ex.explicit, isTrue);
+      expect(ex.year, '2017');
+      expect(cl.explicit, isFalse);
+      expect(cl.year, isNull);
+    });
   });
 }

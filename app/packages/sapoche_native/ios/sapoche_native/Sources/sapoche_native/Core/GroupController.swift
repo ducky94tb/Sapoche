@@ -16,6 +16,8 @@ struct PlayerInfo: Equatable {
     var heldBack = false
     /// How fast the player plays: the person's choice outside a room, the drift control's in one.
     var speed: Float = 1
+    /// Codec, average bitrate and sample rate of the audio stream currently playing; nil until known.
+    var audioFormat: AudioFormat? = nil
 }
 
 /// A [PlayerPort] with what the controller needs beyond the session's needs: volume for the sleep timer's fade, a way to
@@ -1497,7 +1499,8 @@ final class ListenRecorder {
             tracker.setPlaying(info.playing, now: time.nowMs())
         }
         schedule()
-        scrobbler?.watch(item.map { TrackRef(videoId: $0.videoId, title: $0.title, artist: $0.artist, thumb: $0.thumb, durMs: info.durationMs) },
+        scrobbler?.watch(item.map { TrackRef(videoId: $0.videoId, title: $0.title, artist: $0.artist, thumb: $0.thumb, durMs: info.durationMs,
+                                             explicit: $0.explicit, year: $0.year) },
                          playing: info.playing, durationMs: info.durationMs)
     }
 
@@ -1520,12 +1523,14 @@ final class ListenRecorder {
             return
         }
         EventLog.d("library", "skipped '\(item.title)' (\(source))")
-        recordSkip(TrackRef(videoId: id, title: item.title, artist: item.artist, thumb: item.thumb, durMs: durationMs), source)
+        recordSkip(TrackRef(videoId: id, title: item.title, artist: item.artist, thumb: item.thumb, durMs: durationMs,
+                            explicit: item.explicit, year: item.year), source)
     }
 
     private func heard(_ id: String, _ durationMs: Int64) {
         guard let item, item.videoId == id else { return }
         EventLog.d("library", "heard '\(item.title)' (\(source))")
-        record(TrackRef(videoId: id, title: item.title, artist: item.artist, thumb: item.thumb, durMs: durationMs), source)
+        record(TrackRef(videoId: id, title: item.title, artist: item.artist, thumb: item.thumb, durMs: durationMs,
+                        explicit: item.explicit, year: item.year), source)
     }
 }

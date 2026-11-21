@@ -44,7 +44,12 @@ Future<FakeBackend> openStyled(
   backend.emit(StateEvent(sampleRoom(video: video)));
   backend.emit(
     PositionEvent(
-      PlayerPosition(playing: true, positionMs: positionMs, durationMs: 200000),
+      PlayerPosition(
+        playing: true,
+        positionMs: positionMs,
+        durationMs: 200000,
+        audioFormat: const AudioFormat(codec: 'Opus', kbps: 131, hz: 48000),
+      ),
     ),
   );
   await tester.pump(const Duration(milliseconds: 500));

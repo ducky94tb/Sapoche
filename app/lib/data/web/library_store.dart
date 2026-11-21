@@ -401,13 +401,18 @@ class LibraryStore {
     return clean.length > maxName ? clean.substring(0, maxName) : clean;
   }
 
-  void _remember(Track track) => _tracks[track.videoId] = Track(
-    videoId: track.videoId,
-    title: track.title,
-    artist: track.artist,
-    thumb: track.thumb,
-    durMs: track.durMs,
-  );
+  void _remember(Track track) {
+    final prev = _tracks[track.videoId];
+    _tracks[track.videoId] = Track(
+      videoId: track.videoId,
+      title: track.title,
+      artist: track.artist,
+      thumb: track.thumb,
+      durMs: track.durMs > 0 ? track.durMs : (prev?.durMs ?? 0),
+      explicit: track.explicit || (prev?.explicit ?? false),
+      year: track.year ?? prev?.year,
+    );
+  }
 
   void _dropUnused() {
     final used = {
@@ -444,7 +449,8 @@ class LibraryStore {
     'v': 3,
     'next': _nextId,
     'tracks': [
-      for (final t in _tracks.values) [t.videoId, t.title, t.artist, t.thumb, t.durMs],
+      for (final t in _tracks.values)
+        [t.videoId, t.title, t.artist, t.thumb, t.durMs, if (t.explicit || t.year != null) ...[t.explicit, t.year]],
     ],
     'likes': [for (final e in _likes.entries) [e.key, e.value]],
     'history': [for (final (id, at, source) in _history) [id, at, source]],
@@ -459,7 +465,10 @@ class LibraryStore {
       for (final e in _suggestions.entries)
         e.key: {
           'at': e.value.fetchedAt,
-          'tracks': [for (final t in e.value.tracks) [t.videoId, t.title, t.artist, t.thumb, t.durMs]],
+          'tracks': [
+            for (final t in e.value.tracks)
+              [t.videoId, t.title, t.artist, t.thumb, t.durMs, if (t.explicit || t.year != null) ...[t.explicit, t.year]],
+          ],
         },
     },
     'playlists': [
@@ -480,6 +489,8 @@ class LibraryStore {
         artist: t[2] as String,
         thumb: t[3] as String?,
         durMs: (t[4] as num).toInt(),
+        explicit: t.length > 5 && t[5] == true,
+        year: t.length > 6 ? t[6] as String? : null,
       );
     }
     for (final row in json['likes'] as List) {
@@ -514,6 +525,8 @@ class LibraryStore {
             row[2] as String,
             row[3] as String?,
             (row[4] as num).toInt(),
+            explicit: row.length > 5 && row[5] == true,
+            year: row.length > 6 ? row[6] as String? : null,
           ),
       ], (m['at'] as num).toInt());
     });

@@ -1,12 +1,15 @@
 package app.sapoche
 
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
+import app.sapoche.core.AudioFormat
 import app.sapoche.sync.LocalMusic
 import app.sapoche.sync.LoadFailure
 import app.sapoche.sync.PlayerPort
@@ -44,6 +47,7 @@ class ExoPlayerPort(private val player: ExoPlayer) : PlayerPort {
 
     private var loaded: QueueItem? = null
     private var queuedNext: QueueItem? = null
+    private var audioTrackFormat: Format? = null
 
     /** Items are loaded with their picture while this is on. */
     private var videoOn = false
@@ -68,11 +72,18 @@ class ExoPlayerPort(private val player: ExoPlayer) : PlayerPort {
                 }
             }
 
+            override fun onTracksChanged(tracks: Tracks) {
+                audioTrackFormat = tracks.groups
+                    .firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
+                    ?.let { group -> (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { group.getTrackFormat(it) } }
+            }
+
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 // Only a natural move to the queued successor; our own loads report other reasons
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                     loaded = queuedNext
                     queuedNext = null
+                    audioTrackFormat = null
                     onAdvanced?.invoke()
                 }
             }
@@ -131,6 +142,7 @@ class ExoPlayerPort(private val player: ExoPlayer) : PlayerPort {
         player.playWhenReady = false
         loaded = item
         queuedNext = null
+        audioTrackFormat = null
         player.setMediaItem(mediaItem(item, withVideo), seekToMs)
         player.prepare()
         waitingToLoad = true
@@ -167,8 +179,39 @@ class ExoPlayerPort(private val player: ExoPlayer) : PlayerPort {
     override fun stop() {
         loaded = null
         queuedNext = null
+        audioTrackFormat = null
         player.stop()
         player.clearMediaItems()
+    }
+
+    /** Codec, average bitrate and sample rate of the audio stream currently loaded; null until known. */
+    fun audioFormat(): AudioFormat? {
+        val item = loaded ?: return null
+        val videoId = item.videoId
+        val format = audioTrackFormat
+        val local = LocalMusic.isLocal(videoId)
+        val pinned = if (local) null else SapocheApp.caches.pinned(videoId)
+        val cached = if (local) null else SapocheApp.streams.cachedAudio(videoId, pinned)
+        val itag = pinned ?: cached?.itag
+        val fromItag = itag?.let { AudioFormat.fromItag(it) }
+        val codec = AudioFormat.codecFromMime(format?.sampleMimeType, format?.codecs, itag)
+            ?: fromItag?.first
+            ?: return null
+        val hz = format?.sampleRate?.takeIf { it > 0 }
+            ?: cached?.sampleRate?.takeIf { it > 0 }
+            ?: fromItag?.second
+            ?: 0
+        val durMs = player.duration.takeIf { it > 0 } ?: item.durMs
+        val bytes = if (local) {
+            SapocheApp.deviceMusic.sizeIfKnown(videoId)
+        } else {
+            SapocheApp.caches.contentLength(videoId).takeIf { it > 0 } ?: cached?.contentLength ?: -1L
+        }
+        val kbps = AudioFormat.kbpsOf(bytes, durMs).takeIf { it > 0 }
+            ?: (format?.averageBitrate?.takeIf { it > 0 } ?: format?.bitrate?.takeIf { it > 0 })?.let { (it + 500) / 1000 }
+            ?: cached?.bitrateKbps?.takeIf { it > 0 }
+            ?: 0
+        return AudioFormat(codec = codec, kbps = kbps, hz = hz)
     }
 
     override fun setSpeed(speed: Float) {
@@ -309,6 +352,12 @@ class ExoPlayerPort(private val player: ExoPlayer) : PlayerPort {
                     val inside = if (LocalMusic.isLocal(item.videoId)) SapocheApp.deviceMusic.coverIfRead(item.videoId) else null
                     if (inside != null) setArtworkData(inside, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
                     else item.thumb?.let { setArtworkUri(android.net.Uri.parse(it)) }
+                    if (item.explicit || item.year != null) {
+                        setExtras(android.os.Bundle().apply {
+                            if (item.explicit) putBoolean("explicit", true)
+                            item.year?.let { putString("year", it) }
+                        })
+                    }
                 }
                 .build(),
         )

@@ -211,6 +211,7 @@ abstract final class MusicParser {
       artist: show,
       durMs: _spokenSeconds(_text(_at(row, ['playbackProgress', 'musicPlaybackProgressRenderer', 'durationText']))) * 1000,
       thumb: _thumbnail(_at(row, ['thumbnail', 'musicThumbnailRenderer', 'thumbnail', 'thumbnails'])),
+      explicit: _isExplicit(row),
     );
   }
 
@@ -376,7 +377,7 @@ abstract final class MusicParser {
     }
     final videoId = _string(_at(watch, ['videoId']));
     if (videoId == null) return null;
-    final song = _build(videoId, title, _withoutLabel(byline), duration, thumbs, type);
+    final song = _build(videoId, title, _withoutLabel(byline), duration, thumbs, type, explicit: _isExplicit(card));
     return _trackItem(song, type, byline);
   }
 
@@ -423,6 +424,7 @@ abstract final class MusicParser {
       artist: parts.isEmpty ? '' : parts.last,
       durMs: song.durMs,
       thumb: song.thumb,
+      explicit: song.explicit,
       album: song.album,
       albumId: song.albumId,
       year: song.year,
@@ -494,6 +496,7 @@ abstract final class MusicParser {
       _text(_at(row, ['lengthText'])),
       _at(row, ['thumbnail', 'thumbnails']),
       type,
+      explicit: _isExplicit(row),
     );
   }
 
@@ -530,6 +533,7 @@ abstract final class MusicParser {
       type,
       // A song's plays are a column of their own ("155M plays"), after the line with its artist and album
       extra: columns.length > 2 ? _text(columns[2]) : null,
+      explicit: _isExplicit(row),
     );
   }
 
@@ -547,7 +551,16 @@ abstract final class MusicParser {
   }
 
   /// The parts of a line like "Artist • Album • 1987" are told apart by where the separators are.
-  static MusicTrack _build(String videoId, String title, List<Object?> byline, String? duration, Object? thumbs, String? type, {String? extra}) {
+  static MusicTrack _build(
+    String videoId,
+    String title,
+    List<Object?> byline,
+    String? duration,
+    Object? thumbs,
+    String? type, {
+    String? extra,
+    bool explicit = false,
+  }) {
     final parts = <List<Object?>>[[]];
     for (final run in byline) {
       if (_string(_at(run, ['text']))?.trim() == '•') {
@@ -593,6 +606,7 @@ abstract final class MusicParser {
       durMs: _seconds(duration) * 1000,
       thumb: _thumbnail(thumbs),
       isSong: type == 'MUSIC_VIDEO_TYPE_ATV',
+      explicit: explicit,
       stats: stats.isEmpty ? null : stats,
     );
   }
@@ -612,6 +626,7 @@ abstract final class MusicParser {
     artist: artist,
     durMs: song.durMs,
     thumb: thumb,
+    explicit: song.explicit,
     artistId: artistId,
     album: album,
     albumId: albumId,
@@ -709,7 +724,14 @@ abstract final class MusicParser {
       null,
       _at(card, ['thumbnailRenderer', 'musicThumbnailRenderer', 'thumbnail', 'thumbnails']),
       _string(_at(watch, ['watchEndpointMusicSupportedConfigs', 'watchEndpointMusicConfig', 'musicVideoType'])),
+      explicit: _isExplicit(card),
     );
+  }
+
+  /// Whether a row or card carries YouTube Music's explicit content badge.
+  static bool _isExplicit(Object? node) {
+    final badges = [..._elements(_at(node, ['badges'])), ..._elements(_at(node, ['subtitleBadges']))];
+    return badges.any((b) => _string(_at(b, ['musicInlineBadgeRenderer', 'icon', 'iconType'])) == 'MUSIC_EXPLICIT_BADGE');
   }
 
   // ------------------------------------------------------------------ reading

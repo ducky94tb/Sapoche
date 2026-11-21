@@ -458,8 +458,10 @@ class LibraryStoreTest {
             db.execSQL("CREATE TABLE skips(id INTEGER PRIMARY KEY AUTOINCREMENT, video_id TEXT NOT NULL REFERENCES tracks(video_id), skipped_at INTEGER NOT NULL)")
             db.execSQL("DROP TABLE skips_new")
             db.execSQL("DROP TABLE taste_marks")
-            // ...nor the columns of the versions after it (loudness, kept playlists)
+            // ...nor the columns of the versions after it (loudness, kept playlists, explicit/year)
             db.execSQL("ALTER TABLE tracks DROP COLUMN loudness_cdb")
+            db.execSQL("ALTER TABLE tracks DROP COLUMN explicit")
+            db.execSQL("ALTER TABLE tracks DROP COLUMN year")
             db.execSQL("ALTER TABLE playlists DROP COLUMN offline")
             db.execSQL("ALTER TABLE folders DROP COLUMN offline")
             db.execSQL("INSERT INTO tracks VALUES('old', 'Old song', 'Old artist', NULL, 1000)")
@@ -938,5 +940,35 @@ class LibraryStoreTest {
         store.setLiked(store.localSongs().single().track, true, at = 1)
         store.setLiked(song("yt"), true, at = 2)
         assertEquals(listOf("yt"), store.likedToDownload().map { it.videoId })
+    }
+
+    @Test
+    fun aDatabaseFromVersionTenGainsExplicitAndYearColumnsAndPreservesExistingData() = runTest {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val file = "upgrade-ten-test.db"
+        context.deleteDatabase(file)
+        context.openOrCreateDatabase(file, android.content.Context.MODE_PRIVATE, null).use { db ->
+            db.execSQL("CREATE TABLE tracks(video_id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL, thumb TEXT, dur_ms INTEGER NOT NULL, loudness_cdb INTEGER)")
+            db.execSQL("CREATE TABLE likes(video_id TEXT PRIMARY KEY REFERENCES tracks(video_id), liked_at INTEGER NOT NULL)")
+            db.execSQL("INSERT INTO tracks VALUES('old', 'Old song', 'Old artist', NULL, 1000, -500)")
+            db.execSQL("INSERT INTO likes VALUES('old', 5)")
+            db.version = 10
+        }
+        val upgraded = LibraryStore(context, file)
+        try {
+            val old = upgraded.liked().single().track
+            assertEquals("Old song", old.title)
+            assertFalse(old.explicit)
+            assertNull(old.year)
+            // Updating with explicit and year stores them, and a later write without them keeps them
+            upgraded.setLiked(TrackRef("old", "Old song", "Old artist", null, 1000, explicit = true, year = "2019"), true, at = 6)
+            upgraded.setLiked(TrackRef("old", "Old song", "Old artist", null, 1000), true, at = 7)
+            val kept = upgraded.liked().single().track
+            assertTrue(kept.explicit)
+            assertEquals("2019", kept.year)
+        } finally {
+            upgraded.close()
+            context.deleteDatabase(file)
+        }
     }
 }

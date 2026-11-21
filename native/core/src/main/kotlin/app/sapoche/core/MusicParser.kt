@@ -148,6 +148,7 @@ object MusicParser {
             artist = show,
             durationSec = spokenSeconds(row.at("playbackProgress", "musicPlaybackProgressRenderer", "durationText").text()),
             thumbUrl = row.at("thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails").thumbnail(),
+            explicit = row.hasExplicitBadge(),
         )
     }
 
@@ -255,7 +256,7 @@ object MusicParser {
         val watch = endpoint.at("watchEndpoint")
         val type = watch.at("watchEndpointMusicSupportedConfigs", "watchEndpointMusicConfig", "musicVideoType").string()
         val duration = byline.mapNotNull { it.at("text").string()?.trim() }.lastOrNull { DURATION.matches(it) }
-        val song = track(watch.at("videoId").string() ?: return null, title, withoutLabel(byline), duration, thumbs, type)
+        val song = track(watch.at("videoId").string() ?: return null, title, withoutLabel(byline), duration, thumbs, type, explicit = card.hasExplicitBadge())
         return trackItem(song, type, byline)
     }
 
@@ -331,6 +332,7 @@ object MusicParser {
             duration = row.at("lengthText").text(),
             thumbs = row.at("thumbnail", "thumbnails"),
             type = type,
+            explicit = row.hasExplicitBadge(),
         )
     }
 
@@ -355,6 +357,7 @@ object MusicParser {
             type = type,
             // A song's plays are a column of their own ("155M plays"), after the line with its artist and album
             extra = columns.getOrNull(2).text(),
+            explicit = row.hasExplicitBadge(),
         )
     }
 
@@ -366,7 +369,7 @@ object MusicParser {
     }
 
     /** The parts of a line like "Artist • Album • 1987" are told apart by where the separators are. */
-    private fun track(videoId: String, title: String, byline: List<JsonElement>, duration: String?, thumbs: JsonElement?, type: String?, extra: String? = null): MusicTrack {
+    private fun track(videoId: String, title: String, byline: List<JsonElement>, duration: String?, thumbs: JsonElement?, type: String?, extra: String? = null, explicit: Boolean = false): MusicTrack {
         val parts = mutableListOf(mutableListOf<JsonElement>())
         for (run in byline) {
             if (run.at("text").string()?.trim() == "•") parts.add(mutableListOf()) else parts.last().add(run)
@@ -390,6 +393,7 @@ object MusicParser {
             durationSec = seconds(duration),
             thumbUrl = thumbs.thumbnail(),
             isSong = type == "MUSIC_VIDEO_TYPE_ATV",
+            explicit = explicit,
             stats = stats,
         )
     }
@@ -442,8 +446,15 @@ object MusicParser {
             duration = null,
             thumbs = card.at("thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails"),
             type = watch.at("watchEndpointMusicSupportedConfigs", "watchEndpointMusicConfig", "musicVideoType").string(),
+            explicit = card.hasExplicitBadge(),
         )
     }
+
+    /** Whether a row or card carries YouTube Music's explicit content badge. */
+    private fun JsonElement?.hasExplicitBadge(): Boolean =
+        (at("badges").elements() + at("subtitleBadges").elements()).any {
+            it.at("musicInlineBadgeRenderer", "icon", "iconType").string() == "MUSIC_EXPLICIT_BADGE"
+        }
 
     // ------------------------------------------------------------------ reading
 

@@ -1126,10 +1126,15 @@ abstract final class S {
   static String get audioQualityHighRate =>
       _t('about 128 kbps', 'khoảng 128 kbps');
   static String get audioQualityMaxRate => _t('up to 160 kbps', 'đến 160 kbps');
+  static String get audioQualityMaxRateIos =>
+      _t('about 128 kbps', 'khoảng 128 kbps');
   static String get audioQualityHelp => _t(
-    'Applies from the next song. YouTube has nothing above about 160 kbps. Songs already saved or downloaded keep their quality. On a weak network it drops by itself.',
-    'Áp dụng từ bài sau. YouTube không có mức nào cao hơn khoảng 160 kbps. Bài đã lưu hoặc đã tải giữ chất lượng cũ. Mạng yếu thì chất lượng tự hạ.',
+    'Applies from the next song. Without signing in, YouTube offers no higher stream. Songs already saved or downloaded keep their quality. On a weak network it drops by itself.',
+    'Áp dụng từ bài sau. Khi chưa đăng nhập, YouTube không có luồng nào cao hơn. Bài đã lưu hoặc đã tải giữ chất lượng cũ. Mạng yếu thì chất lượng tự hạ.',
   );
+
+  // Content advisory badge shown beside explicit tracks
+  static String get explicit => _t('Explicit', 'Nội dung nhạy cảm');
 
   static String get normalizeVolume =>
       _t('Even out loudness', 'Cân bằng âm lượng');

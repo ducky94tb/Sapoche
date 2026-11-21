@@ -34,7 +34,16 @@ Future<void> _state(WidgetTester t, FakeBackend b, RoomSnapshot s) async {
 /// The playing room, with the song playing a little way in.
 Future<void> _playing(WidgetTester t, FakeBackend b, {bool video = false}) async {
   await _state(t, b, busyRoom(video: video));
-  b.emit(const PositionEvent(PlayerPosition(playing: true, positionMs: 64000, durationMs: 305000)));
+  b.emit(
+    const PositionEvent(
+      PlayerPosition(
+        playing: true,
+        positionMs: 64000,
+        durationMs: 305000,
+        audioFormat: AudioFormat(codec: 'Opus', kbps: 131, hz: 48000),
+      ),
+    ),
+  );
   await _settle(t);
 }
 

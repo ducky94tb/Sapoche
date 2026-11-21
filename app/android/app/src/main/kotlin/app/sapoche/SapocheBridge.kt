@@ -381,6 +381,7 @@ class SapocheBridge(
                         override fun onIsPlayingChanged(isPlaying: Boolean) = pushPosition()
                         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = pushPosition()
                         override fun onPlaybackStateChanged(playbackState: Int) = pushPosition()
+                        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) = pushPosition()
                         override fun onPositionDiscontinuity(
                             oldPosition: Player.PositionInfo,
                             newPosition: Player.PositionInfo,
@@ -1184,6 +1185,8 @@ class SapocheBridge(
         artist = map["artist"] as? String ?: "",
         thumb = map["thumb"] as? String,
         durMs = (map["durMs"] as? Number)?.toLong() ?: 0L,
+        explicit = map["explicit"] == true,
+        year = map["year"] as? String,
     )
 
     private fun TrackRef.toMap() = mapOf(
@@ -1192,6 +1195,8 @@ class SapocheBridge(
         "artist" to artist,
         "thumb" to thumb,
         "durMs" to durMs,
+        "explicit" to explicit,
+        "year" to year,
     )
 
     private fun LibraryStore.Entry.toMap() = mapOf(
@@ -1200,6 +1205,8 @@ class SapocheBridge(
         "artist" to track.artist,
         "thumb" to track.thumb,
         "durMs" to track.durMs,
+        "explicit" to track.explicit,
+        "year" to track.year,
         "at" to at,
         "plays" to plays,
     )

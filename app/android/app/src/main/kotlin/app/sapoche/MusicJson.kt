@@ -29,6 +29,7 @@ object MusicJson {
         "thumb" to track.thumbUrl,
         "durMs" to track.durationSec * 1000,
         "isSong" to track.isSong,
+        "explicit" to track.explicit,
         "stats" to track.stats,
     )
 

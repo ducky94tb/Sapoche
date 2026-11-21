@@ -665,6 +665,29 @@ final class LibraryStoreTests: XCTestCase {
 
     // ------------------------------------------------------------------ kept playlists
 
+    func testADatabaseFromVersionTenGainsExplicitAndYearColumnsAndPreservesExistingData() async throws {
+        let path = NSTemporaryDirectory() + "library-\(UUID().uuidString).db"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        do {
+            let old = try SQLite(path: path)
+            try old.run("CREATE TABLE tracks(video_id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL, thumb TEXT, dur_ms INTEGER NOT NULL, loudness_cdb INTEGER)")
+            try old.run("CREATE TABLE likes(video_id TEXT PRIMARY KEY REFERENCES tracks(video_id), liked_at INTEGER NOT NULL)")
+            try old.run("INSERT INTO tracks VALUES('old', 'Old song', 'Old artist', NULL, 1000, -500)")
+            try old.run("INSERT INTO likes VALUES('old', 5)")
+            old.version = 10
+        }
+        let upgraded = try LibraryStore(path: path)
+        let first = try await upgraded.liked().first!.track
+        XCTAssertEqual(first.title, "Old song")
+        XCTAssertFalse(first.explicit)
+        XCTAssertNil(first.year)
+        try await upgraded.setLiked(TrackRef(videoId: "old", title: "Old song", artist: "Old artist", thumb: nil, durMs: 1000, explicit: true, year: "2019"), true, at: 6)
+        try await upgraded.setLiked(TrackRef(videoId: "old", title: "Old song", artist: "Old artist", thumb: nil, durMs: 1000), true, at: 7)
+        let kept = try await upgraded.liked().first!.track
+        XCTAssertTrue(kept.explicit)
+        XCTAssertEqual(kept.year, "2019")
+    }
+
     func testADatabaseFromVersionNineGainsOfflineMarksAllOffAndKeepsItsPlaylists() async throws {
         let path = NSTemporaryDirectory() + "library-\(UUID().uuidString).db"
         defer { try? FileManager.default.removeItem(atPath: path) }
@@ -921,6 +944,20 @@ final class LibraryBackupTests: XCTestCase {
     func testABackupMadeUnderTheFormerNameIsStillRead() throws {
         let backup = try LibraryBackup.fromJson(#"{"app":"unison","version":1,"songs":{"a":{"title":"A","artist":"x","thumb":null,"durMs":5}},"liked":[{"id":"a","at":7}]}"#)
         XCTAssertEqual(backup.liked.map(\.track.videoId), ["a"])
+    }
+
+    func testExplicitAndYearRoundTripWhileStayingAtBackupVersionOne() async throws {
+        try await from.setLiked(TrackRef(videoId: "ex1", title: "Explicit", artist: "Artist", thumb: nil, durMs: 180_000, explicit: true, year: "2017"), true, at: 10)
+        try await from.setLiked(TrackRef(videoId: "cl1", title: "Clean", artist: "Artist", thumb: nil, durMs: 180_000), true, at: 20)
+        let text = LibraryBackup.toJson(try await from.backup(), at: 99)
+        XCTAssertTrue(text.contains("\"version\":1"))
+        let restored = try LibraryBackup.fromJson(text)
+        let ex = restored.liked.first { $0.track.videoId == "ex1" }!.track
+        let cl = restored.liked.first { $0.track.videoId == "cl1" }!.track
+        XCTAssertTrue(ex.explicit)
+        XCTAssertEqual(ex.year, "2017")
+        XCTAssertFalse(cl.explicit)
+        XCTAssertNil(cl.year)
     }
 
     func testBrokenEntriesAreLeftOutAndTheRestIsKept() async throws {

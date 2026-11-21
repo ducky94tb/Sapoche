@@ -53,6 +53,28 @@ class InnertubePlayerTest {
     }
 
     @Test
+    fun `audio format parses sampleRate and maps itags, mime types and byte rate`() {
+        val text = """{"playabilityStatus":{"status":"OK"},"videoDetails":{"lengthSeconds":"213"},"streamingData":{"adaptiveFormats":[
+            {"itag":251,"url":"https://example.invalid/o","mimeType":"audio/webm; codecs=\"opus\"","averageBitrate":131000,"audioSampleRate":"48000","contentLength":"3495000"},
+            {"itag":140,"url":"https://example.invalid/a","mimeType":"audio/mp4; codecs=\"mp4a.40.2\"","averageBitrate":129000,"audioSampleRate":"44100","contentLength":"3450000"}]}}"""
+        val parsed = parse(text)
+        assertEquals(48_000, parsed.all.first { it.itag == 251 }.sampleRate)
+        assertEquals(44_100, parsed.all.first { it.itag == 140 }.sampleRate)
+        assertEquals("Opus" to 48_000, AudioFormat.fromItag(251))
+        assertEquals("AAC" to 44_100, AudioFormat.fromItag(140))
+        assertEquals("AAC HE" to 22_050, AudioFormat.fromItag(139))
+        assertNull(AudioFormat.fromItag(999))
+        assertEquals("Opus", AudioFormat.codecFromMime("audio/opus"))
+        assertEquals("AAC", AudioFormat.codecFromMime("audio/mp4a-latm"))
+        assertEquals("AAC HE", AudioFormat.codecFromMime("audio/mp4a-latm", itag = 139))
+        assertEquals("FLAC", AudioFormat.codecFromMime("audio/flac"))
+        assertEquals("MP3", AudioFormat.codecFromMime("audio/mpeg"))
+        assertEquals(131, AudioFormat.kbpsOf(3_495_000, 213_000))
+        assertEquals(0, AudioFormat.kbpsOf(0, 213_000))
+        assertEquals(0, AudioFormat.kbpsOf(3_495_000, 0))
+    }
+
+    @Test
     fun `each stream carries how loud the song is`() {
         assertEquals(6.55, assertNotNull(parse(fixture("player_visionos_loud")).best.loudnessDb), 0.001)
         assertEquals(0.99, assertNotNull(parse(fixture("player_visionos")).best.loudnessDb), 0.001)

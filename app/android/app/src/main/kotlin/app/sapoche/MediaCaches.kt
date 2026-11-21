@@ -50,6 +50,15 @@ class MediaCaches(
         cache.applyContentMetadataMutations(videoId, ContentMetadataMutations().set(PIN, itag.toLong()))
     }
 
+    /** Total length in bytes of [videoId] as stored in cache metadata (downloads first, then play cache); -1 when unknown. */
+    fun contentLength(videoId: String): Long {
+        for (cache in listOf(downloads, play)) {
+            val length = ContentMetadata.getContentLength(cache.getContentMetadata(videoId))
+            if (length > 0) return length
+        }
+        return -1L
+    }
+
     /** Throws away whatever was kept for [videoId] in either place, because it belongs to a stream that is gone. */
     fun forget(videoId: String) {
         downloads.removeResource(videoId)

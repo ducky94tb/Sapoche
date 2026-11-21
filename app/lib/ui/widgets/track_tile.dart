@@ -5,6 +5,7 @@ import '../../data/music_models.dart';
 import '../../format.dart';
 import '../../theme/theme.dart';
 import 'artwork.dart';
+import 'explicit_badge.dart';
 import '../scope.dart';
 import 'like_button.dart';
 import 'menu_lines.dart' show SongMenuHandle;
@@ -145,7 +146,9 @@ class _TrackTileState extends State<TrackTile> {
           ),
         ),
         // A song with nothing to say about it (an album's, by the one artist) has the title alone
-        if ((subtitle ?? track.artist).isNotEmpty || meta != null) ...[
+        if ((subtitle ?? track.artist).isNotEmpty ||
+            meta != null ||
+            track.explicit) ...[
           const SizedBox(height: 2),
           Row(
             children: [
@@ -154,14 +157,20 @@ class _TrackTileState extends State<TrackTile> {
                 listenable: AppScope.of(context).library.downloadNews,
                 builder: (context, _) => _DownloadMark(track.videoId),
               ),
-              Expanded(
-                child: MetaLine(
-                  text: subtitle ?? track.artist,
-                  meta: meta,
-                  lead: lead,
-                  style: theme.bodyMedium?.copyWith(color: p.textSecondary),
+              if (track.explicit)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: ExplicitBadge(size: 15, color: p.textSecondary),
                 ),
-              ),
+              if ((subtitle ?? track.artist).isNotEmpty || meta != null)
+                Expanded(
+                  child: MetaLine(
+                    text: subtitle ?? track.artist,
+                    meta: meta,
+                    lead: lead,
+                    style: theme.bodyMedium?.copyWith(color: p.textSecondary),
+                  ),
+                ),
             ],
           ),
         ],

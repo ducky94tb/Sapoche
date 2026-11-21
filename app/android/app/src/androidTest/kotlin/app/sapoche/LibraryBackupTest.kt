@@ -119,6 +119,21 @@ class LibraryBackupTest {
     }
 
     @Test
+    fun explicitAndYearRoundTripWhileStayingAtBackupVersionOne() = runTest {
+        from.setLiked(TrackRef("ex1", "Explicit", "Artist", null, 180_000, explicit = true, year = "2017"), true, at = 10)
+        from.setLiked(TrackRef("cl1", "Clean", "Artist", null, 180_000), true, at = 20)
+        val text = LibraryBackup.toJson(from.backup(), at = 99)
+        assertTrue(text.contains("\"version\":1"))
+        val restored = LibraryBackup.fromJson(text)
+        val ex = restored.liked.first { it.track.videoId == "ex1" }.track
+        val cl = restored.liked.first { it.track.videoId == "cl1" }.track
+        assertTrue(ex.explicit)
+        assertEquals("2017", ex.year)
+        assertEquals(false, cl.explicit)
+        assertEquals(null, cl.year)
+    }
+
+    @Test
     fun aBackupMadeUnderTheFormerNameIsStillRead() {
         val backup = LibraryBackup.fromJson("""{"app":"unison","version":1,"songs":{"a":{"title":"A","artist":"x","thumb":null,"durMs":5}},"liked":[{"id":"a","at":7}]}""")
         assertEquals(listOf("a"), backup.liked.map { it.track.videoId })

@@ -37,4 +37,30 @@ class ProtocolTasteTest {
         val old = Protocol.parse("""{"t":"autoplay.fill","epoch":4,"videoId":"bNp9pn0ni3I","title":"One"}""") as ServerMessage.AutoplayFill
         assertTrue(old.tastes.isEmpty())
     }
+
+    @Test
+    fun `explicit and year travel in queue messages and default when omitted`() {
+        val add = parse(Protocol.queueAdd("bNp9pn0ni3I", "Song", "Artist", null, 180_000, explicit = true, year = "2017"))
+        assertEquals("true", add.getValue("explicit").jsonPrimitive.content)
+        assertEquals("2017", add.getValue("year").jsonPrimitive.content)
+        val plain = parse(Protocol.queueAdd("bNp9pn0ni3I", "Song", "Artist", null, 180_000))
+        assertTrue("explicit" !in plain && "year" !in plain)
+
+        val many = parse(Protocol.queueAddMany(listOf(TrackRef("bNp9pn0ni3I", "Song", "Artist", null, 180_000, explicit = true, year = "2019"))))
+        val first = many.getValue("tracks").jsonArray.single().jsonObject
+        assertEquals("true", first.getValue("explicit").jsonPrimitive.content)
+        assertEquals("2019", first.getValue("year").jsonPrimitive.content)
+
+        val prep = Protocol.parse(
+            """{"t":"prepare","epoch":1,"index":0,"seekToMs":0,"item":{"id":"q1","videoId":"bNp9pn0ni3I","title":"Song","artist":"Artist","durMs":180000,"addedBy":"u1","explicit":true,"year":"2017"}}""",
+        ) as ServerMessage.Prepare
+        assertTrue(prep.item.explicit)
+        assertEquals("2017", prep.item.year)
+
+        val oldPrep = Protocol.parse(
+            """{"t":"prepare","epoch":1,"index":0,"seekToMs":0,"item":{"id":"q1","videoId":"bNp9pn0ni3I","title":"Song","artist":"Artist","durMs":180000,"addedBy":"u1"}}""",
+        ) as ServerMessage.Prepare
+        assertEquals(false, oldPrep.item.explicit)
+        assertNull(oldPrep.item.year)
+    }
 }

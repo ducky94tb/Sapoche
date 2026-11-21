@@ -22,6 +22,7 @@ import '../song_info_sheet.dart';
 import '../sleep_sheet.dart';
 import '../widgets/artwork.dart';
 import '../widgets/avatars.dart';
+import '../widgets/explicit_badge.dart';
 import '../widgets/touch_box.dart';
 import '../widgets/track_links.dart';
 import '../widgets/track_menu.dart';
@@ -205,7 +206,7 @@ class PlayerCoverArt extends StatelessWidget {
   }
 }
 
-class PlayerTitleRow extends StatelessWidget {
+class PlayerTitleRow extends StatefulWidget {
   const PlayerTitleRow({
     super.key,
     required this.controller,
@@ -234,42 +235,126 @@ class PlayerTitleRow extends StatelessWidget {
   final int wrapLines;
 
   @override
+  State<PlayerTitleRow> createState() => _PlayerTitleRowState();
+}
+
+class _PlayerTitleRowState extends State<PlayerTitleRow> {
+  MusicTrack? _song;
+  bool _waiting = false;
+  String? _askedFor;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ask();
+  }
+
+  @override
+  void didUpdateWidget(PlayerTitleRow old) {
+    super.didUpdateWidget(old);
+    if (old.controller != widget.controller && _waiting) {
+      old.controller.removeListener(_ask);
+      _waiting = false;
+    }
+    if (old.current.videoId != widget.current.videoId) {
+      _song = null;
+      _askedFor = null;
+    }
+    _ask();
+  }
+
+  @override
+  void dispose() {
+    if (_waiting) widget.controller.removeListener(_ask);
+    super.dispose();
+  }
+
+  Future<void> _ask() async {
+    final track = widget.current;
+    if (track.isLocal) return;
+    final showYear =
+        PlayerLookScope.of(context).style == PlayerStyle.appleMusic;
+    final needsRadio = !track.explicit || (showYear && track.year == null);
+    if (!needsRadio) return;
+    // Wait until the song has sound before calling the cached watch/next endpoint
+    final starting = widget.controller.isStarting;
+    if (starting != _waiting) {
+      _waiting = starting;
+      if (starting) {
+        widget.controller.addListener(_ask);
+      } else {
+        widget.controller.removeListener(_ask);
+      }
+    }
+    if (starting || _askedFor == track.videoId) return;
+    _askedFor = track.videoId;
+    try {
+      final song = (await AppScope.of(context).music.radio(track.videoId))
+          .songOf(track.videoId);
+      if (mounted && widget.current.videoId == track.videoId && song != null) {
+        setState(() => _song = song);
+      }
+    } catch (_) {}
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
+    final p = context.palette;
     final look = PlayerLookScope.of(context);
+    final current = widget.current;
+    final dense = widget.dense;
+    final explicit = current.explicit || (_song?.explicit ?? false);
+    final rawYear = current.year ?? _song?.year;
+    final year = look.style == PlayerStyle.appleMusic &&
+            rawYear != null &&
+            rawYear.isNotEmpty
+        ? rawYear
+        : null;
+    final title = MarqueeText(
+      current.title,
+      style: dense
+          ? theme.titleMedium?.copyWith(
+              fontSize: look.star ? 17 : 16,
+              fontWeight: FontWeight.w700,
+            )
+          : look.compactTitle
+          ? theme.headlineSmall?.copyWith(fontSize: 18)
+          : theme.headlineSmall,
+      rounds: MarqueeText.playerRounds,
+      wrapLines: widget.wrapLines,
+    );
     return Row(
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              MarqueeText(
-                current.title,
-                style: dense
-                    ? theme.titleMedium?.copyWith(
-                        fontSize: look.star ? 17 : 16,
-                        fontWeight: FontWeight.w700,
-                      )
-                    : look.compactTitle
-                    ? theme.headlineSmall?.copyWith(fontSize: 18)
-                    : theme.headlineSmall,
-                rounds: MarqueeText.playerRounds,
-                wrapLines: wrapLines,
-              ),
+              if (explicit)
+                Row(
+                  children: [
+                    Flexible(child: title),
+                    const SizedBox(width: 6),
+                    ExplicitBadge(size: dense ? 16 : 18, color: p.textSecondary),
+                  ],
+                )
+              else
+                title,
               SizedBox(height: dense ? 0 : 2),
               _ArtistLine(
-                controller: controller,
+                controller: widget.controller,
                 current: current,
                 dense: dense,
+                year: year,
               ),
             ],
           ),
         ),
-        ?extra,
+        ?widget.extra,
         LikeButton(track: current, size: dense ? 22 : 26, star: look.star),
-        if (showMore)
+        if (widget.showMore)
           PlayerMoreButton(
-            controller: controller,
+            controller: widget.controller,
             current: current,
             compact: dense,
           ),
@@ -278,18 +363,21 @@ class PlayerTitleRow extends StatelessWidget {
   }
 }
 
-/// The artist of the song, and after it, small and still, how many watched it ("1.8B views"). It comes after a request
-/// of its own, once the song has sound, so it only narrows the line when it arrives and nothing moves down.
+/// The artist of the song, and after it, small and still, the release year (Full cover only) and how many watched it
+/// ("1.8B views"). It comes after a request of its own, once the song has sound, so it only narrows the line when it
+/// arrives and nothing moves down.
 class _ArtistLine extends StatefulWidget {
   const _ArtistLine({
     required this.controller,
     required this.current,
     this.dense = false,
+    this.year,
   });
 
   final RoomController controller;
   final QueueEntry current;
   final bool dense;
+  final String? year;
 
   @override
   State<_ArtistLine> createState() => _ArtistLineState();
@@ -364,6 +452,7 @@ class _ArtistLineState extends State<_ArtistLine> {
     final count =
         seen ??
         (views == null ? null : formatViews(views.count, plays: views.plays));
+    final year = widget.year;
     final tail = theme.titleMedium?.copyWith(
       color: p.textSecondary,
       fontSize: widget.dense ? 13 : null,
@@ -382,7 +471,13 @@ class _ArtistLineState extends State<_ArtistLine> {
       );
     }
 
-    if (count == null) return artist(track.artist);
+    // When the line is tight, drop the year first, then the count, and never cut the artist to keep either.
+    final candidates = <String>[
+      if (year != null && count != null) '$year · $count',
+      ?count,
+      if (year != null && count == null) year,
+    ];
+    if (candidates.isEmpty) return artist(track.artist);
     return LayoutBuilder(
       builder: (context, box) {
         double width(String text, TextStyle? style) => (TextPainter(
@@ -391,17 +486,25 @@ class _ArtistLineState extends State<_ArtistLine> {
           textScaler: MediaQuery.textScalerOf(context),
           maxLines: 1,
         )..layout()).width;
+        if (track.artist.isEmpty) {
+          for (final item in candidates) {
+            if (width(item, tail) <= box.maxWidth) {
+              return Text(item, maxLines: 1, softWrap: false, style: tail);
+            }
+          }
+          return artist(track.artist);
+        }
         final name = width(track.artist, style);
-        // The count gives way before the name does: whole or not at all (a count without its word, "734 M", reads as a
-        // number of nothing). The name only moves when it is longer than the line by itself.
-        final text = ' · $count';
-        if (name + width(text, tail) <= box.maxWidth) {
-          return Row(
-            children: [
-              Flexible(child: artist(track.artist)),
-              Text(text, maxLines: 1, softWrap: false, style: tail),
-            ],
-          );
+        for (final item in candidates) {
+          final text = ' · $item';
+          if (name + width(text, tail) <= box.maxWidth) {
+            return Row(
+              children: [
+                Flexible(child: artist(track.artist)),
+                Text(text, maxLines: 1, softWrap: false, style: tail),
+              ],
+            );
+          }
         }
         return artist(track.artist);
       },

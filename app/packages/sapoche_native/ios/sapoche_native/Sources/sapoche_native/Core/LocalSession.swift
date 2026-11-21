@@ -366,7 +366,7 @@ final class LocalSession {
         if !fresh.isEmpty && room <= 0 { return problem(Problem(kind: .queueFull)) }
         let items = fresh.prefix(max(room, 0)).enumerated().map { i, t in
             QueueItem(id: newId(), videoId: t.videoId, title: t.title, artist: t.artist, thumb: t.thumb, durMs: t.durMs,
-                      addedBy: "", auto: auto && !(startNow && i == 0))
+                      addedBy: "", auto: auto && !(startNow && i == 0), explicit: t.explicit, year: t.year)
         }
         guard let first = items.first else { return }
 
@@ -418,7 +418,8 @@ final class LocalSession {
         let waiting = s.finished ? [] : s.queue.dropFirst(s.index + 1).filter { s.queued.contains($0.id) }
         let cap = max(Self.maxQueue - waiting.count, 0)
         let items = tracks.prefix(cap).map {
-            QueueItem(id: newId(), videoId: $0.videoId, title: $0.title, artist: $0.artist, thumb: $0.thumb, durMs: $0.durMs, addedBy: "")
+            QueueItem(id: newId(), videoId: $0.videoId, title: $0.title, artist: $0.artist, thumb: $0.thumb, durMs: $0.durMs,
+                      addedBy: "", explicit: $0.explicit, year: $0.year)
         }
         guard !items.isEmpty else { return }
         let first = min(max(start, 0), items.count - 1)
@@ -504,6 +505,8 @@ final class LocalSession {
         item.artist = track.artist
         item.thumb = track.thumb
         item.durMs = track.durMs
+        item.explicit = track.explicit
+        item.year = track.year
         snapshot.update { $0.queue[at] = item }
         if loadedId == id {
             let end = item.durMs > 0 ? item.durMs : Int64.max

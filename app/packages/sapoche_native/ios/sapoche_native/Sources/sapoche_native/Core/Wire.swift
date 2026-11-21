@@ -12,8 +12,13 @@ struct QueueItem: Equatable, Codable {
     var addedBy: String
     /// Put on the queue by autoplay, not by a member: it stays behind the songs they chose and goes once played. Protocol 12.
     var auto: Bool
+    /// Content advisory badge ("E") from YouTube Music; false when absent or from older peers. Protocol 21.
+    var explicit: Bool
+    /// Four-digit release year when known (e.g. "2019"). Protocol 21.
+    var year: String?
 
-    init(id: String, videoId: String, title: String, artist: String, thumb: String?, durMs: Int64, addedBy: String, auto: Bool = false) {
+    init(id: String, videoId: String, title: String, artist: String, thumb: String?, durMs: Int64, addedBy: String,
+         auto: Bool = false, explicit: Bool = false, year: String? = nil) {
         self.id = id
         self.videoId = videoId
         self.title = title
@@ -22,6 +27,22 @@ struct QueueItem: Equatable, Codable {
         self.durMs = durMs
         self.addedBy = addedBy
         self.auto = auto
+        self.explicit = explicit
+        self.year = year
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        videoId = try c.decode(String.self, forKey: .videoId)
+        title = try c.decode(String.self, forKey: .title)
+        artist = try c.decodeIfPresent(String.self, forKey: .artist) ?? ""
+        thumb = try c.decodeIfPresent(String.self, forKey: .thumb)
+        durMs = try c.decodeIfPresent(Int64.self, forKey: .durMs) ?? 0
+        addedBy = try c.decodeIfPresent(String.self, forKey: .addedBy) ?? ""
+        auto = try c.decodeIfPresent(Bool.self, forKey: .auto) ?? false
+        explicit = try c.decodeIfPresent(Bool.self, forKey: .explicit) ?? false
+        year = try c.decodeIfPresent(String.self, forKey: .year)
     }
 
     init?(_ json: JSON) {
@@ -34,7 +55,9 @@ struct QueueItem: Equatable, Codable {
             thumb: json["thumb"].string,
             durMs: json["durMs"].int64 ?? 0,
             addedBy: json["addedBy"].string ?? "",
-            auto: json["auto"].bool ?? false
+            auto: json["auto"].bool ?? false,
+            explicit: json["explicit"].bool ?? false,
+            year: json["year"].string
         )
     }
 }
@@ -46,13 +69,17 @@ struct TrackRef: Equatable {
     var artist: String
     var thumb: String?
     var durMs: Int64
+    var explicit: Bool
+    var year: String?
 
-    init(videoId: String, title: String, artist: String, thumb: String?, durMs: Int64) {
+    init(videoId: String, title: String, artist: String, thumb: String?, durMs: Int64, explicit: Bool = false, year: String? = nil) {
         self.videoId = videoId
         self.title = title
         self.artist = artist
         self.thumb = thumb
         self.durMs = durMs
+        self.explicit = explicit
+        self.year = year
     }
 
     /// A song as the UI sends it.
@@ -63,12 +90,15 @@ struct TrackRef: Equatable {
             title: title,
             artist: map["artist"] as? String ?? "",
             thumb: map["thumb"] as? String,
-            durMs: JSON(map["durMs"]).int64 ?? 0
+            durMs: JSON(map["durMs"]).int64 ?? 0,
+            explicit: JSON(map["explicit"]).bool ?? false,
+            year: map["year"] as? String
         )
     }
 
     func toMap() -> [String: Any] {
-        ["videoId": videoId, "title": title, "artist": artist, "thumb": thumb ?? NSNull(), "durMs": durMs]
+        ["videoId": videoId, "title": title, "artist": artist, "thumb": thumb ?? NSNull(), "durMs": durMs,
+         "explicit": explicit, "year": year ?? NSNull()]
     }
 }
 
@@ -589,6 +619,8 @@ enum Wire {
     private static func trackFields(_ track: TrackRef) -> [String: Any] {
         var fields: [String: Any] = ["videoId": track.videoId, "title": track.title, "artist": track.artist, "durMs": track.durMs]
         if let thumb = track.thumb { fields["thumb"] = thumb }
+        if track.explicit { fields["explicit"] = true }
+        if let year = track.year { fields["year"] = year }
         return fields
     }
 

@@ -446,6 +446,23 @@ class MusicParserTest {
     }
 
     @Test
+    fun `explicit badge and release year are read from watchNext, search and home`() = runTest {
+        val next = client("next" to "next_explicit").watchNext("H4RELGc9su8")
+        assertEquals(3, next.tracks.size)
+        assertTrue(next.tracks[0].explicit)
+        assertEquals("2017", next.tracks[0].year)
+        assertTrue(next.tracks[1].explicit)
+        assertEquals("2024", next.tracks[1].year)
+        assertFalse(next.tracks[2].explicit)
+        assertEquals("2024", next.tracks[2].year)
+
+        val home = client("browse" to "home_chips").home()
+        val homeTracks = home.shelves.flatMap { it.tracks }
+        assertTrue(homeTracks.first { it.videoId == "KvLs5WSz4yI" }.explicit)
+        assertTrue(homeTracks.any { !it.explicit })
+    }
+
+    @Test
     fun `a missing country falls back to the United States`() = runTest {
         var body = ""
         MusicClient(region = { "" }) { _, sent ->

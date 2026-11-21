@@ -13,13 +13,15 @@ final class MusicTrack {
     let durationSec: Int64
     let thumbUrl: String?
     let isSong: Bool
+    /// Content advisory badge ("E") from YouTube Music (`MUSIC_EXPLICIT_BADGE`).
+    let explicit: Bool
     /// What YouTube says about a video's reach, like "1.8B views · 19M likes"; nil for a song.
     let stats: String?
     let counterpart: MusicTrack?
 
     init(videoId: String, title: String, artist: String, artistId: String? = nil, album: String? = nil, albumId: String? = nil,
-         year: String? = nil, durationSec: Int64 = 0, thumbUrl: String? = nil, isSong: Bool = false, stats: String? = nil,
-         counterpart: MusicTrack? = nil) {
+         year: String? = nil, durationSec: Int64 = 0, thumbUrl: String? = nil, isSong: Bool = false, explicit: Bool = false,
+         stats: String? = nil, counterpart: MusicTrack? = nil) {
         self.videoId = videoId
         self.title = title
         self.artist = artist
@@ -30,17 +32,18 @@ final class MusicTrack {
         self.durationSec = durationSec
         self.thumbUrl = thumbUrl
         self.isSong = isSong
+        self.explicit = explicit
         self.stats = stats
         self.counterpart = counterpart
     }
 
     func with(counterpart other: MusicTrack?) -> MusicTrack {
         MusicTrack(videoId: videoId, title: title, artist: artist, artistId: artistId, album: album, albumId: albumId, year: year,
-                   durationSec: durationSec, thumbUrl: thumbUrl, isSong: isSong, stats: stats, counterpart: other)
+                   durationSec: durationSec, thumbUrl: thumbUrl, isSong: isSong, explicit: explicit, stats: stats, counterpart: other)
     }
 
     var ref: TrackRef {
-        TrackRef(videoId: videoId, title: title, artist: artist, thumb: thumbUrl, durMs: durationSec * 1000)
+        TrackRef(videoId: videoId, title: title, artist: artist, thumb: thumbUrl, durMs: durationSec * 1000, explicit: explicit, year: year)
     }
 }
 

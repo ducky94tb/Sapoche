@@ -21,7 +21,10 @@ enum LibraryBackup {
     static func toJson(_ backup: LibraryStore.Backup, at: Int64) -> String {
         var songs: [String: Any] = [:]
         func note(_ track: TrackRef) {
-            songs[track.videoId] = ["title": track.title, "artist": track.artist, "thumb": track.thumb ?? NSNull(), "durMs": track.durMs] as [String: Any]
+            var obj: [String: Any] = ["title": track.title, "artist": track.artist, "thumb": track.thumb ?? NSNull(), "durMs": track.durMs]
+            if track.explicit { obj["explicit"] = true }
+            if let year = track.year { obj["year"] = year }
+            songs[track.videoId] = obj
         }
         backup.liked.forEach { note($0.track) }
         backup.listens.forEach { note($0.track) }
@@ -51,8 +54,10 @@ enum LibraryBackup {
             let title = String((song.at("title").string ?? "").prefix(maxText))
             if id.trimmingCharacters(in: .whitespaces).isEmpty || id.count > maxId || title.trimmingCharacters(in: .whitespaces).isEmpty { continue }
             let thumb = song.at("thumb").string.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+            let year = song.at("year").string.flatMap { $0.count == 4 && $0.allSatisfy { $0.isASCII && $0.isNumber } ? $0 : nil }
             songs[id] = TrackRef(videoId: id, title: title, artist: String((song.at("artist").string ?? "").prefix(maxText)),
-                                 thumb: thumb, durMs: max(song.at("durMs").int64 ?? 0, 0))
+                                 thumb: thumb, durMs: max(song.at("durMs").int64 ?? 0, 0),
+                                 explicit: song.at("explicit").bool ?? false, year: year)
         }
         func entries(_ list: JSON) -> [LibraryStore.Entry] {
             list.array.compactMap { item in

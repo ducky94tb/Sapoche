@@ -27,6 +27,10 @@ data class QueueItem(
     val addedBy: String,
     /** Put on the queue by autoplay, not by a member: it stays behind the songs they chose and goes once played. Protocol 12. */
     val auto: Boolean = false,
+    /** Content advisory badge ("E") from YouTube Music; false when absent or from older peers. Protocol 21. */
+    val explicit: Boolean = false,
+    /** Four-digit release year when known (e.g. "2019"). Protocol 21. */
+    val year: String? = null,
 )
 
 /** A song a member offers for autoplay to start from: its video id, title and artist. Protocol 19. */
@@ -34,7 +38,15 @@ data class QueueItem(
 data class TasteSeed(val v: String, val ti: String, val ar: String)
 
 /** A song to put on the queue; the server adds the item id and who added it. */
-data class TrackRef(val videoId: String, val title: String, val artist: String, val thumb: String?, val durMs: Long)
+data class TrackRef(
+    val videoId: String,
+    val title: String,
+    val artist: String,
+    val thumb: String?,
+    val durMs: Long,
+    val explicit: Boolean = false,
+    val year: String? = null,
+)
 
 /** Room state as broadcast by the server. [phase] is one of idle, preparing, playing, paused. */
 @Serializable
@@ -363,13 +375,24 @@ object Protocol {
     }
 
     /** With [playNext] the track goes right after the current one instead of at the end. */
-    fun queueAdd(videoId: String, title: String, artist: String, thumb: String?, durMs: Long, playNext: Boolean = false) =
+    fun queueAdd(
+        videoId: String,
+        title: String,
+        artist: String,
+        thumb: String?,
+        durMs: Long,
+        playNext: Boolean = false,
+        explicit: Boolean = false,
+        year: String? = null,
+    ) =
         msg("queue.add") {
             put("videoId", videoId)
             put("title", title)
             put("artist", artist)
             if (thumb != null) put("thumb", thumb)
             put("durMs", durMs)
+            if (explicit) put("explicit", true)
+            if (year != null) put("year", year)
             if (playNext) put("next", true)
         }
 
@@ -386,6 +409,8 @@ object Protocol {
                     put("artist", track.artist)
                     if (track.thumb != null) put("thumb", track.thumb)
                     put("durMs", track.durMs)
+                    if (track.explicit) put("explicit", true)
+                    if (track.year != null) put("year", track.year)
                 })
             }
         })
@@ -412,6 +437,8 @@ object Protocol {
             put("artist", track.artist)
             if (track.thumb != null) put("thumb", track.thumb)
             put("durMs", track.durMs)
+            if (track.explicit) put("explicit", true)
+            if (track.year != null) put("year", track.year)
         })
     }
 

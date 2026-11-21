@@ -176,6 +176,7 @@ class InnertubePlayer(
                 contentLength = format.at("contentLength").string()?.toLongOrNull() ?: -1,
                 itag = format.at("itag").string()?.toIntOrNull() ?: -1,
                 loudnessDb = format.at("loudnessDb").string()?.toDoubleOrNull() ?: trackLoudness,
+                sampleRate = format.at("audioSampleRate").string()?.toIntOrNull() ?: 0,
             )
         }
 

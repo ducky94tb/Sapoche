@@ -7,6 +7,7 @@ import '../home_shell.dart';
 import '../player/track_section.dart';
 import '../scope.dart';
 import 'artwork.dart';
+import 'explicit_badge.dart';
 import 'meta_line.dart';
 import 'not_interested.dart';
 
@@ -22,6 +23,7 @@ class SongCard extends StatelessWidget {
     this.size,
     this.video = false,
     this.meta,
+    this.explicit = false,
   });
 
   /// A card for an album or a playlist: YouTube writes the views of a playlist after its maker ("Anna • 2.2M views"),
@@ -59,6 +61,7 @@ class SongCard extends StatelessWidget {
     onLongPress: () => showNotInterested(context, track),
     video: video,
     meta: AppScope.of(context).music.viewsFor(track),
+    explicit: track.explicit,
   );
 
   final String title;
@@ -69,6 +72,9 @@ class SongCard extends StatelessWidget {
 
   /// How many watched or played it ("2.3M plays"), on a line under the artist; left out when it does not fit whole.
   final String? meta;
+
+  /// Whether the song carries YouTube Music's explicit content badge.
+  final bool explicit;
 
   /// Side of the cover; by default the one that suits the window.
   final double? size;
@@ -110,12 +116,30 @@ class SongCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: theme.titleSmall,
             ),
-            Text(
-              subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.bodySmall?.copyWith(color: p.textSecondary),
-            ),
+            if (explicit)
+              Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 3),
+                    child: ExplicitBadge(size: 13, color: p.textSecondary),
+                  ),
+                  Expanded(
+                    child: Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.bodySmall?.copyWith(color: p.textSecondary),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.bodySmall?.copyWith(color: p.textSecondary),
+              ),
             if (meta != null)
               MetaLine(text: '', meta: meta, style: theme.bodySmall?.copyWith(color: p.textSecondary)),
           ],

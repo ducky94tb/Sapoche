@@ -8,10 +8,11 @@ class MusicTrack extends Track {
     required super.artist,
     required super.durMs,
     super.thumb,
+    super.explicit,
+    super.year,
     this.artistId,
     this.album,
     this.albumId,
-    this.year,
     this.stats,
     this.isSong = false,
   });
@@ -20,7 +21,6 @@ class MusicTrack extends Track {
   final String? artistId;
   final String? album;
   final String? albumId;
-  final String? year;
 
   /// What a video's reach looks like, e.g. "1.8B views · 19M likes".
   final String? stats;
@@ -35,10 +35,11 @@ class MusicTrack extends Track {
     artist: artist,
     durMs: durMs,
     thumb: thumb,
+    explicit: explicit,
+    year: year,
     artistId: artistId,
     album: album,
     albumId: albumId,
-    year: year,
     stats: stats,
     isSong: isSong,
   );
@@ -49,10 +50,11 @@ class MusicTrack extends Track {
     artist: map['artist'] as String? ?? '',
     thumb: map['thumb'] as String?,
     durMs: (map['durMs'] as num?)?.toInt() ?? 0,
+    explicit: map['explicit'] == true,
+    year: map['year'] as String?,
     artistId: map['artistId'] as String?,
     album: map['album'] as String?,
     albumId: map['albumId'] as String?,
-    year: map['year'] as String?,
     stats: map['stats'] as String?,
     isSong: map['isSong'] as bool? ?? false,
   );

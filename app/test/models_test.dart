@@ -211,9 +211,17 @@ void main() {
     final position = PlayerPosition.fromJson({
       'videoWidth': 1280,
       'videoHeight': 720,
+      'audioFormat': {'codec': 'Opus', 'kbps': 131, 'hz': 48000},
     });
     expect((position.videoWidth, position.videoHeight), (1280, 720));
+    expect(position.audioFormat, const AudioFormat(codec: 'Opus', kbps: 131, hz: 48000));
+    expect(position.audioFormat?.format(), 'Opus · 131 kbps · 48 kHz');
+    expect(const AudioFormat(codec: 'AAC', kbps: 129, hz: 44100).format(), 'AAC · 129 kbps · 44.1 kHz');
+    expect(const AudioFormat(codec: 'AAC HE', kbps: 48, hz: 22050).format(), 'AAC HE · 48 kbps · 22.05 kHz');
+    expect(const AudioFormat(codec: 'Opus', hz: 48000).format(), 'Opus · 48 kHz');
+    expect(AudioFormat.fromJson({}), isNull);
     expect(PlayerPosition.fromJson({}).videoWidth, 0);
+    expect(PlayerPosition.fromJson({}).audioFormat, isNull);
   });
 
   test('reads the name, the owner and what guests may do', () {

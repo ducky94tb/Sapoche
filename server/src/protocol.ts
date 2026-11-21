@@ -1,7 +1,7 @@
 // Wire protocol between clients and the room Durable Object. See docs/PROTOCOL.md.
 
 /** Bumped when the set of messages grows or changes. Reported by /health and in every state message. */
-export const PROTOCOL_VERSION = 20;
+export const PROTOCOL_VERSION = 21;
 
 export interface QueueItem {
   id: string;
@@ -13,6 +13,10 @@ export interface QueueItem {
   addedBy: string;
   /** Put on the queue by autoplay, not by a member: it stays after the songs members chose and is dropped once played. Protocol 12. */
   auto?: true;
+  /** Content advisory badge ("E") from YouTube Music; absent when false or from apps older than protocol 21. */
+  explicit?: true;
+  /** Four-digit release year when known (e.g. "2019"); absent otherwise or from apps older than protocol 21. */
+  year?: string;
 }
 
 /** A song one member offers as something to start from when autoplay looks for more: [v] its video id, [ti] title, [ar] artist. Protocol 19. */
@@ -40,6 +44,8 @@ export interface TrackInput {
   artist: string;
   thumb?: string;
   durMs: number;
+  explicit?: boolean;
+  year?: string;
 }
 
 /** Authoritative room state, persisted in Durable Object storage. */
@@ -212,7 +218,7 @@ export type ClientMessage =
    */
   | { t: "taste.set"; seeds?: TasteSeed[] | null; s?: string | null }
   /** With [next] the item goes right after the current one instead of at the end of the queue. */
-  | { t: "queue.add"; videoId: string; title: string; artist: string; thumb?: string; durMs: number; next?: boolean }
+  | { t: "queue.add"; videoId: string; title: string; artist: string; thumb?: string; durMs: number; explicit?: boolean; year?: string; next?: boolean }
   /**
    * Adds several songs in one go (a playlist). With [next] they go right after the current item. With [auto] they are
    * what autoplay found for a room that ran out: the room takes them only while it is idle, and keeps them apart from

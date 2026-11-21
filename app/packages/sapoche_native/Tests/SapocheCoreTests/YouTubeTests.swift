@@ -76,6 +76,29 @@ final class YouTubeTests: XCTestCase {
         XCTAssertGreaterThan(resolved.best.contentLength, 0)
     }
 
+    func testAudioFormatParsesSampleRateAndMapsItagsAndByteRate() throws {
+        let text = #"{"playabilityStatus":{"status":"OK"},"videoDetails":{"lengthSeconds":"213"},"streamingData":{"adaptiveFormats":["# +
+            #"{"itag":140,"url":"https://example.invalid/a","mimeType":"audio/mp4; codecs=\"mp4a.40.2\"","averageBitrate":129000,"audioSampleRate":"44100","contentLength":"3450000"},"# +
+            #"{"itag":139,"url":"https://example.invalid/b","mimeType":"audio/mp4; codecs=\"mp4a.40.5\"","averageBitrate":48000,"audioSampleRate":"22050","contentLength":"1290000"}]}}"#
+        let parsed = try YouTubeResolver.resolved(XCTUnwrap(JSON.parse(text)), videoId: "x")
+        XCTAssertEqual(parsed.best.sampleRate, 44_100)
+        XCTAssertEqual(parsed.all.last?.sampleRate, 22_050)
+        XCTAssertEqual(AudioFormat.fromItag(251)?.codec, "Opus")
+        XCTAssertEqual(AudioFormat.fromItag(251)?.hz, 48_000)
+        XCTAssertEqual(AudioFormat.fromItag(140)?.codec, "AAC")
+        XCTAssertEqual(AudioFormat.fromItag(140)?.hz, 44_100)
+        XCTAssertEqual(AudioFormat.fromItag(139)?.codec, "AAC HE")
+        XCTAssertEqual(AudioFormat.fromItag(139)?.hz, 22_050)
+        XCTAssertNil(AudioFormat.fromItag(999))
+        XCTAssertEqual(AudioFormat.kbpsOf(contentLength: 3_495_000, durationMs: 213_000), 131)
+        XCTAssertEqual(AudioFormat.kbpsOf(contentLength: 0, durationMs: 213_000), 0)
+        XCTAssertEqual(AudioFormat.kbpsOf(contentLength: 3_495_000, durationMs: 0), 0)
+        XCTAssertEqual(
+            AudioFormat.fromHint(itag: 140, sampleRate: 44_100, contentLength: 3_450_000, bitrateKbps: 129, durationMs: 213_000),
+            AudioFormat(codec: "AAC", kbps: 130, hz: 44_100)
+        )
+    }
+
     func testEachStreamCarriesHowLoudTheSongIs() throws {
         let loud = try YouTubeResolver.resolved(XCTUnwrap(JSON.parse(data: fixture("player_visionos_loud"))), videoId: "bNp9pn0ni3I")
         XCTAssertEqual(try XCTUnwrap(loud.best.loudnessDb), 6.55, accuracy: 0.001)

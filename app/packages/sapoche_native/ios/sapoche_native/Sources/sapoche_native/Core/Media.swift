@@ -382,6 +382,7 @@ actor StreamCache {
         let mimeType: String
         let bitrateKbps: Int
         let index: DashRanges?
+        var sampleRate: Int = 0
     }
 
     private struct Entry {
@@ -417,7 +418,7 @@ actor StreamCache {
         let best = wanted.contentLength <= limit ? wanted
             : resolved.all.first { $0.contentLength <= limit } ?? resolved.all.last ?? resolved.best
         return Pick(url: best.url, itag: best.itag, contentLength: best.contentLength, userAgent: resolved.userAgent, track: resolved.track,
-                    mimeType: best.mimeType, bitrateKbps: best.bitrateKbps, index: best.index)
+                    mimeType: best.mimeType, bitrateKbps: best.bitrateKbps, index: best.index, sampleRate: best.sampleRate)
     }
 
     /// The picture-only stream of [videoId] that fits [maxHeight] and what a link of [budgetKbps] can bring (see
@@ -478,6 +479,14 @@ actor StreamCache {
     }
 }
 
+/// What is known about the audio stream/file before the player inspects its tracks.
+struct AudioHint: Equatable {
+    let itag: Int
+    let sampleRate: Int
+    let contentLength: Int64
+    let bitrateKbps: Int
+}
+
 /// Where a song comes from when it is played or kept: a file on the disk, a playlist of the stream's pieces (see
 /// [HlsPlaylist]), or the stream itself when neither works out.
 struct Playable: Equatable {
@@ -486,6 +495,8 @@ struct Playable: Equatable {
     let headers: [String: String]
     /// The heights of the picture a playlist holds, the one it starts with first; empty when it holds one stream or none.
     var levels: [VideoSource] = []
+    /// Known audio stream/file metadata for computing codec, kbps and sample rate.
+    var audio: AudioHint? = nil
 
     /// Whether this is a playlist kept in [HlsPlaylists], which the player reads through a resource loader.
     var isPlaylist: Bool { url.scheme == HlsPlaylists.scheme }
@@ -550,20 +561,29 @@ actor MediaLibrary {
         self.localFile = localFile
     }
 
+    private static func fileHint(_ url: URL) -> AudioHint {
+        let size = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? -1
+        return AudioHint(itag: -1, sampleRate: 0, contentLength: size, bitrateKbps: 0)
+    }
+
+    private static func pickHint(_ pick: StreamCache.Pick) -> AudioHint {
+        AudioHint(itag: pick.itag, sampleRate: pick.sampleRate, contentLength: pick.contentLength, bitrateKbps: pick.bitrateKbps)
+    }
+
     /// The file of a song from this phone as something to play; fails the way a song YouTube will not play does, so that it is
     /// skipped, when its file is not there any more.
     private func local(_ videoId: String) async throws -> Playable {
         guard let url = await localFile(videoId), FileManager.default.fileExists(atPath: url.path) else {
             throw LoadFailure(reason: .unplayable, message: "The file of \(videoId) is not on this phone")
         }
-        return Playable(url: url, isFile: true, headers: [:])
+        return Playable(url: url, isFile: true, headers: [:], audio: Self.fileHint(url))
     }
 
     /// Where to play [videoId] from with the least wait: its file when it is on the disk, else its stream in pieces, so
     /// that it starts once the first piece is there. When the stream cannot be laid out in pieces, as [playable].
     func playableAtOnce(_ videoId: String) async throws -> Playable {
         if LocalMusic.isLocal(videoId) { return try await local(videoId) }
-        if let file = files.file(videoId) { return Playable(url: ordinary(file), isFile: true, headers: [:]) }
+        if let file = files.file(videoId) { return Playable(url: ordinary(file), isFile: true, headers: [:], audio: Self.fileHint(file)) }
         if let pieces = try await inPieces(videoId) { return pieces }
         return try await playable(videoId, piecesWhenLong: false)
     }
@@ -572,7 +592,7 @@ actor MediaLibrary {
     /// A song too long to keep is played from its stream in pieces instead, when [piecesWhenLong] and that works out.
     func playable(_ videoId: String, piecesWhenLong: Bool = true) async throws -> Playable {
         if LocalMusic.isLocal(videoId) { return try await local(videoId) }
-        if let file = files.file(videoId) { return Playable(url: ordinary(file), isFile: true, headers: [:]) }
+        if let file = files.file(videoId) { return Playable(url: ordinary(file), isFile: true, headers: [:], audio: Self.fileHint(file)) }
         if piecesWhenLong, let pick = try? await streams.audio(videoId), pick.contentLength > Self.keepLimitBytes,
            let pieces = try await inPieces(videoId) {
             return pieces
@@ -584,10 +604,10 @@ actor MediaLibrary {
                 guard let url = URL(string: hosts.preferred(pick.url)) else { throw URLError(.badURL) }
                 if pick.contentLength > Self.streamAboveBytes {
                     log("\(videoId) is \(pick.contentLength / 1_048_576) MB, played from the stream")
-                    return Playable(url: url, isFile: false, headers: ["User-Agent": pick.userAgent])
+                    return Playable(url: url, isFile: false, headers: ["User-Agent": pick.userAgent], audio: Self.pickHint(pick))
                 }
                 _ = try await fetch(videoId, pick, download: false)
-                if let file = files.file(videoId) { return Playable(url: file, isFile: true, headers: [:]) }
+                if let file = files.file(videoId) { return Playable(url: file, isFile: true, headers: [:], audio: Self.fileHint(file)) }
             } catch is CancellationError {
                 throw CancellationError()
             } catch let failure as LoadFailure {
@@ -617,7 +637,7 @@ actor MediaLibrary {
         if LocalMusic.isLocal(videoId) { throw LoadFailure(reason: .unplayable, message: "\(videoId) has no stream") }
         let pick = try await streams.audio(videoId)
         guard let url = URL(string: hosts.preferred(pick.url)) else { throw URLError(.badURL) }
-        return Playable(url: url, isFile: false, headers: ["User-Agent": pick.userAgent])
+        return Playable(url: url, isFile: false, headers: ["User-Agent": pick.userAgent], audio: Self.pickHint(pick))
     }
 
     /// Throws away the file of [videoId] that was played, so that the next play fetches it again. A downloaded file stays.
@@ -686,7 +706,8 @@ actor MediaLibrary {
             variants: variants, audio: sound.url, audioCodec: HlsPlaylist.codec(ofType: sound.pick.mimeType),
             soundBandwidth: sound.pick.bitrateKbps * 1000
         )
-        return Playable(url: playlists.add(master, name: videoId + "-both"), isFile: false, headers: ["User-Agent": userAgent], levels: levels)
+        return Playable(url: playlists.add(master, name: videoId + "-both"), isFile: false, headers: ["User-Agent": userAgent],
+                        levels: levels, audio: Self.pickHint(sound.pick))
     }
 
     /// Brings [videoId] onto the disk for next time while it plays from its stream, when it is short enough to keep.
@@ -708,7 +729,7 @@ actor MediaLibrary {
         for attempt in 1...2 {
             do {
                 let sound = try await soundInPieces(videoId)
-                return Playable(url: sound.url, isFile: false, headers: ["User-Agent": sound.pick.userAgent])
+                return Playable(url: sound.url, isFile: false, headers: ["User-Agent": sound.pick.userAgent], audio: Self.pickHint(sound.pick))
             } catch is NoIndex {
                 return nil
             } catch let failure as LoadFailure {

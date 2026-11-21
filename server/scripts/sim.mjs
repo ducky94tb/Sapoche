@@ -306,6 +306,7 @@ async function main() {
   await encryptionSection();
   await extrasSection();
   await autoplayLaneSection();
+  await trackMetadataSection();
   if (process.env.SIM_VAPID_PUBLIC) await pushSection();
   if (process.env.SIM_STALE_MS) await staleSection(Number(process.env.SIM_STALE_MS));
 
@@ -2886,6 +2887,69 @@ async function extrasSection() {
   const sealedMsg = await reader.waitFor((m) => m.t === "chat");
   check("a sealed message may be 16 384 characters long, and its extra is left to the seal", sealedMsg.msg.ct === sealed && sealedMsg.msg.x === undefined);
   [ann, bob, cara, owner, reader, plainApp, solo].forEach((x) => x.close());
+}
+
+/** Explicit badge and release year travel on queue items (protocol 21). */
+async function trackMetadataSection() {
+  console.log("Track metadata: explicit and year (protocol 21)");
+  const song = (videoId, title, extra = {}) => ({ videoId, title, artist: "Artist", durMs: 180_000, ...extra });
+  const code = await newCode();
+  const a = new Client(code, "meta-a", "Ann");
+  const joined = await a.join(true);
+  check("server speaks protocol 21", joined.protocol === 21, `got ${joined.protocol}`);
+  const b = new Client(code, "meta-b", "Bob");
+  await b.join(false);
+
+  // queue.add with explicit + year
+  a.send({ t: "queue.add", ...song(VIDEO_A, "Explicit Song", { explicit: true, year: "2017" }) });
+  const prep = await b.waitFor((m) => m.t === "prepare");
+  check("prepare carries explicit and year", prep.item.explicit === true && prep.item.year === "2017", JSON.stringify(prep.item));
+  a.send({ t: "ready", epoch: prep.epoch });
+  b.send({ t: "ready", epoch: prep.epoch });
+  await a.waitFor((m) => m.t === "start");
+
+  // queue.addMany with valid, invalid, and omitted fields (older client)
+  a.send({
+    t: "queue.addMany",
+    tracks: [
+      song(VIDEO_B, "Bad fields", { explicit: "yes", year: "20x7" }),
+      song(VIDEO_C, "Old client"),
+      song("dQw4w9WgXcQ", "False explicit", { explicit: false, year: "1987" }),
+    ],
+  });
+  const st = (await b.waitFor((m) => m.t === "state" && m.state.queue.length === 4)).state;
+  check("valid explicit and year stay in state", st.queue[0].explicit === true && st.queue[0].year === "2017", JSON.stringify(st.queue[0]));
+  check("bad explicit and year are dropped without rejecting the song", st.queue[1].explicit === undefined && st.queue[1].year === undefined, JSON.stringify(st.queue[1]));
+  check("older client without explicit and year still works", st.queue[2].explicit === undefined && st.queue[2].year === undefined, JSON.stringify(st.queue[2]));
+  check("explicit false is omitted while valid year is kept", st.queue[3].explicit === undefined && st.queue[3].year === "1987", JSON.stringify(st.queue[3]));
+
+  // queue.swap replaces explicit/year cleanly (does not leave stale values)
+  a.send({ t: "queue.swap", id: st.queue[0].id, track: song("fJ9rUzIMcZQ", "Clean video") });
+  const swapped = await b.waitFor((m) => m.t === "prepare" && m.item.videoId === "fJ9rUzIMcZQ");
+  check("swap clears explicit and year when the replacement has none", swapped.item.explicit === undefined && swapped.item.year === undefined, JSON.stringify(swapped.item));
+  a.send({ t: "ready", epoch: swapped.epoch });
+  b.send({ t: "ready", epoch: swapped.epoch });
+  await a.waitFor((m) => m.t === "start");
+
+  // autoplay (queue.addMany with auto: true) preserves explicit and year
+  [a, b].forEach((x) => (x.inbox.length = 0));
+  a.send({ t: "queue.clear" });
+  await a.waitFor((m) => m.t === "state" && m.state.phase === "idle");
+  [a, b].forEach((x) => (x.inbox.length = 0));
+  a.send({ t: "queue.add", ...song(VIDEO_A, "Seed") });
+  const p2 = await a.waitFor((m) => m.t === "prepare" && m.item.videoId === VIDEO_A);
+  a.send({ t: "ready", epoch: p2.epoch });
+  b.send({ t: "ready", epoch: p2.epoch });
+  await a.waitFor((m) => m.t === "start");
+  [a, b].forEach((x) => (x.inbox.length = 0));
+  a.send({ t: "next" });
+  await a.waitFor((m) => m.t === "state" && m.state.phase === "idle");
+  await a.waitFor((m) => m.t === "autoplay.fill");
+  a.send({ t: "queue.addMany", auto: true, tracks: [song(VIDEO_B, "Auto explicit", { explicit: true, year: "2024" })] });
+  const autoPrep = await b.waitFor((m) => m.t === "prepare" && m.item.videoId === VIDEO_B);
+  check("autoplay preserves explicit and year", autoPrep.item.auto === true && autoPrep.item.explicit === true && autoPrep.item.year === "2024", JSON.stringify(autoPrep.item));
+
+  [a, b].forEach((x) => x.close());
 }
 
 main().catch((error) => {

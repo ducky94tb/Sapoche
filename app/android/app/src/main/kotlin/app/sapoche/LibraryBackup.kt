@@ -29,7 +29,11 @@ object LibraryBackup {
                     songs.values.forEach {
                         o.put(
                             it.videoId,
-                            JSONObject().put("title", it.title).put("artist", it.artist).put("thumb", it.thumb ?: JSONObject.NULL).put("durMs", it.durMs),
+                            JSONObject().put("title", it.title).put("artist", it.artist).put("thumb", it.thumb ?: JSONObject.NULL).put("durMs", it.durMs)
+                                .apply {
+                                    if (it.explicit) put("explicit", true)
+                                    if (it.year != null) put("year", it.year)
+                                },
                         )
                     }
                 },
@@ -64,7 +68,15 @@ object LibraryBackup {
                 val song = table.getJSONObject(id)
                 val title = song.optString("title").take(MAX_TEXT)
                 if (id.isBlank() || id.length > MAX_ID || title.isBlank()) continue
-                songs[id] = TrackRef(id, title, song.optString("artist").take(MAX_TEXT), song.optString("thumb").takeIf { it.isNotBlank() && !song.isNull("thumb") }, song.optLong("durMs").coerceAtLeast(0))
+                songs[id] = TrackRef(
+                    id,
+                    title,
+                    song.optString("artist").take(MAX_TEXT),
+                    song.optString("thumb").takeIf { it.isNotBlank() && !song.isNull("thumb") },
+                    song.optLong("durMs").coerceAtLeast(0),
+                    explicit = song.optBoolean("explicit", false),
+                    year = song.optString("year").takeIf { YEAR.matches(it) && !song.isNull("year") },
+                )
             }
             fun entries(array: JSONArray?): List<LibraryStore.Entry> = array.objects().mapNotNull {
                 songs[it.optString("id")]?.let { track -> LibraryStore.Entry(track, it.optLong("at")) }
@@ -98,4 +110,5 @@ object LibraryBackup {
     private const val VERSION = 1
     private const val MAX_ID = 32
     private const val MAX_TEXT = 300
+    private val YEAR = Regex("""\d{4}""")
 }

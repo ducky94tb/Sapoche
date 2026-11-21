@@ -191,6 +191,7 @@ class _MarqueeTextState extends State<MarqueeText>
           return Text(
             widget.text,
             maxLines: 1,
+            softWrap: false,
             overflow: TextOverflow.ellipsis,
             style: widget.style,
           );

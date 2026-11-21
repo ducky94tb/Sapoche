@@ -68,11 +68,15 @@ class MusicController {
     return results;
   }
 
-  Future<SongRadio> radio(String videoId) =>
-      _cached(_radio, videoId, () => _backend.musicNext(videoId)).then((radio) {
-        _see(radio.tracks);
-        return radio;
-      });
+  Future<SongRadio> radio(String videoId) => _cached(
+    _radio,
+    videoId,
+    () => _backend.musicNext(videoId),
+    keep: (radio) => radio.tracks.isNotEmpty,
+  ).then((radio) {
+    _see(radio.tracks);
+    return radio;
+  });
 
   /// How many times the video was watched or the song played, once YouTube has said; not kept while it has not.
   Future<int?> views(String videoId) => _cached(

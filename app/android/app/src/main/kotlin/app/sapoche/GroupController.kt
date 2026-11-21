@@ -1198,6 +1198,8 @@ class GroupController(
         val heldBack: Boolean = false,
         /** How fast the player plays: the person's choice outside a room, the drift control's in one. */
         val speed: Float = 1f,
+        /** Codec, average bitrate and sample rate of the audio stream currently playing; null until known. */
+        val audioFormat: app.sapoche.core.AudioFormat? = null,
     )
 
     /** Snapshot of the local player for the UI; call on the main thread. */
@@ -1217,6 +1219,7 @@ class GroupController(
             noPicture = port.pictureMissing(),
             heldBack = heldBack(),
             speed = exo.playbackParameters.speed,
+            audioFormat = port.audioFormat(),
         )
     }
 

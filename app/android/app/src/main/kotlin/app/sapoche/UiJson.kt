@@ -148,6 +148,12 @@ object UiJson {
             .put("videoHeight", player.videoHeight)
             .put("noPicture", player.noPicture)
             .put("heldBack", player.heldBack)
+            .put(
+                "audioFormat",
+                player.audioFormat?.let {
+                    JSONObject().put("codec", it.codec).put("kbps", it.kbps).put("hz", it.hz)
+                } ?: JSONObject.NULL,
+            )
             .toString()
 
     /** The sleep timer was set, ran out or was turned off. */
@@ -252,6 +258,8 @@ object UiJson {
         .put("addedBy", item.addedBy)
         .put("auto", item.auto)
         .put("queued", queued)
+        .put("explicit", item.explicit)
+        .put("year", item.year ?: JSONObject.NULL)
 
     private fun connectionName(view: GroupController.View): String = when (view.connection) {
         null -> "none"

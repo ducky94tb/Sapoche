@@ -1181,6 +1181,19 @@ final class LocalSessionTests: XCTestCase {
         let decoded = try JSONDecoder().decode(SavedQueue.self, from: Data(oldJson.utf8))
         XCTAssertTrue(decoded.queued.isEmpty)
         XCTAssertNil(decoded.label)
+        XCTAssertFalse(decoded.queue[0].explicit)
+        XCTAssertNil(decoded.queue[0].year)
+
+        // Wire round-trip for explicit and year
+        let addJson = Wire.queueAdd(TrackRef(videoId: "bNp9pn0ni3I", title: "Song", artist: "Artist", thumb: nil, durMs: 180_000, explicit: true, year: "2017"))
+        XCTAssertTrue(addJson.contains("\"explicit\":true"))
+        XCTAssertTrue(addJson.contains("\"year\":\"2017\""))
+        if case let .prepare(_, _, item, _, _) = Wire.parse(#"{"t":"prepare","epoch":1,"index":0,"seekToMs":0,"item":{"id":"q1","videoId":"bNp9pn0ni3I","title":"Song","artist":"Artist","durMs":180000,"addedBy":"u1","explicit":true,"year":"2017"}}"#) {
+            XCTAssertTrue(item.explicit)
+            XCTAssertEqual(item.year, "2017")
+        } else {
+            XCTFail("Expected prepare message")
+        }
     }
 
     private func randomTaps(transientOnly: Bool) async {

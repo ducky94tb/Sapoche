@@ -209,6 +209,8 @@ const CONTROL_MESSAGES = new Set([
   "room.theme",
 ]);
 
+const YEAR = /^\d{4}$/;
+
 /** The fields of a song as the queue keeps them, cut to size. */
 function cleanTrack(track: TrackInput) {
   return {
@@ -217,6 +219,8 @@ function cleanTrack(track: TrackInput) {
     artist: String(track.artist ?? "").slice(0, 100),
     thumb: typeof track.thumb === "string" ? track.thumb.slice(0, 300) : undefined,
     durMs: clamp(Number(track.durMs) || 0, 0, 12 * 3600 * 1000),
+    ...(track.explicit === true ? { explicit: true as const } : {}),
+    ...(typeof track.year === "string" && YEAR.test(track.year) ? { year: track.year } : {}),
   };
 }
 
@@ -1212,11 +1216,17 @@ export class Room extends DurableObject<Env> {
     if (!VIDEO_ID.test(msg.track?.videoId ?? "")) return this.failAll(me, "bad_video", "Invalid videoId");
     const item = this.s.queue[at];
     if (item.videoId === msg.track.videoId) return;
-    Object.assign(item, cleanTrack(msg.track));
+    const updated: QueueItem = {
+      id: item.id,
+      ...cleanTrack(msg.track),
+      addedBy: item.addedBy,
+      ...(item.auto ? { auto: true as const } : {}),
+    };
+    this.s.queue[at] = updated;
 
     if (at === this.s.index && this.s.phase !== "idle") {
       // The same moment of the song, from the other release
-      const positionMs = clamp(this.currentPositionMs(), 0, item.durMs || Number.MAX_SAFE_INTEGER);
+      const positionMs = clamp(this.currentPositionMs(), 0, updated.durMs || Number.MAX_SAFE_INTEGER);
       return this.begin(at, positionMs, me.id);
     }
     await this.save();

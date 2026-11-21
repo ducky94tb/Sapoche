@@ -15,6 +15,8 @@ class Track {
     required this.artist,
     required this.durMs,
     this.thumb,
+    this.explicit = false,
+    this.year,
   });
 
   final String videoId;
@@ -23,12 +25,20 @@ class Track {
   final String? thumb;
   final int durMs;
 
+  /// Content advisory badge ("E") from YouTube Music.
+  final bool explicit;
+
+  /// Four-digit release year when known (e.g. "2019").
+  final String? year;
+
   factory Track.fromMap(Map<Object?, Object?> map) => Track(
     videoId: map['videoId'] as String,
     title: map['title'] as String,
     artist: map['artist'] as String? ?? '',
     thumb: map['thumb'] as String?,
     durMs: (map['durMs'] as num?)?.toInt() ?? 0,
+    explicit: map['explicit'] == true,
+    year: map['year'] as String?,
   );
 
   /// The song is a music file on this phone, not a YouTube video: it plays from the file and cannot go to a room.
@@ -44,6 +54,8 @@ class Track {
     'artist': artist,
     'thumb': thumb,
     'durMs': durMs,
+    if (explicit) 'explicit': true,
+    if (year != null) 'year': year,
   };
 }
 
@@ -306,6 +318,8 @@ class QueueEntry extends Track {
     required super.durMs,
     required this.addedBy,
     super.thumb,
+    super.explicit,
+    super.year,
     this.auto = false,
     this.queued = false,
   });
@@ -326,6 +340,8 @@ class QueueEntry extends Track {
     artist: artist,
     thumb: thumb,
     durMs: durMs,
+    explicit: explicit,
+    year: year,
     addedBy: addedBy,
     auto: auto ?? this.auto,
     queued: queued ?? this.queued,
@@ -338,6 +354,8 @@ class QueueEntry extends Track {
     artist: json['artist'] as String? ?? '',
     thumb: json['thumb'] as String?,
     durMs: (json['durMs'] as num?)?.toInt() ?? 0,
+    explicit: json['explicit'] == true,
+    year: json['year'] as String?,
     addedBy: json['addedBy'] as String? ?? '',
     auto: json['auto'] == true,
     queued: json['queued'] == true,
@@ -1130,6 +1148,60 @@ class Reaction {
   int get hashCode => emoji.hashCode;
 }
 
+/// What the stream or file playing right now actually is: its codec, average bitrate and sample rate.
+class AudioFormat {
+  const AudioFormat({this.codec, this.kbps, this.hz});
+
+  final String? codec;
+  final int? kbps;
+  final int? hz;
+
+  /// Human-readable line such as "Opus · 131 kbps · 48 kHz", leaving out any missing part.
+  /// Pass [includeHz] false when the line is tight so the sample rate drops whole rather than cutting "48 k…".
+  String format({bool includeHz = true}) {
+    final parts = <String>[
+      if (codec != null && codec!.isNotEmpty) codec!,
+      if (kbps != null && kbps! > 0) '$kbps kbps',
+      if (includeHz && hz != null && hz! > 0) _formatKhz(hz!),
+    ];
+    return parts.join(' · ');
+  }
+
+  static String _formatKhz(int hz) {
+    final trimmed = (hz / 1000.0)
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+    return '$trimmed kHz';
+  }
+
+  static AudioFormat? fromJson(Object? raw) {
+    if (raw is! Map<Object?, Object?>) return null;
+    final codec = raw['codec'] as String?;
+    final kbps = (raw['kbps'] as num?)?.toInt();
+    final hz = (raw['hz'] as num?)?.toInt();
+    final hasCodec = codec != null && codec.isNotEmpty;
+    final hasKbps = kbps != null && kbps > 0;
+    final hasHz = hz != null && hz > 0;
+    if (!hasCodec && !hasKbps && !hasHz) return null;
+    return AudioFormat(
+      codec: hasCodec ? codec : null,
+      kbps: hasKbps ? kbps : null,
+      hz: hasHz ? hz : null,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is AudioFormat &&
+      other.codec == codec &&
+      other.kbps == kbps &&
+      other.hz == hz;
+
+  @override
+  int get hashCode => Object.hash(codec, kbps, hz);
+}
+
 /// The local player, sampled about once a second and extrapolated in between.
 class PlayerPosition {
   const PlayerPosition({
@@ -1145,6 +1217,7 @@ class PlayerPosition {
     this.videoHeight = 0,
     this.noPicture = false,
     this.heldBack = false,
+    this.audioFormat,
   });
 
   final bool playing;
@@ -1171,6 +1244,9 @@ class PlayerPosition {
   /// here. The room's phase says playing, this device is silent.
   final bool heldBack;
 
+  /// Codec, bitrate and sample rate of the audio actually playing, or null when unknown (and always null on web).
+  final AudioFormat? audioFormat;
+
   factory PlayerPosition.fromJson(Map<String, dynamic> json) => PlayerPosition(
     playing: json['playing'] as bool? ?? false,
     buffering: json['buffering'] as bool? ?? false,
@@ -1184,6 +1260,7 @@ class PlayerPosition {
     videoHeight: (json['videoHeight'] as num?)?.toInt() ?? 0,
     noPicture: json['noPicture'] as bool? ?? false,
     heldBack: json['heldBack'] as bool? ?? false,
+    audioFormat: AudioFormat.fromJson(json['audioFormat']),
   );
 }
 

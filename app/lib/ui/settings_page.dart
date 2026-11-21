@@ -1,7 +1,8 @@
 import 'dart:async' show Timer;
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -775,7 +776,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     S.audioQualityHigh,
                     S.audioQualityHighRate,
                   ),
-                  (AudioQuality.max, S.audioQualityMax, S.audioQualityMaxRate),
+                  (
+                    AudioQuality.max,
+                    S.audioQualityMax,
+                    defaultTargetPlatform == TargetPlatform.iOS
+                        ? S.audioQualityMaxRateIos
+                        : S.audioQualityMaxRate,
+                  ),
                 ])
                   _Row(
                     key: ValueKey('audio-quality-${quality.name}'),

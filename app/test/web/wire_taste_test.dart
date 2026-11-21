@@ -28,4 +28,25 @@ void main() {
     final old = parseServerMessage('{"t":"autoplay.fill","epoch":4,"videoId":"bNp9pn0ni3I","title":"One"}') as AutoplayFillMessage;
     expect(old.tastes, isEmpty);
   });
+
+  test('explicit and year travel in queue messages and default when omitted', () {
+    final add = jsonDecode(Wire.queueAdd(const TrackRef('bNp9pn0ni3I', 'Song', 'Artist', null, 180000, explicit: true, year: '2017'))) as Map<String, dynamic>;
+    expect(add['explicit'], isTrue);
+    expect(add['year'], '2017');
+    final plain = jsonDecode(Wire.queueAdd(const TrackRef('bNp9pn0ni3I', 'Song', 'Artist', null, 180000))) as Map<String, dynamic>;
+    expect(plain.containsKey('explicit'), isFalse);
+    expect(plain.containsKey('year'), isFalse);
+
+    final prep = parseServerMessage(
+      '{"t":"prepare","epoch":1,"index":0,"seekToMs":0,"item":{"id":"q1","videoId":"bNp9pn0ni3I","title":"Song","artist":"Artist","durMs":180000,"addedBy":"u1","explicit":true,"year":"2017"}}',
+    ) as PrepareMessage;
+    expect(prep.item.explicit, isTrue);
+    expect(prep.item.year, '2017');
+
+    final oldPrep = parseServerMessage(
+      '{"t":"prepare","epoch":1,"index":0,"seekToMs":0,"item":{"id":"q1","videoId":"bNp9pn0ni3I","title":"Song","artist":"Artist","durMs":180000,"addedBy":"u1"}}',
+    ) as PrepareMessage;
+    expect(oldPrep.item.explicit, isFalse);
+    expect(oldPrep.item.year, isNull);
+  });
 }

@@ -50,6 +50,8 @@ class SavedQueue {
           'durMs': e.durMs,
           'addedBy': e.addedBy,
           'auto': e.auto,
+          if (e.explicit) 'explicit': true,
+          if (e.year != null) 'year': e.year,
         },
     ],
     'index': index,
@@ -424,6 +426,8 @@ class LocalSession {
           artist: t.artist,
           thumb: t.thumb,
           durMs: t.durMs,
+          explicit: t.explicit,
+          year: t.year,
           addedBy: '',
           auto: auto && !(startNow && i == 0),
           queued: !startNow && queued && !auto,
@@ -487,7 +491,17 @@ class LocalSession {
     final cap = max(maxQueue - waiting.length, 0);
     final items = [
       for (final t in tracks.take(cap))
-        QueueEntry(id: _newId(), videoId: t.videoId, title: t.title, artist: t.artist, thumb: t.thumb, durMs: t.durMs, addedBy: ''),
+        QueueEntry(
+          id: _newId(),
+          videoId: t.videoId,
+          title: t.title,
+          artist: t.artist,
+          thumb: t.thumb,
+          durMs: t.durMs,
+          explicit: t.explicit,
+          year: t.year,
+          addedBy: '',
+        ),
     ];
     if (items.isEmpty) return;
     final first = start.clamp(0, items.length - 1);
@@ -578,6 +592,8 @@ class LocalSession {
       artist: track.artist,
       thumb: track.thumb,
       durMs: track.durMs,
+      explicit: track.explicit,
+      year: track.year,
       addedBy: old.addedBy,
       auto: old.auto,
       queued: old.queued,

@@ -111,6 +111,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
         createSources(db)
         createLoudness(db)
         createOffline(db)
+        createTrackMeta(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -124,6 +125,13 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
         if (oldVersion < 8) createSources(db)
         if (oldVersion < 9) createLoudness(db)
         if (oldVersion < 10) createOffline(db)
+        if (oldVersion < 11) createTrackMeta(db)
+    }
+
+    /** Explicit content flag and four-digit release year for each track; rows from before have 0 and null. */
+    private fun createTrackMeta(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN explicit INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE tracks ADD COLUMN year TEXT")
     }
 
     /** Playlists and folders whose songs are kept on this phone, the ones added later as well. None is to begin with. */
@@ -211,7 +219,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     /** Liked songs, the most recently liked first. */
     suspend fun liked(): List<Entry> = withContext(io) {
         readableDatabase.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, l.liked_at, 0 " +
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, l.liked_at, 0 " +
                 "FROM likes l JOIN tracks t ON t.video_id = l.video_id ORDER BY l.liked_at DESC, t.video_id",
             null,
         ).use(::entries)
@@ -245,7 +253,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     /** Songs heard, once each, the one heard last first. */
     suspend fun recent(limit: Int = RECENT_LIMIT): List<Entry> = withContext(io) {
         readableDatabase.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, MAX(h.played_at) AS last_at, COUNT(*) " +
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, MAX(h.played_at) AS last_at, COUNT(*) " +
                 "FROM history h JOIN tracks t ON t.video_id = h.video_id " +
                 "GROUP BY h.video_id ORDER BY last_at DESC, t.video_id LIMIT ?",
             arrayOf(limit.toString()),
@@ -273,7 +281,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     /** Every listen, the latest first, each with its own time: what the taste is worked out from. */
     suspend fun listens(limit: Int = HISTORY_KEEP): List<Entry> = withContext(io) {
         readableDatabase.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, h.played_at, 1, h.source " +
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, h.played_at, 1, h.source " +
                 "FROM history h JOIN tracks t ON t.video_id = h.video_id ORDER BY h.played_at DESC, h.id DESC LIMIT ?",
             arrayOf(limit.toString()),
         ).use(::entries)
@@ -320,7 +328,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     /** Songs left after a few seconds, the latest first, each time one entry. */
     suspend fun skipped(): List<Entry> = withContext(io) {
         readableDatabase.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, s.skipped_at, 1, s.source " +
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, s.skipped_at, 1, s.source " +
                 "FROM skips s JOIN tracks t ON t.video_id = s.video_id ORDER BY s.skipped_at DESC, s.id DESC",
             null,
         ).use(::entries)
@@ -444,7 +452,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     /** The songs of a playlist in order; empty when there is no such playlist. */
     suspend fun playlistTracks(id: Long): List<TrackRef> = withContext(io) {
         readableDatabase.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, 0, 0 " +
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0 " +
                 "FROM playlist_items i JOIN tracks t ON t.video_id = i.video_id WHERE i.playlist_id = ? ORDER BY i.position",
             arrayOf(id.toString()),
         ).use { c -> entries(c).map { it.track } }
@@ -564,13 +572,13 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     suspend fun backup(): Backup = withContext(io) {
         val db = readableDatabase
         val liked = db.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, l.liked_at, 0 " +
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, l.liked_at, 0 " +
                 "FROM likes l JOIN tracks t ON t.video_id = l.video_id WHERE t.video_id NOT LIKE '${LocalMusic.PREFIX}%' " +
                 "ORDER BY l.liked_at, t.video_id",
             null,
         ).use(::entries)
         val listens = db.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, h.played_at, 0 " +
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, h.played_at, 0 " +
                 "FROM history h JOIN tracks t ON t.video_id = h.video_id WHERE t.video_id NOT LIKE '${LocalMusic.PREFIX}%' " +
                 "ORDER BY h.played_at, h.id",
             null,
@@ -583,7 +591,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
             while (c.moveToNext()) {
                 val id = c.getLong(0)
                 val songs = db.rawQuery(
-                    "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, 0, 0 " +
+                    "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0 " +
                         "FROM playlist_items i JOIN tracks t ON t.video_id = i.video_id WHERE i.playlist_id = ? " +
                         "AND t.video_id NOT LIKE '${LocalMusic.PREFIX}%' ORDER BY i.position",
                     arrayOf(id.toString()),
@@ -738,7 +746,15 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
             Cached(
                 (0 until array.length()).map {
                     val o = array.getJSONObject(it)
-                    TrackRef(o.getString("v"), o.getString("t"), o.getString("a"), o.optString("i").ifEmpty { null }, o.getLong("d"))
+                    TrackRef(
+                        o.getString("v"),
+                        o.getString("t"),
+                        o.getString("a"),
+                        o.optString("i").ifEmpty { null },
+                        o.getLong("d"),
+                        explicit = o.optBoolean("e", false),
+                        year = o.optString("y").takeIf { y -> y.isNotEmpty() && !o.isNull("y") },
+                    )
                 },
                 c.getLong(1),
             )
@@ -748,7 +764,13 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     suspend fun putSuggestions(seed: String, tracks: List<TrackRef>, at: Long = System.currentTimeMillis()) = withContext(io) {
         val json = JSONArray()
         for (t in tracks) {
-            json.put(JSONObject().put("v", t.videoId).put("t", t.title).put("a", t.artist).put("i", t.thumb ?: "").put("d", t.durMs))
+            json.put(
+                JSONObject().put("v", t.videoId).put("t", t.title).put("a", t.artist).put("i", t.thumb ?: "").put("d", t.durMs)
+                    .apply {
+                        if (t.explicit) put("e", true)
+                        if (t.year != null) put("y", t.year)
+                    },
+            )
         }
         writableDatabase.insertWithOnConflict(
             "suggestions",
@@ -909,7 +931,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     /** The list: what is on the phone first, the most recent first, then what is still to come. */
     suspend fun downloads(): List<Download> = withContext(io) {
         readableDatabase.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, d.at, 0, d.state, d.bytes " +
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, d.state, d.bytes " +
                 "FROM downloads d JOIN tracks t ON t.video_id = d.video_id " +
                 "ORDER BY d.state = ? DESC, CASE WHEN d.state = ? THEN d.at END DESC, d.rowid",
             arrayOf(DONE, DONE),
@@ -917,7 +939,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
             val list = ArrayList<Download>(c.count)
             while (c.moveToNext()) {
                 list += Download(
-                    TrackRef(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4)),
+                    TrackRef(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4), c.getInt(5) != 0, c.getString(6)),
                     c.getString(7),
                     c.getLong(8),
                 )
@@ -929,7 +951,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     /** Liked songs that are not on the list yet (or failed), for downloading them by themselves. */
     suspend fun likedToDownload(): List<TrackRef> = withContext(io) {
         readableDatabase.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, 0, 0 FROM likes l " +
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0 FROM likes l " +
                 "JOIN tracks t ON t.video_id = l.video_id LEFT JOIN downloads d ON d.video_id = l.video_id " +
                 "WHERE d.video_id IS NULL AND l.video_id NOT LIKE '${LocalMusic.PREFIX}%' ORDER BY l.liked_at DESC",
             null,
@@ -1000,7 +1022,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     /** Songs of kept playlists that are not on the list yet, for downloading them by themselves. */
     suspend fun offlineToDownload(): List<TrackRef> = withContext(io) {
         readableDatabase.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, 0, 0 FROM tracks t LEFT JOIN downloads d ON d.video_id = t.video_id " +
+            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0 FROM tracks t LEFT JOIN downloads d ON d.video_id = t.video_id " +
                 "WHERE d.video_id IS NULL AND t.video_id IN ($KEPT_SONGS) AND t.video_id NOT LIKE '${LocalMusic.PREFIX}%' ORDER BY t.rowid",
             arrayOf("-1", "-1"),
         ).use { c -> entries(c).map { it.track } }
@@ -1101,6 +1123,13 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
         }
     }
 
+    /** Size in bytes of a local song's file, or -1 when unknown. */
+    suspend fun localSize(videoId: String): Long = withContext(io) {
+        readableDatabase.rawQuery("SELECT size FROM local_files WHERE video_id = ? AND missing = 0", arrayOf(videoId)).use {
+            if (it.moveToFirst()) it.getLong(0) else -1L
+        }
+    }
+
     /** Keeps how loud [videoId] is, for hearing it without a network. A song that has no row yet gets it when it has one. */
     suspend fun setLoudness(videoId: String, db: Double) = withContext(io) {
         writableDatabase.execSQL("UPDATE tracks SET loudness_cdb = ? WHERE video_id = ?", arrayOf<Any>(Math.round(db * 100), videoId))
@@ -1117,17 +1146,21 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
 
     /** Adds the song's details, or brings them up to date. A length that is not known does not erase one that is. */
     private fun SQLiteDatabase.upsertTrack(track: TrackRef) {
+        val explicitInt = if (track.explicit) 1 else 0
         val values = ContentValues().apply {
             put("video_id", track.videoId)
             put("title", track.title)
             put("artist", track.artist)
             put("thumb", track.thumb)
             put("dur_ms", track.durMs)
+            put("explicit", explicitInt)
+            put("year", track.year)
         }
         if (insertWithOnConflict("tracks", null, values, SQLiteDatabase.CONFLICT_IGNORE) != -1L) return
         execSQL(
-            "UPDATE tracks SET title = ?, artist = ?, thumb = ?, dur_ms = CASE WHEN ? > 0 THEN ? ELSE dur_ms END WHERE video_id = ?",
-            arrayOf<Any?>(track.title, track.artist, track.thumb, track.durMs, track.durMs, track.videoId),
+            "UPDATE tracks SET title = ?, artist = ?, thumb = ?, dur_ms = CASE WHEN ? > 0 THEN ? ELSE dur_ms END, " +
+                "explicit = CASE WHEN ? != 0 THEN 1 ELSE explicit END, year = COALESCE(?, year) WHERE video_id = ?",
+            arrayOf<Any?>(track.title, track.artist, track.thumb, track.durMs, track.durMs, explicitInt, track.year, track.videoId),
         )
     }
 
@@ -1175,17 +1208,19 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
                     artist = cursor.getString(2),
                     thumb = cursor.getString(3),
                     durMs = cursor.getLong(4),
+                    explicit = cursor.getInt(5) != 0,
+                    year = cursor.getString(6),
                 ),
-                at = cursor.getLong(5),
-                plays = cursor.getInt(6),
-                source = if (cursor.columnCount > 7) cursor.getString(7) else null,
+                at = cursor.getLong(7),
+                plays = cursor.getInt(8),
+                source = if (cursor.columnCount > 9) cursor.getString(9) else null,
             )
         }
         return list
     }
 
     companion object {
-        private const val VERSION = 10
+        private const val VERSION = 11
 
         /**
          * The songs of kept playlists, by their own mark or their folder's, leaving out one playlist and one folder (the

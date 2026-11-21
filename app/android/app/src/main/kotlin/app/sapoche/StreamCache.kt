@@ -70,6 +70,12 @@ class StreamCache(
     /** Returns a validated stream URL for [videoId], resolving if needed. */
     fun get(videoId: String): String = getAudio(videoId, null).url
 
+    /** Already-resolved audio stream of [videoId] (matching [itag] when given), without doing any network I/O. */
+    fun cachedAudio(videoId: String, itag: Int?): AudioSource? {
+        val entry = entries[videoId] ?: return null
+        return if (itag != null) entry.audio.firstOrNull { it.itag == itag } ?: entry.best else entry.best
+    }
+
     /**
      * Returns a validated audio stream for [videoId], resolving if needed. With [pinnedItag] (the stream the bytes
      * kept on disk belong to) that stream is used as long as the video offers it and it works; see [AudioPicker].

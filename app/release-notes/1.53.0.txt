@@ -1,0 +1,6 @@
+Real audio quality readout, Explicit badge, and release year
+- The Full cover player now shows the actual codec, bitrate and sample rate of what is playing (for example "Opus · 131 kbps · 48 kHz" or "AAC · 130 kbps · 44.1 kHz"), whether streamed, cached, downloaded, or played from a file on your phone. On the web, where YouTube's player does not expose stream details, this line is hidden.
+- Songs marked Explicit on YouTube Music now carry an "E" badge in search, albums, artist pages, Home shelves, queues, rooms, and your library, as well as beside the song title in all three player styles.
+- The Full cover player now shows a song's release year beside the artist name when known (for example "Artist · 2017"), dropping the year first on narrow screens so the artist name is never cut short.
+- Settings > Playback on iPhone now shows the real "~128 kbps" ceiling for Highest quality, and clarifies that YouTube offers no higher stream without signing in.
+- Library upgrade (schema v11): your library keeps Explicit badges and release years for songs added from now on. Once upgraded, downgrading to an older version of the app is not supported; exported backups remain compatible with older versions.

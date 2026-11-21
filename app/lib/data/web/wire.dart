@@ -425,15 +425,17 @@ ServerMessage? parseServerMessage(String text) {
 
 /// A song to put on the queue; the server adds the item id and who added it.
 class TrackRef {
-  const TrackRef(this.videoId, this.title, this.artist, this.thumb, this.durMs);
+  const TrackRef(this.videoId, this.title, this.artist, this.thumb, this.durMs, {this.explicit = false, this.year});
 
-  TrackRef.of(Track t) : this(t.videoId, t.title, t.artist, t.thumb, t.durMs);
+  TrackRef.of(Track t) : this(t.videoId, t.title, t.artist, t.thumb, t.durMs, explicit: t.explicit, year: t.year);
 
   final String videoId;
   final String title;
   final String artist;
   final String? thumb;
   final int durMs;
+  final bool explicit;
+  final String? year;
 
   Map<String, Object?> toJson() => {
     'videoId': videoId,
@@ -441,6 +443,8 @@ class TrackRef {
     'artist': artist,
     'thumb': ?thumb,
     'durMs': durMs,
+    if (explicit) 'explicit': true,
+    if (year != null) 'year': year,
   };
 }
 

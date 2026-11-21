@@ -121,8 +121,8 @@ enum MusicParser {
                 videoId: song.videoId, title: song.title, artist: anonymous ? owner ?? "" : song.artist,
                 artistId: song.artistId ?? (anonymous ? ownerId : nil), album: song.album ?? title,
                 albumId: song.albumId ?? (id.hasPrefix("MPRE") ? id : nil), year: song.year ?? year,
-                durationSec: song.durationSec, thumbUrl: song.thumbUrl ?? cover, isSong: song.isSong, stats: song.stats,
-                counterpart: song.counterpart
+                durationSec: song.durationSec, thumbUrl: song.thumbUrl ?? cover, isSong: song.isSong, explicit: song.explicit,
+                stats: song.stats, counterpart: song.counterpart
             )
         }
         return CollectionPage(
@@ -153,7 +153,8 @@ enum MusicParser {
         return MusicTrack(
             videoId: videoId, title: title, artist: show,
             durationSec: spokenSeconds(row.at("playbackProgress", "musicPlaybackProgressRenderer", "durationText").text),
-            thumbUrl: thumbnail(row.at("thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails"))
+            thumbUrl: thumbnail(row.at("thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails")),
+            explicit: isExplicit(row)
         )
     }
 
@@ -276,7 +277,8 @@ enum MusicParser {
         guard let videoId = watch.at("videoId").string else { return nil }
         let type = watch.at("watchEndpointMusicSupportedConfigs", "watchEndpointMusicConfig", "musicVideoType").string
         let duration = byline.compactMap { $0.at("text").string?.trimmingCharacters(in: .whitespaces) }.last { isDuration($0) }
-        let song = track(videoId: videoId, title: title, byline: withoutLabel(byline), duration: duration, thumbs: thumbs, type: type)
+        let song = track(videoId: videoId, title: title, byline: withoutLabel(byline), duration: duration, thumbs: thumbs, type: type,
+                         explicit: isExplicit(card))
         return trackItem(song, type, byline)
     }
 
@@ -308,8 +310,8 @@ enum MusicParser {
         // An episode's line is its date and its show, not an artist
         let parts = groups(withoutLabel(byline))
         let episode = MusicTrack(videoId: song.videoId, title: song.title, artist: parts.last ?? "", album: song.album, albumId: song.albumId,
-                                 year: song.year, durationSec: song.durationSec, thumbUrl: song.thumbUrl, isSong: false, stats: song.stats,
-                                 counterpart: song.counterpart)
+                                 year: song.year, durationSec: song.durationSec, thumbUrl: song.thumbUrl, isSong: false, explicit: song.explicit,
+                                 stats: song.stats, counterpart: song.counterpart)
         return SearchItem(kind: "episode", id: song.videoId, title: song.title, subtitle: parts.joined(separator: " · "), label: label,
                           thumbUrl: song.thumbUrl, track: episode)
     }
@@ -358,7 +360,8 @@ enum MusicParser {
             byline: row.at("longBylineText").runs,
             duration: row.at("lengthText").text,
             thumbs: row.at("thumbnail", "thumbnails"),
-            type: type
+            type: type,
+            explicit: isExplicit(row)
         )
     }
 
@@ -383,7 +386,8 @@ enum MusicParser {
             thumbs: row.at("thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails"),
             type: type,
             // A song's plays are a column of their own ("155M plays"), after the line with its artist and album
-            extra: columns.count > 2 ? columns[2].text : nil
+            extra: columns.count > 2 ? columns[2].text : nil,
+            explicit: isExplicit(row)
         )
     }
 
@@ -395,7 +399,7 @@ enum MusicParser {
     }
 
     /// The parts of a line like "Artist • Album • 1987" are told apart by where the separators are.
-    private static func track(videoId: String, title: String, byline: [JSON], duration: String?, thumbs: JSON?, type: String?, extra: String? = nil) -> MusicTrack {
+    private static func track(videoId: String, title: String, byline: [JSON], duration: String?, thumbs: JSON?, type: String?, extra: String? = nil, explicit: Bool = false) -> MusicTrack {
         var parts: [[JSON]] = [[]]
         for run in byline {
             if run.at("text").string?.trimmingCharacters(in: .whitespaces) == "•" {
@@ -427,6 +431,7 @@ enum MusicParser {
             durationSec: seconds(duration),
             thumbUrl: thumbnail(thumbs),
             isSong: type == "MUSIC_VIDEO_TYPE_ATV",
+            explicit: explicit,
             stats: stats.isEmpty ? nil : stats
         )
     }
@@ -483,8 +488,16 @@ enum MusicParser {
             byline: card.at("subtitle").runs,
             duration: nil,
             thumbs: card.at("thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails"),
-            type: watch.at("watchEndpointMusicSupportedConfigs", "watchEndpointMusicConfig", "musicVideoType").string
+            type: watch.at("watchEndpointMusicSupportedConfigs", "watchEndpointMusicConfig", "musicVideoType").string,
+            explicit: isExplicit(card)
         )
+    }
+
+    /// Whether a row or card carries YouTube Music's explicit content badge.
+    private static func isExplicit(_ node: JSON) -> Bool {
+        (node.at("badges").array + node.at("subtitleBadges").array).contains {
+            $0.at("musicInlineBadgeRenderer", "icon", "iconType").string == "MUSIC_EXPLICIT_BADGE"
+        }
     }
 
     // ------------------------------------------------------------------ reading

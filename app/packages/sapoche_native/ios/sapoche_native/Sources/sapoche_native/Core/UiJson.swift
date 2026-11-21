@@ -121,6 +121,7 @@ enum UiJson {
             "videoHeight": player.videoHeight,
             "noPicture": player.noPicture,
             "heldBack": player.heldBack,
+            "audioFormat": player.audioFormat.map { ["codec": $0.codec, "kbps": $0.kbps, "hz": $0.hz] as [String: Any] } ?? NSNull(),
         ] as [String: Any])
     }
 
@@ -163,6 +164,7 @@ enum UiJson {
         [
             "id": item.id, "videoId": item.videoId, "title": item.title, "artist": item.artist,
             "thumb": item.thumb ?? NSNull(), "durMs": item.durMs, "addedBy": item.addedBy, "auto": item.auto, "queued": queued,
+            "explicit": item.explicit, "year": item.year ?? NSNull(),
         ]
     }
 
@@ -185,7 +187,7 @@ enum MusicJson {
             "videoId": track.videoId, "title": track.title, "artist": track.artist, "artistId": track.artistId ?? NSNull(),
             "album": track.album ?? NSNull(), "albumId": track.albumId ?? NSNull(), "year": track.year ?? NSNull(),
             "thumb": track.thumbUrl ?? NSNull(), "durMs": track.durationSec * 1000, "isSong": track.isSong,
-            "stats": track.stats ?? NSNull(),
+            "explicit": track.explicit, "stats": track.stats ?? NSNull(),
         ]
     }
 

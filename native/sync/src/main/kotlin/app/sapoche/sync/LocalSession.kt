@@ -305,7 +305,18 @@ class LocalSession(
         val room = MAX_QUEUE - s.queue.size
         if (fresh.isNotEmpty() && room <= 0) return problem(Problem(Problem.Kind.QUEUE_FULL))
         val items = fresh.take(room).mapIndexed { i, it ->
-            QueueItem(newId(), it.videoId, it.title, it.artist, it.thumb, it.durMs, addedBy = "", auto = auto && !(startNow && i == 0))
+            QueueItem(
+                newId(),
+                it.videoId,
+                it.title,
+                it.artist,
+                it.thumb,
+                it.durMs,
+                addedBy = "",
+                auto = auto && !(startNow && i == 0),
+                explicit = it.explicit,
+                year = it.year,
+            )
         }
         if (items.isEmpty()) return
 
@@ -356,7 +367,9 @@ class LocalSession(
         val s = snapshot.value
         val waiting = if (s.finished) emptyList() else s.queue.drop(s.index + 1).filter { it.id in s.queued }
         val cap = (MAX_QUEUE - waiting.size).coerceAtLeast(0)
-        val items = tracks.take(cap).map { QueueItem(newId(), it.videoId, it.title, it.artist, it.thumb, it.durMs, addedBy = "") }
+        val items = tracks.take(cap).map {
+            QueueItem(newId(), it.videoId, it.title, it.artist, it.thumb, it.durMs, addedBy = "", explicit = it.explicit, year = it.year)
+        }
         if (items.isEmpty()) return
         val first = start.coerceIn(0, items.size - 1)
         val chosen = items[first]
@@ -433,7 +446,15 @@ class LocalSession(
         val s = snapshot.value
         val at = s.queue.indexOfFirst { it.id == id }
         if (at < 0 || s.queue[at].videoId == track.videoId) return
-        val item = s.queue[at].copy(videoId = track.videoId, title = track.title, artist = track.artist, thumb = track.thumb, durMs = track.durMs)
+        val item = s.queue[at].copy(
+            videoId = track.videoId,
+            title = track.title,
+            artist = track.artist,
+            thumb = track.thumb,
+            durMs = track.durMs,
+            explicit = track.explicit,
+            year = track.year,
+        )
         _snapshot.update { it.copy(queue = it.queue.toMutableList().also { queue -> queue[at] = item }) }
         if (loadedId == id) {
             val end = if (item.durMs > 0) item.durMs else Long.MAX_VALUE

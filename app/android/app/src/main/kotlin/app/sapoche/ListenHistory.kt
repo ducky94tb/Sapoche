@@ -83,6 +83,8 @@ class ListenHistory(
             artist = meta.artist?.toString().orEmpty(),
             thumb = meta.artworkUri?.toString(),
             durMs = durationMs,
+            explicit = meta.extras?.getBoolean("explicit", false) == true,
+            year = meta.extras?.getString("year"),
         )
     }
 

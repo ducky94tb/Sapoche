@@ -1481,7 +1481,15 @@ class WebBackend extends BackendDefaults {
     log: (line) => _note('suggestions: $line'),
   );
 
-  static Track _track(TrackRef t) => Track(videoId: t.videoId, title: t.title, artist: t.artist, thumb: t.thumb, durMs: t.durMs);
+  static Track _track(TrackRef t) => Track(
+    videoId: t.videoId,
+    title: t.title,
+    artist: t.artist,
+    thumb: t.thumb,
+    durMs: t.durMs,
+    explicit: t.explicit,
+    year: t.year,
+  );
 
   @override
   Future<List<Track>> forYou() async => [for (final t in _suggestions.forYou()) _track(t)];
@@ -2010,7 +2018,15 @@ class WebBackend extends BackendDefaults {
       return;
     }
     _library.recordSkip(
-      Track(videoId: id, title: item.title, artist: item.artist, thumb: item.thumb, durMs: durationMs > 0 ? durationMs : item.durMs),
+      Track(
+        videoId: id,
+        title: item.title,
+        artist: item.artist,
+        thumb: item.thumb,
+        durMs: durationMs > 0 ? durationMs : item.durMs,
+        explicit: item.explicit,
+        year: item.year,
+      ),
       source: _listenSource,
     );
   }
@@ -2019,7 +2035,15 @@ class WebBackend extends BackendDefaults {
     final item = _listened;
     if (item == null || item.videoId != id) return;
     _library.recordListen(
-      Track(videoId: id, title: item.title, artist: item.artist, thumb: item.thumb, durMs: durationMs > 0 ? durationMs : item.durMs),
+      Track(
+        videoId: id,
+        title: item.title,
+        artist: item.artist,
+        thumb: item.thumb,
+        durMs: durationMs > 0 ? durationMs : item.durMs,
+        explicit: item.explicit,
+        year: item.year,
+      ),
       source: _listenSource,
     );
   }

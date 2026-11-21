@@ -30,7 +30,45 @@ data class AudioSource(
     val itag: Int,
     /** How many dB the song is above YouTube's reference level (negative when below), when the answer says. */
     val loudnessDb: Double? = null,
+    /** Sample rate in Hz (e.g. 48000, 44100), or 0 when the answer does not say. */
+    val sampleRate: Int = 0,
 )
+
+/** What the player is actually decoding for the current song: codec name, average bitrate (kbps) and sample rate (Hz). */
+data class AudioFormat(val codec: String, val kbps: Int = 0, val hz: Int = 0) {
+    companion object {
+        /** Codec name and sample rate for YouTube audio itags when the player has not reported them yet. */
+        fun fromItag(itag: Int): Pair<String, Int>? = when (itag) {
+            249, 250, 251, 774 -> "Opus" to 48_000
+            140, 141 -> "AAC" to 44_100
+            139 -> "AAC HE" to 22_050
+            else -> null
+        }
+
+        /** Human-readable codec name from a MIME type and optional codec string / YouTube itag. */
+        fun codecFromMime(mime: String?, codecs: String? = null, itag: Int? = null): String? {
+            val lower = mime?.lowercase().orEmpty()
+            val c = codecs?.lowercase().orEmpty()
+            return when {
+                lower == "audio/opus" || c.contains("opus") -> "Opus"
+                lower == "audio/mp4a-latm" || lower == "audio/mp4" || lower == "audio/aac" || c.startsWith("mp4a") ->
+                    if (itag == 139 || c.contains("mp4a.40.5") || c.contains("mp4a.40.29")) "AAC HE" else "AAC"
+                lower == "audio/mpeg" || lower == "audio/mp3" -> "MP3"
+                lower == "audio/flac" || lower == "audio/x-flac" -> "FLAC"
+                lower == "audio/vorbis" -> "Vorbis"
+                lower == "audio/alac" -> "ALAC"
+                lower == "audio/raw" || lower == "audio/wav" || lower == "audio/x-wav" -> "PCM"
+                lower == "audio/ac3" -> "AC-3"
+                lower == "audio/eac3" || lower == "audio/eac3-joc" -> "E-AC-3"
+                else -> null
+            }
+        }
+
+        /** Average bitrate in kbps from total stream/file bytes and duration in ms; 0 when either is missing. */
+        fun kbpsOf(contentLength: Long, durationMs: Long): Int =
+            if (contentLength > 0 && durationMs > 0) ((contentLength * 8L + durationMs / 2) / durationMs).toInt() else 0
+    }
+}
 
 /** A video-only stream, played together with an audio stream when the picture is wanted. */
 data class VideoSource(

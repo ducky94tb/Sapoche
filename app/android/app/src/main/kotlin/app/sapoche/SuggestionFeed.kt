@@ -194,7 +194,7 @@ class SuggestionFeed(
     /** The radio YouTube Music makes of the song, or what YouTube lists beside it when that cannot be had. */
     private suspend fun radioOf(videoId: String): List<TrackRef> {
         val radio = try {
-            music.watchNext(videoId).tracks.map { TrackRef(it.videoId, it.title, it.artist, it.thumbUrl, it.durationSec * 1000) }
+            music.watchNext(videoId).tracks.map { TrackRef(it.videoId, it.title, it.artist, it.thumbUrl, it.durationSec * 1000, it.explicit, it.year) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

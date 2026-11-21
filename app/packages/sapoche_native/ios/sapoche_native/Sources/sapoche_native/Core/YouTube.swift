@@ -57,6 +57,46 @@ struct AudioSource: Equatable {
     var index: DashRanges? = nil
     /// How many dB the song is above YouTube's reference level (negative when below), when the answer says.
     var loudnessDb: Double? = nil
+    /// Sample rate in Hz (e.g. 44100, 22050), or 0 when the answer does not say.
+    var sampleRate: Int = 0
+}
+
+/// What the player is actually decoding for the current song: codec name, average bitrate (kbps) and sample rate (Hz).
+struct AudioFormat: Equatable {
+    let codec: String
+    let kbps: Int
+    let hz: Int
+
+    init(codec: String, kbps: Int = 0, hz: Int = 0) {
+        self.codec = codec
+        self.kbps = kbps
+        self.hz = hz
+    }
+
+    /// Codec name and sample rate for YouTube audio itags when the player has not reported them yet.
+    static func fromItag(_ itag: Int) -> (codec: String, hz: Int)? {
+        switch itag {
+        case 249, 250, 251, 774: return ("Opus", 48_000)
+        case 140, 141: return ("AAC", 44_100)
+        case 139: return ("AAC HE", 22_050)
+        default: return nil
+        }
+    }
+
+    /// Average bitrate in kbps from total stream/file bytes and duration in ms; 0 when either is missing.
+    static func kbpsOf(contentLength: Int64, durationMs: Int64) -> Int {
+        guard contentLength > 0, durationMs > 0 else { return 0 }
+        return Int((contentLength * 8 + durationMs / 2) / durationMs)
+    }
+
+    /// Best-effort format from stream metadata before the player exposes its ASBD.
+    static func fromHint(itag: Int, sampleRate: Int, contentLength: Int64, bitrateKbps: Int, durationMs: Int64) -> AudioFormat? {
+        guard let fallback = fromItag(itag) else { return nil }
+        let hz = sampleRate > 0 ? sampleRate : fallback.hz
+        let calc = kbpsOf(contentLength: contentLength, durationMs: durationMs)
+        let kbps = calc > 0 ? calc : max(bitrateKbps, 0)
+        return AudioFormat(codec: fallback.codec, kbps: kbps, hz: hz)
+    }
 }
 
 /// A picture-only stream, played together with an audio stream when the picture is wanted.
@@ -409,7 +449,8 @@ actor YouTubeResolver: StreamResolver {
             let bitrate = format.at("averageBitrate").int ?? format.at("bitrate").int ?? 0
             return AudioSource(url: url, mimeType: mime, bitrateKbps: bitrate / 1000, contentLength: format.at("contentLength").int64 ?? -1,
                                itag: format.at("itag").int ?? -1, index: DashRanges.of(format),
-                               loudnessDb: format.at("loudnessDb").double ?? trackLoudness)
+                               loudnessDb: format.at("loudnessDb").double ?? trackLoudness,
+                               sampleRate: format.at("audioSampleRate").int ?? 0)
         }.sorted { $0.bitrateKbps > $1.bitrateKbps }
         guard let best = sources.first else { throw ResolveFailure(message: "No audio stream available for \(videoId)", unplayable: true) }
 

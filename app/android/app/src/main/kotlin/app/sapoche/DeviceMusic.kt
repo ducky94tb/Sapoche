@@ -135,8 +135,21 @@ class DeviceMusic(private val context: Context, private val library: LibraryStor
     /** Reads a music file by its address. */
     fun fileSource(): DataSource = ContentDataSource(context)
 
+    /** File sizes in bytes of local songs loaded recently, so the player UI can compute kbps on the main thread. */
+    private val sizes = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     /** Where the file of [videoId] is, asked of the library and waited for: the player's loader thread is no place that minds. */
-    fun uriNow(videoId: String): String? = runBlocking { library.localUri(videoId) }
+    fun uriNow(videoId: String): String? = runBlocking {
+        val uri = library.localUri(videoId)
+        if (uri != null) {
+            val size = library.localSize(videoId)
+            if (size > 0) sizes[videoId] = size
+        }
+        uri
+    }
+
+    /** Size in bytes of [videoId] if it has been opened or scanned lately; -1 otherwise. */
+    fun sizeIfKnown(videoId: String): Long = sizes[videoId] ?: -1L
 
     /** Pictures read lately, so that a notification and the player do not have each file opened again; kept for the few songs in play. */
     private val recent = android.util.LruCache<String, ByteArray>(4)

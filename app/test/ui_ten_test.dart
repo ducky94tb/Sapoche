@@ -320,9 +320,15 @@ void main() {
       isSong: true,
     );
 
-    Future<FakeBackend> phone(WidgetTester tester) async {
-      final backend = await _openPlayer(tester, width: 400);
-      backend.radioResult = const SongRadio(tracks: [withAlbum]);
+    Future<FakeBackend> phone(
+      WidgetTester tester, {
+      SongRadio radio = const SongRadio(tracks: [withAlbum]),
+    }) async {
+      final backend = await _openPlayer(
+        tester,
+        width: 400,
+        before: (b, _) async => b.radioResult = radio,
+      );
       await tester.tap(
         find.descendant(
           of: find.byType(Scaffold).last,
@@ -381,16 +387,18 @@ void main() {
     });
 
     testWidgets('on a song without an album it says so', (tester) async {
-      final backend = await phone(tester);
-      backend.radioResult = const SongRadio(
-        tracks: [
-          MusicTrack(
-            videoId: 'video0',
-            title: 'Song 0',
-            artist: 'Artist 0',
-            durMs: 200000,
-          ),
-        ],
+      await phone(
+        tester,
+        radio: const SongRadio(
+          tracks: [
+            MusicTrack(
+              videoId: 'video0',
+              title: 'Song 0',
+              artist: 'Artist 0',
+              durMs: 200000,
+            ),
+          ],
+        ),
       );
       await tester.tap(find.text('Go to album'));
       await tester.pumpAndSettle();

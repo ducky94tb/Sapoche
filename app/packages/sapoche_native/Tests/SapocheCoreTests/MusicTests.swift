@@ -409,6 +409,22 @@ final class MusicParserTests: XCTestCase {
         XCTAssertEqual(track.counterpart?.durationSec, 200)
     }
 
+    func testExplicitBadgeAndYearAreReadFromWatchNextSearchAndHome() async throws {
+        let next = try await client(["next": "next_explicit"]).watchNext("H4RELGc9su8")
+        XCTAssertEqual(next.tracks.count, 3)
+        XCTAssertTrue(next.tracks[0].explicit)
+        XCTAssertEqual(next.tracks[0].year, "2017")
+        XCTAssertTrue(next.tracks[1].explicit)
+        XCTAssertEqual(next.tracks[1].year, "2024")
+        XCTAssertFalse(next.tracks[2].explicit)
+        XCTAssertEqual(next.tracks[2].year, "2024")
+
+        let home = try await client(["browse": "home_chips"]).home(language: "en", params: nil)
+        let homeTracks = home.shelves.flatMap(\.tracks)
+        XCTAssertEqual(homeTracks.first { $0.videoId == "KvLs5WSz4yI" }?.explicit, true)
+        XCTAssertTrue(homeTracks.contains { !$0.explicit })
+    }
+
     func testLengthsAreReadInMinutesAndHours() {
         XCTAssertEqual(MusicParser.seconds("3:34"), 214)
         XCTAssertEqual(MusicParser.seconds("1:02:03"), 3723)

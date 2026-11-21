@@ -25,6 +25,7 @@ import 'starter_artists_sheet.dart';
 import 'widgets/artwork.dart';
 import 'widgets/avatars.dart';
 import 'widgets/cached_cover.dart';
+import 'widgets/explicit_badge.dart';
 import 'widgets/kept_alive.dart';
 import 'widgets/meta_line.dart';
 import 'widgets/play_actions.dart';
@@ -1369,9 +1370,29 @@ class _QuickRow extends StatelessWidget {
                       style: theme.titleSmall,
                     ),
                     // The count goes after the artist, and gives way before the artist is cut
-                    views == null
-                        ? Text(track.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: artistStyle)
-                        : MetaLine(text: track.artist, meta: views, style: artistStyle),
+                    Row(
+                      children: [
+                        if (track.explicit)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: ExplicitBadge(size: 13, color: p.textSecondary),
+                          ),
+                        Expanded(
+                          child: views == null
+                              ? Text(
+                                  track.artist,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: artistStyle,
+                                )
+                              : MetaLine(
+                                  text: track.artist,
+                                  meta: views,
+                                  style: artistStyle,
+                                ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

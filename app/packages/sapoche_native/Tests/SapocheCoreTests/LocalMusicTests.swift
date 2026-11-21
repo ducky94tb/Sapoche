@@ -362,7 +362,10 @@ final class LocalPlaybackTests: XCTestCase {
         try Data([1, 2, 3]).write(to: file)
         let media = library { _ in file }
         let atOnce = try await media.playableAtOnce("local:0123456789abcdef")
-        XCTAssertEqual(atOnce, Playable(url: file, isFile: true, headers: [:]))
+        XCTAssertEqual(
+            atOnce,
+            Playable(url: file, isFile: true, headers: [:], audio: AudioHint(itag: -1, sampleRate: 0, contentLength: 3, bitrateKbps: 0))
+        )
         let whole = try await media.playable("local:0123456789abcdef", piecesWhenLong: false)
         XCTAssertEqual(whole.url, file)
     }

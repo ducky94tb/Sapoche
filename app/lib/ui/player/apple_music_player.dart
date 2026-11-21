@@ -204,9 +204,9 @@ class AppleMusicPlayer extends StatelessWidget {
                   const SizedBox(height: 6),
                   PlaybackBar(
                     controller: controller,
-                    middle: controller.snapshot.video
+                    middle: controller.snapshot.video || kIsWeb
                         ? null
-                        : _Quality(quality: controller.audioQuality),
+                        : _Quality(controller: controller),
                   ),
                   const SizedBox(height: 6),
                   TransportRow(controller: controller),
@@ -604,37 +604,76 @@ class _CompactCover extends StatelessWidget {
   }
 }
 
-/// The quality the songs are fetched in, in the line between the two times: its name and the rate it comes to.
+/// The actual codec, bitrate and sample rate of the stream or file playing right now, in the line between the two
+/// times. Hidden until the player knows what it is playing (and never shown on the web, where YouTube's frame hides it).
 class _Quality extends StatelessWidget {
-  const _Quality({required this.quality});
+  const _Quality({required this.controller});
 
-  final AudioQuality quality;
+  final RoomController controller;
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    final text = switch (quality) {
-      AudioQuality.low => '${S.audioQualityLow} · ${S.audioQualityLowRate}',
-      AudioQuality.normal =>
-        '${S.audioQualityNormal} · ${S.audioQualityNormalRate}',
-      AudioQuality.high => '${S.audioQualityHigh} · ${S.audioQualityHighRate}',
-      AudioQuality.max => '${S.audioQualityMax} · ${S.audioQualityMaxRate}',
-    };
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.graphic_eq_rounded, size: 14, color: p.textSecondary),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelMedium
-                ?.copyWith(color: p.textSecondary),
+    return ValueListenableBuilder<PlayerPosition>(
+      valueListenable: controller.player,
+      builder: (context, position, _) {
+        final fmt = position.audioFormat;
+        final full = fmt?.format() ?? '';
+        if (fmt == null || full.isEmpty) return const SizedBox.shrink();
+        final p = context.palette;
+        final style = Theme.of(context).textTheme.labelMedium
+            ?.copyWith(color: p.textSecondary);
+        // Drop the sample rate whole (then fall back to codec) on narrow / 1.3x screens instead of cutting "48 k…"
+        final short = fmt.format(includeHz: false);
+        final candidates = <String>[
+          full,
+          if (short.isNotEmpty && short != full) short,
+          if (fmt.codec != null && fmt.codec!.isNotEmpty && fmt.codec != short)
+            fmt.codec!,
+        ];
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: LayoutBuilder(
+            builder: (context, box) {
+              // 14dp icon + 4dp gap = 18dp beside the label
+              final textMax = max(0.0, box.maxWidth - 18);
+              final merged = DefaultTextStyle.of(context).style.merge(style);
+              String chosen = candidates.last;
+              for (final text in candidates) {
+                final w = (TextPainter(
+                  text: TextSpan(text: text, style: merged),
+                  textDirection: Directionality.of(context),
+                  textScaler: MediaQuery.textScalerOf(context),
+                  maxLines: 1,
+                )..layout()).width;
+                if (w <= textMax) {
+                  chosen = text;
+                  break;
+                }
+              }
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.graphic_eq_rounded,
+                    size: 14,
+                    color: p.textSecondary,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      chosen,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: style,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }

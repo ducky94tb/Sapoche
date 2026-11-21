@@ -118,7 +118,7 @@ actor LibraryStore {
     static let failed = "failed"
     static let unavailable = "unavailable"
     static let maxTries = 3
-    private static let version = 10
+    private static let version = 11
 
     /// The songs of kept playlists, by their own mark or their folder's, leaving out one playlist and one folder (the two
     /// arguments; -1 for none) as if they were switched off.
@@ -199,6 +199,11 @@ actor LibraryStore {
                 try db.run("ALTER TABLE playlists ADD COLUMN offline INTEGER NOT NULL DEFAULT 0")
                 try db.run("ALTER TABLE folders ADD COLUMN offline INTEGER NOT NULL DEFAULT 0")
             }
+            if found < 11 {
+                // Explicit content flag and four-digit release year for each track; rows from before have 0 and null
+                try db.run("ALTER TABLE tracks ADD COLUMN explicit INTEGER NOT NULL DEFAULT 0")
+                try db.run("ALTER TABLE tracks ADD COLUMN year TEXT")
+            }
         }
         db.version = version
     }
@@ -210,7 +215,7 @@ actor LibraryStore {
     /// Liked songs, the most recently liked first.
     func liked() throws -> [Entry] {
         try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, l.liked_at, 0
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, l.liked_at, 0
             FROM likes l JOIN tracks t ON t.video_id = l.video_id ORDER BY l.liked_at DESC, t.video_id
             """))
     }
@@ -234,7 +239,7 @@ actor LibraryStore {
     /// Songs heard, once each, the one heard last first.
     func recent(limit: Int = LibraryStore.recentLimit) throws -> [Entry] {
         try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, MAX(h.played_at) AS last_at, COUNT(*)
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, MAX(h.played_at) AS last_at, COUNT(*)
             FROM history h JOIN tracks t ON t.video_id = h.video_id
             GROUP BY h.video_id ORDER BY last_at DESC, t.video_id LIMIT ?
             """, [.int(Int64(limit))]))
@@ -254,7 +259,7 @@ actor LibraryStore {
     /// Every listen, the latest first, each with its own time: what the taste is worked out from.
     func listens(limit: Int = LibraryStore.historyKeep) throws -> [Entry] {
         try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, h.played_at, 1, h.source
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, h.played_at, 1, h.source
             FROM history h JOIN tracks t ON t.video_id = h.video_id ORDER BY h.played_at DESC, h.id DESC LIMIT ?
             """, [.int(Int64(limit))]))
     }
@@ -289,7 +294,7 @@ actor LibraryStore {
     /// Songs left after a few seconds, the latest first, each time one entry.
     func skipped() throws -> [Entry] {
         try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, s.skipped_at, 1, s.source
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, s.skipped_at, 1, s.source
             FROM skips s JOIN tracks t ON t.video_id = s.video_id ORDER BY s.skipped_at DESC, s.id DESC
             """))
     }
@@ -386,7 +391,7 @@ actor LibraryStore {
     /// The songs of a playlist in order; empty when there is no such playlist.
     func playlistTracks(_ id: Int64) throws -> [TrackRef] {
         try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, 0, 0
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0
             FROM playlist_items i JOIN tracks t ON t.video_id = i.video_id WHERE i.playlist_id = ? ORDER BY i.position
             """, [.int(id)])).map(\.track)
     }
@@ -484,19 +489,19 @@ actor LibraryStore {
     /// Nor are songs from files on this phone: a file is not on another phone, and its path means nothing there.
     func backup() throws -> Backup {
         let liked = try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, l.liked_at, 0
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, l.liked_at, 0
             FROM likes l JOIN tracks t ON t.video_id = l.video_id WHERE t.video_id NOT LIKE '\(LocalMusic.prefix)%'
             ORDER BY l.liked_at, t.video_id
             """))
         let listens = try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, h.played_at, 0
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, h.played_at, 0
             FROM history h JOIN tracks t ON t.video_id = h.video_id WHERE t.video_id NOT LIKE '\(LocalMusic.prefix)%'
             ORDER BY h.played_at, h.id
             """))
         var playlists: [SavedPlaylist] = []
         for row in try db.rows("SELECT p.id, p.name, p.created_at, p.updated_at, f.name FROM playlists p LEFT JOIN folders f ON f.id = p.folder_id ORDER BY p.id") {
             let songs = try entries(db.rows("""
-                SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, 0, 0
+                SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0
                 FROM playlist_items i JOIN tracks t ON t.video_id = i.video_id WHERE i.playlist_id = ?
                 AND t.video_id NOT LIKE '\(LocalMusic.prefix)%' ORDER BY i.position
                 """, [.int(row[0].int)])).map(\.track)
@@ -607,13 +612,20 @@ actor LibraryStore {
         let tracks = json.array.compactMap { item -> TrackRef? in
             guard let id = item.at("v").string, let title = item.at("t").string else { return nil }
             let thumb = item.at("i").string.flatMap { $0.isEmpty ? nil : $0 }
-            return TrackRef(videoId: id, title: title, artist: item.at("a").string ?? "", thumb: thumb, durMs: item.at("d").int64 ?? 0)
+            let year = item.at("y").string.flatMap { $0.isEmpty ? nil : $0 }
+            return TrackRef(videoId: id, title: title, artist: item.at("a").string ?? "", thumb: thumb, durMs: item.at("d").int64 ?? 0,
+                            explicit: item.at("e").bool ?? false, year: year)
         }
         return Cached(tracks: tracks, fetchedAt: row[1].int)
     }
 
     func putSuggestions(_ seed: String, _ tracks: [TrackRef], at: Int64 = LibraryStore.now()) throws {
-        let json = tracks.map { ["v": $0.videoId, "t": $0.title, "a": $0.artist, "i": $0.thumb ?? "", "d": $0.durMs] as [String: Any] }
+        let json = tracks.map { track -> [String: Any] in
+            var obj: [String: Any] = ["v": track.videoId, "t": track.title, "a": track.artist, "i": track.thumb ?? "", "d": track.durMs]
+            if track.explicit { obj["e"] = true }
+            if let year = track.year { obj["y"] = year }
+            return obj
+        }
         try db.run("INSERT OR REPLACE INTO suggestions(seed_video_id, json, fetched_at) VALUES(?, ?, ?)",
                    [.text(seed), .text(JSONText.encode(json)), .int(at)])
         onChange()
@@ -729,7 +741,7 @@ actor LibraryStore {
     /// The list: what is on the phone first, the most recent first, then what is still to come.
     func downloads() throws -> [Download] {
         try db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, d.at, 0, d.state, d.bytes
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, d.state, d.bytes
             FROM downloads d JOIN tracks t ON t.video_id = d.video_id
             ORDER BY d.state = ? DESC, CASE WHEN d.state = ? THEN d.at END DESC, d.rowid
             """, [.text(Self.done), .text(Self.done)]).map {
@@ -740,7 +752,7 @@ actor LibraryStore {
     /// Liked songs that are not on the list yet (or failed), for downloading them by themselves.
     func likedToDownload() throws -> [TrackRef] {
         try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, 0, 0 FROM likes l
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0 FROM likes l
             JOIN tracks t ON t.video_id = l.video_id LEFT JOIN downloads d ON d.video_id = l.video_id
             WHERE d.video_id IS NULL AND l.video_id NOT LIKE '\(LocalMusic.prefix)%' ORDER BY l.liked_at DESC
             """)).map(\.track)
@@ -804,7 +816,7 @@ actor LibraryStore {
     /// Songs of kept playlists that are not on the list yet, for downloading them by themselves.
     func offlineToDownload() throws -> [TrackRef] {
         try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, 0, 0 FROM tracks t LEFT JOIN downloads d ON d.video_id = t.video_id
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0 FROM tracks t LEFT JOIN downloads d ON d.video_id = t.video_id
             WHERE d.video_id IS NULL AND t.video_id IN (\(Self.keptSongs)) AND t.video_id NOT LIKE '\(LocalMusic.prefix)%' ORDER BY t.rowid
             """, [.int(-1), .int(-1)])).map(\.track)
     }
@@ -862,11 +874,11 @@ actor LibraryStore {
     /// The music files on this phone, the one added last first; those that are gone are at the end.
     func localSongs() throws -> [LocalSong] {
         try db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, l.album, l.mime, l.size, l.added_at, l.missing
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, l.album, l.mime, l.size, l.added_at, l.missing
             FROM local_files l JOIN tracks t ON t.video_id = l.video_id ORDER BY l.missing, l.added_at DESC, t.video_id
             """).map {
-            LocalSong(track: track($0), album: $0[5].text ?? "", mime: $0[6].text ?? "", size: $0[7].int,
-                      addedAt: $0[8].int, missing: $0[9].int != 0)
+            LocalSong(track: track($0), album: $0[7].text ?? "", mime: $0[8].text ?? "", size: $0[9].int,
+                      addedAt: $0[10].int, missing: $0[11].int != 0)
         }
     }
 
@@ -897,11 +909,14 @@ actor LibraryStore {
 
     /// Adds the song's details, or brings them up to date. A length that is not known does not erase one that is.
     private func upsertTrack(_ track: TrackRef) throws {
-        try db.run("INSERT OR IGNORE INTO tracks(video_id, title, artist, thumb, dur_ms) VALUES(?, ?, ?, ?, ?)",
-                   [.text(track.videoId), .text(track.title), .text(track.artist), SQLValue(track.thumb), .int(track.durMs)])
+        let explicitInt: Int64 = track.explicit ? 1 : 0
+        try db.run("INSERT OR IGNORE INTO tracks(video_id, title, artist, thumb, dur_ms, explicit, year) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                   [.text(track.videoId), .text(track.title), .text(track.artist), SQLValue(track.thumb), .int(track.durMs), .int(explicitInt), SQLValue(track.year)])
         if db.changes > 0 { return }
-        try db.run("UPDATE tracks SET title = ?, artist = ?, thumb = ?, dur_ms = CASE WHEN ? > 0 THEN ? ELSE dur_ms END WHERE video_id = ?",
-                   [.text(track.title), .text(track.artist), SQLValue(track.thumb), .int(track.durMs), .int(track.durMs), .text(track.videoId)])
+        try db.run("""
+            UPDATE tracks SET title = ?, artist = ?, thumb = ?, dur_ms = CASE WHEN ? > 0 THEN ? ELSE dur_ms END,
+            explicit = CASE WHEN ? != 0 THEN 1 ELSE explicit END, year = COALESCE(?, year) WHERE video_id = ?
+            """, [.text(track.title), .text(track.artist), SQLValue(track.thumb), .int(track.durMs), .int(track.durMs), .int(explicitInt), SQLValue(track.year), .text(track.videoId)])
     }
 
     /// Forgets songs nothing points to any more. Every table that refers to a song must be listed here, or its songs
@@ -925,10 +940,11 @@ actor LibraryStore {
     }
 
     private func track(_ row: [SQLValue]) -> TrackRef {
-        TrackRef(videoId: row[0].text ?? "", title: row[1].text ?? "", artist: row[2].text ?? "", thumb: row[3].text, durMs: row[4].int)
+        TrackRef(videoId: row[0].text ?? "", title: row[1].text ?? "", artist: row[2].text ?? "", thumb: row[3].text, durMs: row[4].int,
+                 explicit: row[5].int != 0, year: row[6].text)
     }
 
     private func entries(_ rows: [[SQLValue]]) -> [Entry] {
-        rows.map { Entry(track: track($0), at: $0[5].int, plays: Int($0[6].int), source: $0.count > 7 ? $0[7].text : nil) }
+        rows.map { Entry(track: track($0), at: $0[7].int, plays: Int($0[8].int), source: $0.count > 9 ? $0[9].text : nil) }
     }
 }

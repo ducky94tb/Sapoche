@@ -163,7 +163,7 @@ class _SongInfo extends StatelessWidget {
                             );
                           },
                   ),
-                  row(S.infoYear, song?.year),
+                  row(S.infoYear, entry.year ?? song?.year),
                   row(S.infoLength, length > 0 ? formatDuration(length) : null),
                   // The count of the player, said in the language of the app; what YouTube Music said of the video until it comes
                   row(

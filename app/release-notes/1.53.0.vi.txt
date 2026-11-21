@@ -1,0 +1,6 @@
+Hiện chất lượng âm thanh thật, dấu E (Explicit) và năm phát hành
+- Trình phát Tràn bìa nay hiện đúng codec, bitrate và tần số lấy mẫu của luồng hoặc tệp đang phát (ví dụ "Opus · 131 kbps · 48 kHz" hay "AAC · 130 kbps · 44.1 kHz"), áp dụng cho cả nhạc phát trực tuyến, đã đệm, đã tải và nhạc trên máy. Bản web ẩn dòng này vì khung phát YouTube không cung cấp thông tin luồng.
+- Các bài có nhãn nội dung nhạy cảm trên YouTube Music nay hiện dấu "E" ở tìm kiếm, album, trang nghệ sĩ, kệ Trang chủ, hàng đợi, phòng nghe chung, thư viện và ngay cạnh tên bài ở cả ba kiểu trình phát.
+- Trình phát Tràn bìa hiện thêm năm phát hành cạnh tên nghệ sĩ khi có (ví dụ "Nghệ sĩ · 2017"); trên màn hình hẹp năm sẽ tự ẩn trước để không cắt mất tên nghệ sĩ.
+- Cài đặt > Phát nhạc trên iPhone sửa mức Cao nhất về đúng trần "khoảng 128 kbps" và giải thích rõ YouTube không có luồng cao hơn khi chưa đăng nhập.
+- Nâng cấp thư viện (schema v11): thư viện lưu thêm dấu E và năm phát hành cho các bài thêm từ bản này trở đi; sau khi nâng cấp không thể hạ về bản cũ hơn, nhưng tệp sao lưu xuất ra vẫn tương thích với bản cũ.

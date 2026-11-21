@@ -1,6 +1,8 @@
+import AudioToolbox
 import AVFoundation
 import AVKit
 import Combine
+import CoreMedia
 import Flutter
 import Foundation
 import UIKit
@@ -64,6 +66,8 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
     private var outputs: [ObjectIdentifier: AVPlayerItemVideoOutput] = [:]
     /// The heights of the picture of an item made with all of them (see `MediaLibrary.pictured`), by item.
     private var levels: [ObjectIdentifier: [VideoSource]] = [:]
+    /// Codec, average bitrate and sample rate of the audio stream of an item, by item.
+    private var audioFormats: [ObjectIdentifier: AudioFormat] = [:]
     private var sessionActive = false
     /// The last item whose failure was told, so that it is told once.
     private weak var reportedFailure: AVPlayerItem?
@@ -287,7 +291,8 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
             videoHeight: Int(size.height),
             videoLevels: currentHasVideo ? VideoPicker.heights(currentPlayerItem.flatMap { levels[ObjectIdentifier($0)] } ?? []) : [],
             noPicture: wantsVideo && current != nil && !currentHasVideo && pictureless == current?.videoId,
-            speed: speed
+            speed: speed,
+            audioFormat: currentPlayerItem.flatMap { audioFormats[ObjectIdentifier($0)] }
         )
     }
 
@@ -436,6 +441,7 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
                 if let both = try await library.pictured(queued.videoId, maxHeight: maxVideoHeight(), budgetKbps: pictureBudgetKbps()) {
                     let item = withPicture(plain(asset(both)))
                     applyCeiling(item, both.levels)
+                    noteAudio(of: item, hint: both.audio, fallbackDurationMs: queued.durMs)
                     return Built(item: item, video: true, inPieces: true, streamed: true, levels: both.levels)
                 }
             } catch {
@@ -449,6 +455,7 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
                 if let picture = try await library.video(queued.videoId, maxHeight: maxVideoHeight(), budgetKbps: pictureBudgetKbps()) {
                     let item = try await withTimeout(ms: 20_000) { try await Self.compose(audio: audio, picture: self.asset(picture)) }
                     item.audioTimePitchAlgorithm = .timeDomain
+                    noteAudio(of: item, hint: playable.audio, fallbackDurationMs: queued.durMs)
                     return Built(item: withPicture(item), video: true, inPieces: false, streamed: true)
                 }
                 log("'\(queued.title)' has no picture an iPhone plays")
@@ -459,7 +466,82 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
         let item = plain(audio)
         // While the equalizer is flat the sound goes by untouched; the tap is put on when it is turned on (see setEqualizer)
         if !Eq.isFlat(equalizer.gains) { await attachEqualizer(to: item) }
+        noteAudio(of: item, hint: playable.audio, fallbackDurationMs: queued.durMs)
         return Built(item: item, video: false, inPieces: false, streamed: !playable.isFile)
+    }
+
+    /// Notes the best audio format known immediately from stream metadata, then refines it from the asset's ASBD.
+    private func noteAudio(of item: AVPlayerItem, hint: AudioHint?, fallbackDurationMs: Int64) {
+        let key = ObjectIdentifier(item)
+        if let hint, let initial = AudioFormat.fromHint(
+            itag: hint.itag,
+            sampleRate: hint.sampleRate,
+            contentLength: hint.contentLength,
+            bitrateKbps: hint.bitrateKbps,
+            durationMs: fallbackDurationMs
+        ) {
+            audioFormats[key] = initial
+        }
+        let asset = item.asset
+        Task { [weak self, weak item] in
+            guard let format = await Self.inspectAudio(asset: asset, hint: hint, fallbackDurationMs: fallbackDurationMs) else { return }
+            guard let self, let item else { return }
+            guard item === self.currentPlayerItem || item === self.queuedPlayerItem else { return }
+            let id = ObjectIdentifier(item)
+            if self.audioFormats[id] != format {
+                self.audioFormats[id] = format
+                if item === self.currentPlayerItem { self.onChange?() }
+            }
+        }
+    }
+
+    /// Reads the codec and sample rate from the asset's audio track ASBD, with average bitrate from size / duration.
+    private static func inspectAudio(asset: AVAsset, hint: AudioHint?, fallbackDurationMs: Int64) async -> AudioFormat? {
+        let fallback = hint.flatMap { AudioFormat.fromItag($0.itag) }
+        var codec: String?
+        var hz = 0
+        var estimatedKbps = 0
+        var durationMs = fallbackDurationMs
+        if let dur = try? await asset.load(.duration) {
+            let secs = CMTimeGetSeconds(dur)
+            if secs.isFinite && secs > 0 { durationMs = Int64(secs * 1000) }
+        }
+        if let tracks = try? await asset.loadTracks(withMediaType: .audio), let track = tracks.first {
+            if let descriptions = try? await track.load(.formatDescriptions) {
+                for desc in descriptions {
+                    let formatDesc = desc as CMAudioFormatDescription
+                    if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc)?.pointee {
+                        if asbd.mSampleRate > 0 { hz = Int(asbd.mSampleRate.rounded()) }
+                        if codec == nil { codec = codecName(for: asbd.mFormatID, itag: hint?.itag) }
+                    }
+                }
+            }
+            if let rate = try? await track.load(.estimatedDataRate), rate > 0 {
+                estimatedKbps = Int((rate / 1000).rounded())
+            }
+        }
+        let finalCodec = codec ?? fallback?.codec ?? ""
+        let finalHz = hz > 0 ? hz : ((hint?.sampleRate ?? 0) > 0 ? hint!.sampleRate : (fallback?.hz ?? 0))
+        let calc = AudioFormat.kbpsOf(contentLength: hint?.contentLength ?? -1, durationMs: durationMs)
+        let finalKbps = calc > 0 ? calc : (estimatedKbps > 0 ? estimatedKbps : max(hint?.bitrateKbps ?? 0, 0))
+        guard !finalCodec.isEmpty else { return nil }
+        return AudioFormat(codec: finalCodec, kbps: finalKbps, hz: finalHz)
+    }
+
+    private static func codecName(for formatId: AudioFormatID, itag: Int?) -> String? {
+        switch formatId {
+        case kAudioFormatMPEG4AAC_HE, kAudioFormatMPEG4AAC_HE_V2: return "AAC HE"
+        case kAudioFormatMPEG4AAC, kAudioFormatMPEG4AAC_LD, kAudioFormatMPEG4AAC_ELD:
+            return itag == 139 ? "AAC HE" : "AAC"
+        case kAudioFormatOpus: return "Opus"
+        case kAudioFormatMPEGLayer3: return "MP3"
+        case kAudioFormatFLAC: return "FLAC"
+        case kAudioFormatAppleLossless: return "ALAC"
+        case kAudioFormatLinearPCM: return "PCM"
+        case kAudioFormatAC3: return "AC-3"
+        case kAudioFormatEnhancedAC3: return "E-AC-3"
+        default: return nil
+        }
     }
 
     /// The tallest the player may go to for [item], which holds [levels]: the biggest of them within the height asked for, or the
@@ -598,6 +680,7 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
             itemCancellables[ObjectIdentifier(queued)] = nil
             outputs[ObjectIdentifier(queued)] = nil
             levels[ObjectIdentifier(queued)] = nil
+            audioFormats[ObjectIdentifier(queued)] = nil
         }
         queuedPlayerItem = nil
         queuedHasVideo = false
@@ -614,6 +697,9 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
         let keptLevels = keeping.flatMap { item in levels[ObjectIdentifier(item)].map { (ObjectIdentifier(item), $0) } }
         levels.removeAll()
         if let keptLevels { levels[keptLevels.0] = keptLevels.1 }
+        let keptAudio = keeping.flatMap { item in audioFormats[ObjectIdentifier(item)].map { (ObjectIdentifier(item), $0) } }
+        audioFormats.removeAll()
+        if let keptAudio { audioFormats[keptAudio.0] = keptAudio.1 }
     }
 
     /// Waits until the item can start at once; throws when it cannot be played or takes too long.
