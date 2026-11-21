@@ -194,6 +194,31 @@ void main() {
         expect(px[0] + px[1] + px[2], lessThan(30));
       });
     });
+
+    testWidgets(
+      'in vivid mode keeps light covers intact in light theme and dark covers intact in dark theme',
+      (tester) async {
+        await tester.runAsync(() async {
+          final pastel = await CoverGlow.render(
+            await solid(210, 236, 245),
+            light: true,
+            vivid: true,
+          );
+          final pLight = await pixelAt(pastel, 36, 78);
+          expect(pLight[2] - pLight[0], greaterThan(25), reason: 'hue kept without white wash');
+          expect(pLight[0], closeTo(210, 12));
+
+          final olive = await CoverGlow.render(
+            await solid(75, 78, 45),
+            light: false,
+            vivid: true,
+          );
+          final pDark = await pixelAt(olive, 36, 78);
+          expect(pDark[1] - pDark[2], greaterThan(25), reason: 'colour kept without black veil');
+          expect(pDark[1], greaterThan(68));
+        });
+      },
+    );
   });
 
   group('the glow along the top', () {
@@ -377,6 +402,46 @@ void main() {
       );
       await tester.pump(const Duration(seconds: 1));
       expect(find.byKey(const ValueKey('pink')), findsOneWidget);
+    });
+
+    testWidgets('has no bottom veil in vivid mode', (tester) async {
+      for (final palette in [Palette.light, Palette.dark]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildTheme(palette),
+            home: const Scaffold(
+              body: PlayerBackdrop(coverUrl: null, vivid: false),
+            ),
+          ),
+        );
+        final classic = tester.widget<Stack>(
+          find
+              .descendant(
+                of: find.byType(PlayerBackdrop),
+                matching: find.byType(Stack),
+              )
+              .first,
+        );
+        expect(classic.children.whereType<DecoratedBox>(), hasLength(1));
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildTheme(palette),
+            home: const Scaffold(
+              body: PlayerBackdrop(coverUrl: null, vivid: true),
+            ),
+          ),
+        );
+        final vivid = tester.widget<Stack>(
+          find
+              .descendant(
+                of: find.byType(PlayerBackdrop),
+                matching: find.byType(Stack),
+              )
+              .first,
+        );
+        expect(vivid.children.whereType<DecoratedBox>(), isEmpty);
+      }
     });
 
     testWidgets('has a glow that ends on a whole device pixel', (tester) async {

@@ -1,0 +1,2 @@
+Trình phát Tràn bìa: màu nền dưới thanh điều khiển trong hơn
+- Bỏ lớp phủ trắng (giao diện sáng) và lớp phủ đen (giao diện tối) đè lên phần dưới của trình phát Tràn bìa, để màu sắc của ảnh bìa lan tự nhiên xuống sau cụm điều khiển mà chữ và nút vẫn dễ đọc.

@@ -49,9 +49,12 @@ void main() {
           data.getUint8(i + 1),
           data.getUint8(i + 2),
         );
-        // The veil over it is at least this much; the page's gradient only makes it stronger
+        // The veil over it is at least this much; the page's gradient only makes it stronger. The vivid ground of the
+        // full cover has no veil laid over it in either theme
         out.add(
-          light ? ground : Color.alphaBlend(PlayerBackdrop.darkestVeil, ground),
+          light || vivid
+              ? ground
+              : Color.alphaBlend(PlayerBackdrop.darkestVeil, ground),
         );
       }
     }
@@ -103,20 +106,29 @@ void main() {
     );
   }
 
-  // The richer light ground of the full cover: dark words keep their 4.5:1 on every one of them too
-  testWidgets('on the vivid ground of the full cover, words keep 4.5:1', (
-    tester,
-  ) async {
-    await tester.runAsync(() async {
-      final onCover = Palette.light.onCover;
-      var worst = double.infinity;
-      for (final ground in await grounds(light: true, vivid: true)) {
-        final c = contrast(onCover.textSecondary, ground);
-        if (c < worst) worst = c;
-      }
-      expect(worst, greaterThanOrEqualTo(4.5));
-    });
-  });
+  // The vivid ground of the full cover has no white or black veil over the controls in either theme: words still keep
+  // 4.5:1 and icons 3:1 on every pixel of every cover
+  for (final light in [true, false]) {
+    final name = light ? 'light' : 'dark';
+    testWidgets(
+      'on the vivid ground of the full cover, words keep 4.5:1 and icons 3:1 ($name)',
+      (tester) async {
+        await tester.runAsync(() async {
+          final onCover = (light ? Palette.light : Palette.dark).onCover;
+          var worstText = double.infinity;
+          var worstIcon = double.infinity;
+          for (final ground in await grounds(light: light, vivid: true)) {
+            final t = contrast(onCover.textSecondary, ground);
+            final i = contrast(onCover.textTertiary, ground);
+            if (t < worstText) worstText = t;
+            if (i < worstIcon) worstIcon = i;
+          }
+          expect(worstText, greaterThanOrEqualTo(4.5));
+          expect(worstIcon, greaterThanOrEqualTo(3));
+        });
+      },
+    );
+  }
 
   for (final light in [true, false]) {
     final name = light ? 'light' : 'dark';

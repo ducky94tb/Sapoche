@@ -236,28 +236,30 @@ class _PlayerBackdropState extends State<PlayerBackdrop> {
                   ),
                 ),
         ),
-        // Darker (lighter, in the light theme) towards the bottom, where the controls are
-        DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              stops: const [0, 0.45, 1],
-              colors: light
-                  ? [
-                      const Color(0x00FFFFFF),
-                      const Color(0x0DFFFFFF),
-                      // A vivid ground is not whitened towards the bottom as much
-                      Color(widget.vivid ? 0x26FFFFFF : 0x4DFFFFFF),
-                    ]
-                  : const [
-                      PlayerBackdrop.darkestVeil,
-                      Color(0x66000000),
-                      Color(0x8C000000),
-                    ],
+        // Darker (lighter, in the light theme) towards the bottom, where the controls are. Left out for the vivid
+        // ground of the full cover: its own pixels are already brought just inside what the text needs, with no white
+        // or black veil laid over the controls
+        if (!widget.vivid)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: const [0, 0.45, 1],
+                colors: light
+                    ? const [
+                        Color(0x00FFFFFF),
+                        Color(0x0DFFFFFF),
+                        Color(0x4DFFFFFF),
+                      ]
+                    : const [
+                        PlayerBackdrop.darkestVeil,
+                        Color(0x66000000),
+                        Color(0x8C000000),
+                      ],
+              ),
             ),
           ),
-        ),
       ],
     );
   }

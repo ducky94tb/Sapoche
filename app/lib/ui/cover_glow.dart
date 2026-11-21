@@ -39,11 +39,36 @@ class CoverGlow {
   /// The brightness the background should average in the light theme, 0 black to 1 white: pale enough for dark text.
   static const _lightLuma = 0.8;
 
-  /// The light theme made richer, for a player whose cover melts into the colours behind it (the full cover): a good
-  /// part of the colour is kept, not a quarter, and it is brought up more. The most it can keep is where the darkest
-  /// cover, a grey of 60%, still has 4.5:1 with dark words (`test/on_cover_test.dart`).
-  static const _vividKeep = 0.4;
-  static const _vividSaturation = 1.7;
+  /// Saturation for the vivid ground of the full cover, where no white or black veil is laid over the controls: kept
+  /// gentler than the veiled grounds, since the colours are not washed out by a veil afterwards.
+  static const _vividLightSaturation = 1.25;
+  static const _vividDarkSaturation = 1.4;
+
+  /// Soft luminance bounds for the vivid ground (in linear light, 0 to 1), chosen so every pixel keeps 4.5:1 with
+  /// `Palette.onCover.textSecondary` and 3:1 with `textTertiary` (`test/on_cover_test.dart`) while leaving pixels
+  /// that already read well untouched.
+  static const _vividDarkKnee = 0.075;
+  static const _vividDarkCap = 0.120;
+  static const _vividLightFloor = 0.265;
+  static const _vividLightKnee = 0.38;
+
+  /// Minimum luminance of the flat card ground in the light theme, so the lyrics card (6% darker than it) keeps 4.5:1.
+  static const _lightCardFloor = 0.312;
+
+  static final Float64List _srgbToLinear = Float64List.fromList([
+    for (var i = 0; i < 256; i++) _channelToLinear(i / 255.0),
+  ]);
+
+  static double _channelToLinear(double c) =>
+      c <= 0.03928 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
+
+  static int _linearToChannel(double v) {
+    final c = v.clamp(0.0, 1.0);
+    final s = c <= 0.0031308
+        ? c * 12.92
+        : 1.055 * math.pow(c, 1.0 / 2.4) - 0.055;
+    return (s * 255).round().clamp(0, 255);
+  }
 
   /// Size of the picture of the glow along the top. Its shape does not matter: it is made of a few soft patches of
   /// colour, which stay soft however far they are stretched.
@@ -117,8 +142,89 @@ class CoverGlow {
             (g / n).round(),
             (b / n).round(),
           );
-    // The veil over the top of the page: black at about a third in the dark theme, nothing in the light one
-    return light ? mean : Color.alphaBlend(const Color(0x59000000), mean);
+    // The veil over the top of the page: black at about a third in the dark theme; in the light one the flat ground
+    // also sits behind the lyrics card (6% darker than it), so a near-black cover is lifted just enough for that card
+    if (!light) return Color.alphaBlend(const Color(0x59000000), mean);
+    final lifted = _liftToLuminance(
+      (mean.r * 255).round(),
+      (mean.g * 255).round(),
+      (mean.b * 255).round(),
+      _lightCardFloor,
+    );
+    return Color.fromARGB(255, lifted.$1, lifted.$2, lifted.$3);
+  }
+
+  /// Raises an sRGB pixel to at least linear luminance [floor], scaling its linear channels first so the hue and
+  /// saturation stay intact, and only mixing white for whatever remains after a channel reaches full brightness.
+  static (int, int, int) _liftToLuminance(int r, int g, int b, double floor) {
+    var rl = _srgbToLinear[r];
+    var gl = _srgbToLinear[g];
+    var bl = _srgbToLinear[b];
+    var lum = 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+    if (lum >= floor) return (r, g, b);
+    final peak = math.max(rl, math.max(gl, bl));
+    if (peak > 1e-6 && lum > 1e-6) {
+      final scale = math.min(floor / lum, 1.0 / peak);
+      rl *= scale;
+      gl *= scale;
+      bl *= scale;
+      lum = 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+    }
+    if (lum < floor) {
+      final t = (floor - lum) / math.max(1e-6, 1.0 - lum);
+      rl += t * (1.0 - rl);
+      gl += t * (1.0 - gl);
+      bl += t * (1.0 - bl);
+    }
+    return (_linearToChannel(rl), _linearToChannel(gl), _linearToChannel(bl));
+  }
+
+  /// Brings every pixel of the blurred vivid picture just inside the luminance range where on-cover words keep 4.5:1
+  /// (and icons 3:1), leaving pixels that already read well untouched and easing the rest smoothly so no band appears.
+  static Future<ui.Image> _toneVivid(
+    ui.Image source, {
+    required bool light,
+  }) async {
+    final data = await source.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (data == null) return source;
+    final bytes = Uint8List.fromList(data.buffer.asUint8List());
+    for (var i = 0; i + 3 < bytes.length; i += 4) {
+      final r = bytes[i], g = bytes[i + 1], b = bytes[i + 2];
+      final rl = _srgbToLinear[r];
+      final gl = _srgbToLinear[g];
+      final bl = _srgbToLinear[b];
+      final lum = 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+      if (light) {
+        if (lum >= _vividLightKnee) continue;
+        const span = _vividLightKnee - _vividLightFloor;
+        final d = _vividLightKnee - lum;
+        final target = _vividLightKnee - (span * d) / (span + d);
+        final out = _liftToLuminance(r, g, b, target);
+        bytes[i] = out.$1;
+        bytes[i + 1] = out.$2;
+        bytes[i + 2] = out.$3;
+      } else {
+        if (lum <= _vividDarkKnee) continue;
+        const span = _vividDarkCap - _vividDarkKnee;
+        final d = lum - _vividDarkKnee;
+        final target = _vividDarkKnee + (span * d) / (span + d);
+        final scale = target / lum;
+        bytes[i] = _linearToChannel(rl * scale);
+        bytes[i + 1] = _linearToChannel(gl * scale);
+        bytes[i + 2] = _linearToChannel(bl * scale);
+      }
+    }
+    final done = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+      bytes,
+      source.width,
+      source.height,
+      ui.PixelFormat.rgba8888,
+      done.complete,
+    );
+    final toned = await done.future;
+    source.dispose();
+    return toned;
   }
 
   /// The blurred picture for the cover at [url], pale when [light], or null when the cover cannot be read.
@@ -149,7 +255,7 @@ class CoverGlow {
             ? 'page '
             : top
             ? 'top '
-            : ''}${light ? (vivid ? 'vivid' : 'light') : 'dark'} $url';
+            : ''}${vivid ? 'vivid-' : ''}${light ? 'light' : 'dark'} $url';
     if (_cache.containsKey(key)) {
       // Most recently used goes last
       final image = _cache.remove(key);
@@ -235,11 +341,12 @@ class CoverGlow {
         tileMode: TileMode.mirror,
       )
       ..colorFilter = ColorFilter.matrix(
-        light && vivid
+        vivid
             ? tint(
-                _vividKeep,
-                lift: 1 - _vividKeep,
-                saturation: _vividSaturation,
+                1,
+                saturation: light
+                    ? _vividLightSaturation
+                    : _vividDarkSaturation,
               )
             : light
             ? tint(
@@ -264,7 +371,7 @@ class CoverGlow {
     final picture = recorder.endRecording();
     final image = await picture.toImage(width, height);
     picture.dispose();
-    return image;
+    return vivid ? _toneVivid(image, light: light) : image;
   }
 
   /// The glow along the top of a page, in the manner of Apple Music's mesh of colours: the cover is not blurred but

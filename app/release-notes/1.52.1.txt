@@ -1,0 +1,2 @@
+Full cover player: clearer colours behind the controls
+- Removed the white and dark wash over the lower part of the Full cover player, so the cover's own colours flow cleanly all the way behind the controls in both light and dark themes while keeping the words and buttons easy to read.
