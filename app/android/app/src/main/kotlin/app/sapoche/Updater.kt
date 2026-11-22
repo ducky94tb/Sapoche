@@ -9,6 +9,7 @@ import android.net.ConnectivityManager
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.pm.PackageInfoCompat
+import app.sapoche.core.KeyRefusedException
 import app.sapoche.core.Release
 import app.sapoche.core.ReleaseNote
 import app.sapoche.core.UpdateClient
@@ -127,7 +128,7 @@ class Updater(
             } catch (e: Exception) {
                 EventLog.d("update", "check failed: ${e.javaClass.simpleName}: ${e.message}")
                 // A quiet check leaves the screen as it was; one the person asked for says what happened
-                flow.value = if (force) before.copy(phase = UpdateState.Phase.FAILED, error = "unreachable") else before
+                flow.value = if (force) before.copy(phase = UpdateState.Phase.FAILED, error = if (e is KeyRefusedException) "key" else "unreachable") else before
             }
         }
     }
@@ -158,7 +159,7 @@ class Updater(
             throw e
         } catch (e: Exception) {
             EventLog.d("update", "download failed: ${e.javaClass.simpleName}: ${e.message}")
-            flow.value = flow.value.copy(phase = UpdateState.Phase.FAILED, error = "download")
+            flow.value = flow.value.copy(phase = UpdateState.Phase.FAILED, error = if (e is KeyRefusedException) "key" else "download")
         }
     }
 

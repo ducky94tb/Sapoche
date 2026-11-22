@@ -29,6 +29,7 @@ class UpdateClientTest {
     private var serveApk: (RecordedRequest) -> MockResponse = ::honest
     private var serveGz: (RecordedRequest) -> MockResponse = { MockResponse.Builder().code(404).build() }
     private var latestBody: String? = null
+    private var refuseKey = false
     private val seen = mutableListOf<RecordedRequest>()
 
     private fun release(sha: String = UpdateClient.sha256(file(apk)), size: Long = apk.size.toLong(), name: String = "sapoche-1.3.0.apk") =
@@ -53,6 +54,7 @@ class UpdateClientTest {
             it.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     seen += request
+                    if (refuseKey) return MockResponse.Builder().code(401).build()
                     return when (request.url.encodedPath) {
                         "/update/latest.json" -> latestBody?.let { MockResponse.Builder().body(it).build() } ?: MockResponse.Builder().code(404).build()
                         "/update/sapoche-1.3.0.apk", "/update/app-7.apk" -> serveApk(request)
@@ -126,6 +128,13 @@ class UpdateClientTest {
         assertEquals("/update/sapoche-1.3.0.apk", seen.last().url.encodedPath)
         client().download(release(name = "app-7.apk"), File(dir, "b.part"))
         assertEquals("/update/app-7.apk", seen.last().url.encodedPath)
+    }
+
+    @Test
+    fun `a refused key is told apart from an unreachable server`() = runTest {
+        refuseKey = true
+        assertFailsWith<KeyRefusedException> { client().latest() }
+        assertFailsWith<KeyRefusedException> { client().download(release(), File(dir, "out.apk")) }
     }
 
     @Test

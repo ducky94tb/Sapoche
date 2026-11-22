@@ -1840,6 +1840,10 @@ abstract final class S {
       'Couldn’t reach the server to look for updates.',
       'Không kết nối được máy chủ để tìm cập nhật.',
     ),
+    'key' => _t(
+      'The server turned the group key down, or this phone has none yet. Set it in Settings > Server.',
+      'Máy chủ từ chối khóa nhóm, hoặc máy này chưa có khóa. Hãy đặt ở Cài đặt > Máy chủ.',
+    ),
     'download' => _t(
       'The download didn’t work. Try again.',
       'Tải không được. Hãy thử lại.',

@@ -65,6 +65,9 @@ data class ReleaseNote(val version: String, val notes: String, val notesVi: Stri
     }
 }
 
+/** The server turned the key down, or the phone has none (a build for the public before its setup link). */
+class KeyRefusedException : IOException("the server refused the key")
+
 /**
  * Asks the server which release is the newest and fetches it. The file comes from a private bucket (see
  * server/src/update.ts), so every call carries the room key in [headers], asked for at each call (the key can be set while the app runs).
@@ -82,6 +85,7 @@ class UpdateClient(
     suspend fun latest(): Release? = withContext(Dispatchers.IO) {
         client.newCall(request("latest.json")).execute().use { response ->
             if (response.code == 404) return@use null
+            if (response.code == 401) throw KeyRefusedException()
             if (!response.isSuccessful) throw IOException("update info: HTTP ${response.code}")
             parseOrNull(response.body.string(), arm32)
         }
@@ -138,6 +142,7 @@ class UpdateClient(
             // 200 to a Range request: the server started over, so the old part is of no use
             val resumed = response.code == 206 && have > 0
             if (response.code == 416) file.delete()
+            if (response.code == 401) throw KeyRefusedException()
             if (response.code == 404) throw IOException("$name is not on the server")
             if (!response.isSuccessful) throw IOException("download: HTTP ${response.code}")
             RandomAccessFile(file, "rw").use { out ->
