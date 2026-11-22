@@ -212,9 +212,6 @@ protocol MusicSource {
     /// Videos matching [query].
     func searchVideos(_ query: String) async throws -> [MusicTrack]
 
-    /// The songs of a playlist, with its title.
-    func playlist(_ playlistId: String) async throws -> (title: String?, tracks: [MusicTrack])
-
     /// What YouTube Music shows everybody on its home page, with the shelf names in [language] (a code like "vi").
     func trending(language: String) async throws -> [MusicShelf]
 

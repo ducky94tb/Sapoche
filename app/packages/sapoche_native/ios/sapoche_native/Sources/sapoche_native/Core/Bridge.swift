@@ -1215,7 +1215,7 @@ final class Bridge {
     private static let positionTickMs: Int64 = 1000
     private static let searchLimit = 20
     private static let suggestionLimit = 6
-    private static let playlistLimit = 50
+    private static let playlistLimit = 500
     private static let renewEveryMs: Int64 = 30 * 60_000
     private static let downloadRetries = 3
     private static let downloadRetryMs: Int64 = 60_000

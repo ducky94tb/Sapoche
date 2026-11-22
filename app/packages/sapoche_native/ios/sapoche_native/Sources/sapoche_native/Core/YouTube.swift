@@ -512,10 +512,18 @@ actor YouTubeResolver: StreamResolver {
     }
 
     func playlist(_ playlistId: String, limit: Int) async throws -> Playlist {
-        let found = try await music.playlist(playlistId)
+        let page = try await music.collection(playlistId)
+        var found = page.tracks
+        var more = page.more
+        // A long playlist comes a hundred at a time: the pages after the first are asked for until there are as many as wanted
+        while let token = more, found.count < limit {
+            let next = try await music.more(token)
+            found += next.tracks
+            more = next.more
+        }
         // Deleted and private videos show up with no length
-        let tracks = found.tracks.filter { $0.durationSec > 0 }.prefix(limit).map(Self.info)
-        return Playlist(title: found.title ?? "", tracks: Array(tracks))
+        let tracks = found.filter { $0.durationSec > 0 }.prefix(limit).map(Self.info)
+        return Playlist(title: page.title, tracks: Array(tracks))
     }
 
     func related(_ videoId: String, limit: Int) async throws -> [TrackInfo] {

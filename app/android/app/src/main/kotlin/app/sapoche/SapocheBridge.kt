@@ -1226,7 +1226,7 @@ class SapocheBridge(
         const val SEARCH_LIMIT = 20
         const val SUGGESTION_LIMIT = 6
         const val RENEW_EVERY_MS = 30 * 60_000L
-        const val PLAYLIST_LIMIT = 50
+        const val PLAYLIST_LIMIT = 500
         const val VIDEO_DEFAULT_WIDTH = 1280
         const val VIDEO_DEFAULT_HEIGHT = 720
         private val INVITE_CODE = Regex("[A-Z0-9]{6}")

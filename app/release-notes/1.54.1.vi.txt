@@ -1,0 +1,3 @@
+Nhập playlist dài đủ bài, và báo rõ khi khoá nhóm bị từ chối
+- Nhập playlist YouTube từ link nay lấy trọn playlist, tối đa 500 bài. Trước đây chỉ lấy 50 bài đầu nên playlist 140 bài bị cụt.
+- Kiểm tra cập nhật khi thiếu hoặc sai khoá nhóm nay báo khoá bị từ chối và chỉ chỗ đặt khoá (Cài đặt > Máy chủ), thay vì "Không kết nối được máy chủ".

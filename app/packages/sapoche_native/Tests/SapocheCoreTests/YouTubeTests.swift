@@ -365,12 +365,40 @@ final class YouTubeTests: XCTestCase {
         XCTAssertEqual(found, ["mỹ tâm", "hát tổng"])
     }
 
-    func testAPlaylistIsListedByItsSongsWithoutTheOnesThatHaveNoLength() async throws {
-        let http = FakeHTTP()
-        try http.answer("music.youtube.com", fixture: "music_playlist")
-        let playlist = try await resolver(http).playlist("PLx", limit: 3)
-        XCTAssertEqual(playlist.title, "Popular Music Videos")
+    func testALongPlaylistIsReadPageByPageUntilItsEnd() async throws {
+        let continuations = PageCounter()
+        let music = MusicClient { _, body in
+            guard body["continuation"] != nil else { return JSON.parse(data: try fixture("playlist"))! }
+            // The second page says nothing of a third, as the last page of a playlist does
+            return JSON.parse(data: try fixture(continuations.next() == 1 ? "playlist_more" : "playlist"))!
+        }
+        let first = try await music.collection("PLx")
+        let playlist = try await YouTubeResolver(http: FakeHTTP(), music: music, region: "VN").playlist("PLx", limit: 500)
+        XCTAssertEqual(playlist.title, first.title)
+        XCTAssertGreaterThan(playlist.tracks.count, first.tracks.filter { $0.durationSec > 0 }.count, "the page after the first is read too")
+        XCTAssertLessThan(playlist.tracks.count, 500)
+        XCTAssertEqual(continuations.value, 2, "and the one after that, which has no more, is the last")
+    }
+
+    func testAPlaylistStopsAtTheLimitWithoutReadingTheRest() async throws {
+        let continuations = PageCounter()
+        let music = MusicClient { _, body in
+            if body["continuation"] != nil { _ = continuations.next() }
+            return JSON.parse(data: try fixture(body["continuation"] == nil ? "playlist" : "playlist_more"))!
+        }
+        let playlist = try await YouTubeResolver(http: FakeHTTP(), music: music, region: "VN").playlist("PLx", limit: 3)
         XCTAssertEqual(playlist.tracks.count, 3)
+        XCTAssertEqual(continuations.value, 0, "the first page already holds as many as were asked for")
+    }
+}
+
+/// Counts asks from a closure that cannot change a local.
+final class PageCounter: @unchecked Sendable {
+    private(set) var value = 0
+
+    func next() -> Int {
+        value += 1
+        return value
     }
 }
 

@@ -176,13 +176,6 @@ enum MusicParser {
         root.findAll("musicResponsiveListItemRenderer").compactMap { listTrack($0) }
     }
 
-    /// The songs of a playlist page, and what the playlist is called.
-    static func playlist(_ root: JSON) -> (title: String?, tracks: [MusicTrack]) {
-        let header = ["musicResponsiveHeaderRenderer", "musicDetailHeaderRenderer", "musicEditablePlaylistDetailHeaderRenderer"]
-            .compactMap { root.findAll($0).first }.first
-        return (header?.at("title").text, search(root))
-    }
-
     /// The shelves of the home page that hold songs or playlists.
     static func shelves(_ root: JSON) -> [MusicShelf] {
         root.findAll("musicCarouselShelfRenderer").compactMap { shelf in

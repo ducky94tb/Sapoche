@@ -358,13 +358,6 @@ final class MusicParserTests: XCTestCase {
         XCTAssertTrue(artists.allSatisfy { $0.id.hasPrefix("UC") && !$0.name.isEmpty })
     }
 
-    func testAPlaylistPageGivesItsSongsAndName() async throws {
-        let found = try await client(["browse": "music_playlist"]).playlist("PLx")
-        XCTAssertEqual(found.title, "Popular Music Videos")
-        XCTAssertEqual(found.tracks.count, 6)
-        XCTAssertTrue(found.tracks.allSatisfy { $0.durationSec > 0 && !$0.videoId.isEmpty })
-    }
-
     func testAnAnswerOfAShapeThatIsNotKnownGivesNothingInsteadOfFailing() async throws {
         let client = MusicClient { _, _ in JSON.parse(#"{"unexpected":[1,2,{"a":null}]}"#)! }
         let next = try await client.watchNext("x")
@@ -710,7 +703,6 @@ final class MusicFeedTests: XCTestCase {
 
         func searchSongs(_ query: String) async throws -> [MusicTrack] { [MusicTrack(videoId: "song", title: "T", artist: "A", isSong: true)] }
         func searchVideos(_ query: String) async throws -> [MusicTrack] { [MusicTrack(videoId: "clip", title: "T", artist: "A")] }
-        func playlist(_ playlistId: String) async throws -> (title: String?, tracks: [MusicTrack]) { (nil, []) }
 
         func trending(language: String) async throws -> [MusicShelf] {
             trendingCalls.append(language)

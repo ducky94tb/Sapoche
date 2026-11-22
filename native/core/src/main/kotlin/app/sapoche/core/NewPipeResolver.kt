@@ -113,14 +113,23 @@ class NewPipeResolver(
     }
 
     override suspend fun playlist(playlistId: String, limit: Int): Playlist = withContext(Dispatchers.IO) {
-        val info = PlaylistInfo.getInfo(youtube, "https://www.youtube.com/playlist?list=$playlistId")
-        val tracks = info.relatedItems
-            .filterIsInstance<StreamInfoItem>()
-            // Deleted and private videos show up with no length
-            .filter { it.duration > 0 && it.url.contains("v=") }
-            .take(limit)
-            .map { it.toTrack() }
-        Playlist(info.name, tracks)
+        val url = "https://www.youtube.com/playlist?list=$playlistId"
+        val info = PlaylistInfo.getInfo(youtube, url)
+        val tracks = ArrayList<TrackInfo>()
+        var items = info.relatedItems
+        var next = info.nextPage
+        while (true) {
+            items.filterIsInstance<StreamInfoItem>()
+                // Deleted and private videos show up with no length
+                .filter { it.duration > 0 && it.url.contains("v=") }
+                .forEach { tracks += it.toTrack() }
+            // A long playlist comes a hundred at a time: the pages after the first are asked for until there are as many as wanted
+            if (tracks.size >= limit || next == null) break
+            val page = PlaylistInfo.getMoreItems(youtube, url, next)
+            items = page.items
+            next = page.nextPage
+        }
+        Playlist(info.name, tracks.take(limit))
     }
 
     override suspend fun related(videoId: String, limit: Int): List<TrackInfo> = withContext(Dispatchers.IO) {

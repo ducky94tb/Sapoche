@@ -303,7 +303,7 @@ void main() {
       expect(link!.isPlaylist, isTrue);
       expect(link.playlistTitle, isNotEmpty);
       expect(link.tracks.length, greaterThan(5));
-      expect(link.tracks.length, lessThanOrEqualTo(50));
+      expect(link.tracks.length, lessThanOrEqualTo(500));
       expect(seen.length, greaterThan(1), reason: 'the first page has too few songs');
     });
 

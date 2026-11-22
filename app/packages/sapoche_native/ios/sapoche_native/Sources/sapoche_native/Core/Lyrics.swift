@@ -384,11 +384,6 @@ actor MusicFeed {
         songs ? try await music.searchSongs(query) : try await music.searchVideos(query)
     }
 
-    /// The songs of a YouTube playlist and its title, as YouTube Music lists them.
-    func playlist(_ playlistId: String) async throws -> (title: String?, tracks: [MusicTrack]) {
-        try await music.playlist(playlistId)
-    }
-
     /// The lyrics of a song: lyrics with times when LRCLIB has them, else the plain words YouTube Music has, else nil.
     /// A failed attempt (no network) is not kept, so the next look tries again.
     func lyrics(videoId: String, title: String, artist: String, durationSec: Int64) async throws -> Lyrics? {

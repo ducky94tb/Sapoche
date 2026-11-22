@@ -1,0 +1,3 @@
+Long playlists import in full, and a clearer message when the group key is refused
+- Importing a YouTube playlist from a link now brings in the whole playlist, up to 500 songs. Before, only the first 50 came in, so a playlist of 140 songs arrived cut short.
+- Checking for updates with a missing or wrong group key now says the key was refused and where to set it (Settings > Server), instead of "Couldn't reach the server".

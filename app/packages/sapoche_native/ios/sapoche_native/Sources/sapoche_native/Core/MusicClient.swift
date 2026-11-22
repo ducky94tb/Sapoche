@@ -89,10 +89,6 @@ struct MusicClient: MusicSource {
         MusicParser.search(try await search(query, Self.videos))
     }
 
-    func playlist(_ playlistId: String) async throws -> (title: String?, tracks: [MusicTrack]) {
-        MusicParser.playlist(try await browse("VL" + playlistId))
-    }
-
     // Only the shelf names of this page are meant to be read by a person; everything else is found by the words
     // YouTube Music uses in English ("Lyrics", "Related"), so those calls stay in English
     func trending(language: String) async throws -> [MusicShelf] {

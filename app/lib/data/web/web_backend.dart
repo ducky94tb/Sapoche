@@ -1735,7 +1735,7 @@ class WebBackend extends BackendDefaults {
     return LinkResult(tracks: [song]);
   }
 
-  static const _playlistLimit = 50;
+  static const _playlistLimit = 500;
 
   @override
   Future<List<MusicTrack>> musicSearch(String query, {required bool songs}) =>
