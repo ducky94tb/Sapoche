@@ -18,7 +18,6 @@ import 'up_next_view.dart' show RepeatButton, ShuffleButton;
 import 'video_controls.dart';
 import '../player_sheet.dart';
 import '../scope.dart';
-import '../song_info_sheet.dart';
 import '../sleep_sheet.dart';
 import '../widgets/artwork.dart';
 import '../widgets/avatars.dart';
@@ -533,14 +532,12 @@ class PlayerMoreButton extends StatelessWidget {
     final who = current.addedBy == snapshot.you
         ? S.you
         : snapshot.nameOf(current.addedBy);
-    // The style of cards has no button for the sleep timer: it is in the "…" of the song
-    final look = PlayerLookScope.of(context);
     final extra = [
       if (compact)
         MenuLine('comments', Icons.comment_outlined, S.youtubeComments),
       if (compact && !kIsWeb)
         MenuLine('output', Icons.speaker_rounded, S.playOn),
-      if (compact || look.style == PlayerStyle.spotify)
+      if (compact)
         MenuLine('sleep', Icons.bedtime_outlined, S.sleepTimer),
     ];
     return TrackMenu(
@@ -621,17 +618,8 @@ class PlayerToolbar extends StatelessWidget {
         if (kind == ToolbarKind.face) {
           return Row(
             children: [
-              if (current != null)
-                IconButton(
-                  onPressed: () => showSongInfo(context, current),
-                  tooltip: S.songInfo,
-                  icon: Icon(Icons.info_rounded, size: 26 * scale),
-                  style: IconButton.styleFrom(
-                    foregroundColor: _toolTint(p),
-                    fixedSize: Size(slot, 44 * scale),
-                  ),
-                ),
               if (!kIsWeb) OutputButton(controller: controller, width: slot),
+              SleepButton(controller: controller, width: slot, pill: false),
               button(
                 Icons.comment_outlined,
                 S.youtubeComments,

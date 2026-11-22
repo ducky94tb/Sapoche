@@ -248,7 +248,7 @@ double _wholePixels(BuildContext context, double value) {
 
 /// The cover across the whole width and as tall as the place gives it, its foot melting into what is behind; the song
 /// stands over that foot, so that nothing is left empty between the cover and the seek bar.
-class _FullCover extends StatefulWidget {
+class _FullCover extends StatelessWidget {
   const _FullCover({
     super.key,
     required this.controller,
@@ -257,30 +257,6 @@ class _FullCover extends StatefulWidget {
 
   final RoomController controller;
   final QueueEntry current;
-
-  @override
-  State<_FullCover> createState() => _FullCoverState();
-}
-
-class _FullCoverState extends State<_FullCover> {
-  PlayerSheetController? _sheet;
-
-  RoomController get controller => widget.controller;
-  QueueEntry get current => widget.current;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // The cover melts into what is behind it, so it does not fly: while the page is pulled down it is this cover that
-    // moves, with its melting foot, not a plain square (`PlayerSheetController.coverFlies`)
-    _sheet = PlayerSheetScope.of(context)..coverFlies = false;
-  }
-
-  @override
-  void dispose() {
-    _sheet?.coverFlies = true;
-    super.dispose();
-  }
 
   /// How far below the status bar the blur fades out.
   static const _blurFade = 40.0;

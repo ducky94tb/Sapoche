@@ -20,7 +20,7 @@ enum ToolbarKind {
   /// Lyrics, the queue, the comments, the sleep timer and the output.
   classic,
 
-  /// The song's info, where the sound goes and the comments on the left; adding to a playlist and the queue on the
+  /// Where the sound goes, the sleep timer and the comments on the left; adding to a playlist and the queue on the
   /// right. Lyrics are a card below the cover, not a button.
   face,
 
@@ -42,6 +42,7 @@ class PlayerLook {
     required this.toolbar,
     required this.flatBackdrop,
     required this.bigLyrics,
+    this.coverFlies = true,
     this.star = false,
     this.rewindGlyphs = false,
     this.quietArtist = false,
@@ -55,6 +56,10 @@ class PlayerLook {
 
   /// Whether the cover grows and shrinks with playing and pausing.
   final bool coverShrinks;
+
+  /// Whether the cover flies between the mini player and the full player as the sheet moves. False for the full cover,
+  /// whose picture melts into the backdrop and must move with the page instead of a plain square standing in for it.
+  final bool coverFlies;
   final PlayDisc disc;
 
   /// Whether shuffle and repeat are on the face of the player, either side of the play button.
@@ -118,6 +123,7 @@ class PlayerLook {
     toolbar: ToolbarKind.plain,
     flatBackdrop: false,
     bigLyrics: true,
+    coverFlies: false,
     star: true,
     rewindGlyphs: true,
     quietArtist: true,
@@ -135,6 +141,7 @@ class PlayerLook {
     toolbar: toolbar,
     flatBackdrop: flatBackdrop,
     bigLyrics: bigLyrics,
+    coverFlies: coverFlies,
     star: star,
     rewindGlyphs: rewindGlyphs,
     quietArtist: quietArtist,

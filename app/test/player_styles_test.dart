@@ -182,11 +182,11 @@ void main() {
         backend.calls.any((c) => c.toLowerCase().contains('shuffle')),
         isTrue,
       );
-      // The row below: the song's info, where the sound goes and the comments, then the playlist and the queue. Lyrics
-      // are a card, and the sleep timer is in the "…" of the song
+      // The row below: where the sound goes, the sleep timer and the comments, then the playlist and the queue. Lyrics
+      // are a card, and the song's info is in the "…" of the song
       for (final label in [
-        S.songInfo,
         S.playOn,
+        S.sleepTimer,
         S.youtubeComments,
         S.addToPlaylist,
         S.upNext,
@@ -194,7 +194,18 @@ void main() {
         expect(find.byTooltip(label), findsOneWidget, reason: label);
       }
       expect(find.byTooltip(S.lyrics), findsNothing);
-      expect(find.byTooltip(S.sleepTimer), findsNothing);
+      expect(find.byTooltip(S.songInfo), findsNothing);
+      // Tapping the sleep timer button opens the sheet and setting a timer lights it up without overflowing
+      await tester.tap(find.byTooltip(S.sleepTimer));
+      await tester.pumpAndSettle();
+      expect(find.text(S.sleepTimer), findsOneWidget);
+      await tester.tap(find.text(S.sleepSongEnd));
+      await tester.pumpAndSettle();
+      expect(backend.calls, contains('sleep song 0'));
+      backend.emit(const SleepEvent(SleepState(mode: SleepMode.song)));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip(S.sleepStopsAfterSong), findsOneWidget);
+      expect(tester.takeException(), isNull);
       // The play button is a disc in the accent of the app, not a white one
       final disc = find.ancestor(
         of: find.byIcon(Icons.pause_rounded),
@@ -901,6 +912,125 @@ void main() {
     ) async {
       expect(await coverWhilePulled(tester, PlayerStyle.appleMusic), 1);
     });
+
+    testWidgets(
+      'full cover: still stays after turning to landscape and back on a tablet',
+      (tester) async {
+        await openStyled(tester, PlayerStyle.appleMusic);
+        await resize(tester, 800, 1280);
+        await resize(tester, 1280, 800);
+        await resize(tester, 800, 1280);
+        final gesture = await tester.startGesture(const Offset(400, 500));
+        await gesture.moveBy(const Offset(0, 150));
+        await gesture.moveBy(const Offset(0, 150));
+        await tester.pump();
+        final sheet = PlayerSheetScope.of(
+          tester.element(find.byType(NowPlayingPage)),
+        );
+        expect(sheet.inMotion, isTrue);
+        final shown = tester
+            .widget<Opacity>(
+              find
+                  .descendant(
+                    of: find.byType(CoverSlot),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity;
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(shown, 1);
+      },
+    );
+
+    testWidgets(
+      'full cover: still stays after turning to landscape and back on a phone',
+      (tester) async {
+        await openStyled(tester, PlayerStyle.appleMusic);
+        await resize(tester, 390, 844);
+        await resize(tester, 844, 390);
+        await resize(tester, 390, 844);
+        final gesture = await tester.startGesture(const Offset(200, 400));
+        await gesture.moveBy(const Offset(0, 150));
+        await gesture.moveBy(const Offset(0, 150));
+        await tester.pump();
+        final sheet = PlayerSheetScope.of(
+          tester.element(find.byType(NowPlayingPage)),
+        );
+        expect(sheet.inMotion, isTrue);
+        final shown = tester
+            .widget<Opacity>(
+              find
+                  .descendant(
+                    of: find.byType(CoverSlot),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity;
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(shown, 1);
+      },
+    );
+
+    testWidgets(
+      'full cover: still stays when pulled down in a narrow landscape window',
+      (tester) async {
+        await openStyled(tester, PlayerStyle.appleMusic);
+        await resize(tester, 640, 360);
+        final gesture = await tester.startGesture(const Offset(320, 120));
+        await gesture.moveBy(const Offset(0, 80));
+        await gesture.moveBy(const Offset(0, 80));
+        await tester.pump();
+        final sheet = PlayerSheetScope.of(
+          tester.element(find.byType(NowPlayingPage)),
+        );
+        expect(sheet.inMotion, isTrue);
+        final shown = tester
+            .widget<Opacity>(
+              find
+                  .descendant(
+                    of: find.byType(CoverSlot),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity;
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(shown, 1);
+      },
+    );
+
+    testWidgets(
+      'full cover: still stays after switching to a panel and right back',
+      (tester) async {
+        await openStyled(tester, PlayerStyle.appleMusic);
+        await tester.tap(find.byTooltip(S.lyrics));
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.tap(find.byTooltip(S.lyrics));
+        await tester.pump(const Duration(milliseconds: 400));
+        final gesture = await tester.startGesture(const Offset(200, 400));
+        await gesture.moveBy(const Offset(0, 150));
+        await gesture.moveBy(const Offset(0, 150));
+        await tester.pump();
+        final shown = tester
+            .widget<Opacity>(
+              find
+                  .descendant(
+                    of: find.byType(CoverSlot),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity;
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(shown, 1);
+      },
+    );
 
     testWidgets('classic: the cover flies as it always has', (tester) async {
       expect(await coverWhilePulled(tester, PlayerStyle.classic), 0);

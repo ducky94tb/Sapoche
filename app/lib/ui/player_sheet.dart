@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'home_shell.dart';
 import 'now_playing_page.dart';
+import 'player/look.dart';
 import 'player/parts.dart' show NowPlayingPanel;
 import 'scope.dart';
 import 'widgets/artwork.dart';
@@ -49,11 +50,6 @@ class PlayerSheetController extends ChangeNotifier {
   }
 
   final pageCover = GlobalKey();
-
-  /// Whether the cover of the page flies to and from the mini player as the sheet moves. A page whose cover is not a
-  /// square to fly (the full cover, which melts into the colours behind it) turns it off: the cover stays where it is
-  /// and moves with the page, as it looks at rest, instead of a plain square standing in for it.
-  bool coverFlies = true;
   final pageRoot = GlobalKey();
 
   /// True while a finger, or the animation that settles after it, moves the sheet. The value is
@@ -247,74 +243,81 @@ class PlayerSheetLayer extends StatelessWidget {
   static const _melted = 0.3;
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: controller.position,
-    child: const NowPlayingPage(),
-    builder: (context, page) {
-      if (controller.position.value == 0) return const SizedBox.shrink();
-      final screen = MediaQuery.sizeOf(context);
-      final open = controller.eased;
-      final mini = controller.miniRect(screen);
-      // The sheet's top edge, on the screen: the mini player's at first, then the screen's
-      final top = (1 - open) * mini.top;
-      // What shows of it, in the sheet's own space: the mini player's capsule grows into the whole page
-      final grown = Curves.easeOut.transform((open / _settled).clamp(0.0, 1.0));
-      final shape = RRect.fromLTRBR(
-        mini.left * (1 - grown),
-        0,
-        // The mini player is in the middle of a phone's screen but not always beside a rail, and the player bar of a
-        // wide screen runs from the sidebar to the edge
-        mini.right + (screen.width - mini.right) * grown,
-        mini.height + (screen.height - mini.height) * open,
-        Radius.circular(mini.height / 2 * (1 - grown)),
-      );
-      // The page is there, whole, from the first moment. What turns it into the mini player's capsule at first is a
-      // picture of the capsule on top of it, which melts away as the page grows
-      final capsule = 1 - (open / _melted).clamp(0.0, 1.0);
-      // The flying cover is part of the sheet, so it moves with it and can never lag behind or
-      // stick out past its edge
-      return Transform.translate(
-        offset: Offset(0, top),
-        child: ClipRRect(
-          clipper: _ShapeClipper(shape),
-          clipBehavior: grown < 1 ? Clip.antiAlias : Clip.none,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              page!,
-              if (capsule > 0)
-                Positioned(
-                  left: mini.left,
-                  top: 0,
-                  width: mini.width,
-                  height: mini.height,
-                  child: IgnorePointer(
-                    child: Opacity(
-                      opacity: capsule,
-                      // Its glass is in the bars' backdrop group, so opening the player takes no second reading of
-                      // the screen behind it
-                      child: switch (HomeShell.layoutOf(context)) {
-                        ShellLayout.sidebar => PlayerBarBody(
-                          controller: AppScope.roomOf(context),
-                          ghost: true,
-                        ),
-                        final layout => MiniPlayerCapsule(
-                          controller: AppScope.roomOf(context),
-                          ghost: true,
-                          folded: layout == ShellLayout.bars ? folded.value : 0,
-                        ),
-                      },
+  Widget build(BuildContext context) {
+    final settings = AppScope.of(context).settings;
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        controller.position,
+        settings.playerStyleListenable,
+      ]),
+      child: const NowPlayingPage(),
+      builder: (context, page) {
+        if (controller.position.value == 0) return const SizedBox.shrink();
+        final coverFlies = PlayerLook.of(settings.playerStyle).coverFlies;
+        final screen = MediaQuery.sizeOf(context);
+        final open = controller.eased;
+        final mini = controller.miniRect(screen);
+        // The sheet's top edge, on the screen: the mini player's at first, then the screen's
+        final top = (1 - open) * mini.top;
+        // What shows of it, in the sheet's own space: the mini player's capsule grows into the whole page
+        final grown = Curves.easeOut.transform((open / _settled).clamp(0.0, 1.0));
+        final shape = RRect.fromLTRBR(
+          mini.left * (1 - grown),
+          0,
+          // The mini player is in the middle of a phone's screen but not always beside a rail, and the player bar of a
+          // wide screen runs from the sidebar to the edge
+          mini.right + (screen.width - mini.right) * grown,
+          mini.height + (screen.height - mini.height) * open,
+          Radius.circular(mini.height / 2 * (1 - grown)),
+        );
+        // The page is there, whole, from the first moment. What turns it into the mini player's capsule at first is a
+        // picture of the capsule on top of it, which melts away as the page grows
+        final capsule = 1 - (open / _melted).clamp(0.0, 1.0);
+        // The flying cover is part of the sheet, so it moves with it and can never lag behind or
+        // stick out past its edge
+        return Transform.translate(
+          offset: Offset(0, top),
+          child: ClipRRect(
+            clipper: _ShapeClipper(shape),
+            clipBehavior: grown < 1 ? Clip.antiAlias : Clip.none,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                page!,
+                if (capsule > 0)
+                  Positioned(
+                    left: mini.left,
+                    top: 0,
+                    width: mini.width,
+                    height: mini.height,
+                    child: IgnorePointer(
+                      child: Opacity(
+                        opacity: capsule,
+                        // Its glass is in the bars' backdrop group, so opening the player takes no second reading of
+                        // the screen behind it
+                        child: switch (HomeShell.layoutOf(context)) {
+                          ShellLayout.sidebar => PlayerBarBody(
+                            controller: AppScope.roomOf(context),
+                            ghost: true,
+                          ),
+                          final layout => MiniPlayerCapsule(
+                            controller: AppScope.roomOf(context),
+                            ghost: true,
+                            folded: layout == ShellLayout.bars ? folded.value : 0,
+                          ),
+                        },
+                      ),
                     ),
                   ),
-                ),
-              if (controller.inMotion && controller.coverFlies)
-                _CoverFlight(controller: controller),
-            ],
+                if (controller.inMotion && coverFlies)
+                  _CoverFlight(controller: controller),
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
+        );
+      },
+    );
+  }
 }
 
 class _ShapeClipper extends CustomClipper<RRect> {
@@ -401,14 +404,17 @@ class CoverSlot extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: controller.position,
-    child: child,
-    builder: (context, child) => Opacity(
-      opacity: controller.inMotion && controller.coverFlies ? 0 : 1,
+  Widget build(BuildContext context) {
+    final flies = PlayerLookScope.of(context).coverFlies;
+    return AnimatedBuilder(
+      animation: controller.position,
       child: child,
-    ),
-  );
+      builder: (context, child) => Opacity(
+        opacity: controller.inMotion && flies ? 0 : 1,
+        child: child,
+      ),
+    );
+  }
 }
 
 /// Pull the open player down. Wraps the player page.
