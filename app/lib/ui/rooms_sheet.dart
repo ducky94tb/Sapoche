@@ -560,6 +560,7 @@ class _InRoomState extends State<_InRoom> {
   Future<void> _confirmLeave(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
+      animationStyle: Motion.dialog(context),
       builder: (context) => AlertDialog(
         title: Text(S.leaveRoom),
         content: Text(S.leaveQuestion),
@@ -646,6 +647,7 @@ class EncryptionCard extends StatelessWidget {
 
   void _learnMore(BuildContext context, bool on) => showDialog<void>(
     context: context,
+    animationStyle: Motion.dialog(context),
     builder: (context) => AlertDialog(
       title: Text(S.encryptionTitle),
       content: Text(on ? S.encryptionOnHelp : S.encryptionOffHelp),
@@ -662,6 +664,7 @@ class EncryptionCard extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
+      animationStyle: Motion.dialog(context),
       builder: (context) => AlertDialog(
         title: Text(S.encryptionTitle),
         content: Text(S.encryptionConfirmBody),

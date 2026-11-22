@@ -912,13 +912,13 @@ class _Hero extends StatelessWidget {
           height: height,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
-            boxShadow: [
+            boxShadow: context.shadowsOf([
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.28),
                 blurRadius: 28,
                 offset: const Offset(0, 14),
               ),
-            ],
+            ]),
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),

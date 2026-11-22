@@ -17,6 +17,7 @@ import 'classic_player.dart';
 import 'look.dart';
 import 'lyrics_ticker.dart';
 import 'parts.dart';
+import '../widgets/motion.dart';
 
 /// The player of the style of the full cover: the cover runs across the whole width at the top and melts into the
 /// colours behind it, the buttons are plain glyphs with no disc, and the row of icons has the lyrics, where the sound
@@ -163,7 +164,7 @@ class AppleMusicPlayer extends StatelessWidget {
             ],
             Expanded(
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 240),
+                duration: Motion.of(context, 240),
                 layoutBuilder: (current, previous) => Stack(
                   fit: StackFit.expand,
                   children: [...previous, ?current],
@@ -333,61 +334,73 @@ class _FullCover extends StatelessWidget {
               // let through by a mask that thins out by an easing curve, so that the sharp picture comes up out of the
               // blur with no line where it begins
               if (top > 0) ...[
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  height: _wholePixels(context, top + _blurFade),
-                  child: ShaderMask(
-                    blendMode: BlendMode.dstIn,
-                    shaderCallback: (rect) => const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: _ease,
-                    ).createShader(rect),
-                    child: ClipRect(
-                      child: OverflowBox(
-                        alignment: Alignment.topCenter,
-                        minHeight: height,
-                        maxHeight: height,
-                        child: ImageFiltered(
-                          imageFilter: ui.ImageFilter.blur(
-                            sigmaX: 12,
-                            sigmaY: 12,
-                            tileMode: TileMode.clamp,
-                          ),
-                          child: Artwork(
-                            url: current.thumb,
-                            size: height,
-                            width: box.maxWidth,
-                            radius: 0,
-                            sharp: true,
+                // Not at the minimum of effects: the blur and its mask are two layers drawn over the picture
+                if (!context.flat)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    height: _wholePixels(context, top + _blurFade),
+                    child: ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (rect) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: _ease,
+                      ).createShader(rect),
+                      child: ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.topCenter,
+                          minHeight: height,
+                          maxHeight: height,
+                          child: ImageFiltered(
+                            imageFilter: ui.ImageFilter.blur(
+                              sigmaX: 12,
+                              sigmaY: 12,
+                              tileMode: TileMode.clamp,
+                            ),
+                            child: Artwork(
+                              url: current.thumb,
+                              size: height,
+                              width: box.maxWidth,
+                              radius: 0,
+                              sharp: true,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
                 // A little dark that thins out the same way
                 Positioned(
                   left: 0,
                   right: 0,
                   top: 0,
                   height: top + _blurFade,
-                  child: const DecoratedBox(
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [
-                          Color(0x73000000),
-                          Color(0x5C000000),
-                          Color(0x3A000000),
-                          Color(0x1C000000),
-                          Color(0x08000000),
-                          Color(0x00000000),
-                        ],
-                        stops: [0, 0.2, 0.45, 0.7, 0.88, 1],
+                        // Without the blur the dark carries the time and the notices alone, so it is stronger
+                        colors: context.flat
+                            ? const [
+                                Color(0xA6000000),
+                                Color(0x85000000),
+                                Color(0x57000000),
+                                Color(0x2E000000),
+                                Color(0x0F000000),
+                                Color(0x00000000),
+                              ]
+                            : const [
+                                Color(0x73000000),
+                                Color(0x5C000000),
+                                Color(0x3A000000),
+                                Color(0x1C000000),
+                                Color(0x08000000),
+                                Color(0x00000000),
+                              ],
+                        stops: const [0, 0.2, 0.45, 0.7, 0.88, 1],
                       ),
                     ),
                   ),

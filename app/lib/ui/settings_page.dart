@@ -39,6 +39,7 @@ import 'widgets/play_row.dart';
 import 'widgets/release_notes_text.dart';
 import 'widgets/scroll_edge.dart';
 import 'widgets/text_dialog.dart';
+import 'widgets/motion.dart';
 
 /// Opens the settings in the tab that is showing (beside the sidebar of a wide screen), with a way back.
 Future<void> openSettings(BuildContext context) => TabNavigation.push(
@@ -412,18 +413,31 @@ class _SettingsPageState extends State<SettingsPage> {
       ],
     ),
     _Group(
-      footer: S.lightEffectsHelp,
+      title: S.effectsTitle,
+      footer: S.effectsHelp,
       children: [
-        ValueListenableBuilder(
-          valueListenable: Calm.light,
-          builder: (context, light, _) => Material(
-            type: MaterialType.transparency,
-            child: SwitchListTile(
-              key: const ValueKey('light-effects'),
-              title: Text(S.lightEffects),
-              value: light,
-              onChanged: (value) => model.settings.lightEffects = value,
-            ),
+        ValueListenableBuilder<EffectsLevel>(
+          valueListenable: Calm.level,
+          builder: (context, chosen, _) => Column(
+            children: [
+              for (final (level, label, about) in [
+                (EffectsLevel.full, S.effectsFull, S.effectsFullAbout),
+                (EffectsLevel.light, S.effectsLight, S.effectsLightAbout),
+                (EffectsLevel.minimal, S.effectsMinimal, S.effectsMinimalAbout),
+              ])
+                _Row(
+                  key: ValueKey('effects-${level.name}'),
+                  label: label,
+                  subtitle: about,
+                  trailing: chosen == level
+                      ? Icon(
+                          Icons.check_rounded,
+                          color: context.palette.primary,
+                        )
+                      : null,
+                  onTap: () => model.settings.effects = level,
+                ),
+            ],
           ),
         ),
       ],
@@ -1003,6 +1017,7 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
     if (_state.pending > 0) {
       final ok = await showDialog<bool>(
         context: context,
+        animationStyle: Motion.dialog(context),
         builder: (context) => AlertDialog(
           content: Text(S.scrobbleDisconnectQuestion(_state.pending)),
           actions: [
@@ -1206,6 +1221,7 @@ Future<void> _showServerCheck(BuildContext context, RoomController room) async {
   final result = room.checkServer();
   await showDialog<void>(
     context: context,
+    animationStyle: Motion.dialog(context),
     builder: (context) => FutureBuilder<ServerCheck>(
       future: result,
       builder: (context, snapshot) {

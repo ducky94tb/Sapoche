@@ -28,16 +28,24 @@ class AmbientBackdrop extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          ListenableBuilder(
-            listenable: room,
-            builder: (context, _) {
-              final cover = room.snapshot.current?.thumb;
-              if (cover == null) {
-                return const PinkWash(opaque: false, child: SizedBox.expand());
-              }
-              return PlayerBackdrop(coverUrl: cover, glowHeight: glowHeight);
-            },
-          ),
+          // Minimal effects: no glow of the cover and no wash behind the pages, only the colour of the page. The slot
+          // stays, so that the pages (and what is open on them) are not built again when the level changes
+          if (context.flat)
+            const SizedBox.shrink()
+          else
+            ListenableBuilder(
+              listenable: room,
+              builder: (context, _) {
+                final cover = room.snapshot.current?.thumb;
+                if (cover == null) {
+                  return const PinkWash(
+                    opaque: false,
+                    child: SizedBox.expand(),
+                  );
+                }
+                return PlayerBackdrop(coverUrl: cover, glowHeight: glowHeight);
+              },
+            ),
           child,
         ],
       ),

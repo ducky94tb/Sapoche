@@ -12,6 +12,7 @@ import '../strings.dart';
 import '../theme/theme.dart';
 import 'scope.dart';
 import 'widgets/track_tile.dart';
+import 'widgets/motion.dart';
 
 /// "Send a song": a sheet to pick the song to put in the chat. It opens on the song playing, the liked ones and the ones
 /// heard lately, and searches YouTube Music as words are typed. Gives the song picked, or null if it was closed.
@@ -19,6 +20,7 @@ Future<Track?> showSongPicker(BuildContext context) {
   final scope = AppScope.of(context);
   return showModalBottomSheet<Track>(
     context: context,
+    sheetAnimationStyle: Motion.sheet(context),
     useRootNavigator: true,
     isScrollControlled: true,
     useSafeArea: true,

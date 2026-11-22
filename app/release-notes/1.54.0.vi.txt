@@ -1,0 +1,5 @@
+Mức hiệu ứng Tối giản cho máy rất yếu, và hẹn giờ tắt ở trình phát kiểu Thẻ
+- Thêm mức hiệu ứng "Tối giản" (Cài đặt > Giao diện > Hiệu ứng, nay có Đầy đủ, Nhẹ hoặc Tối giản): trang và trình phát mở ngay thay vì trượt, không còn làm mờ, không còn bóng đổ, nền phẳng, chạm vào chỉ sáng dòng lên mà không gợn sóng. Làm cho những máy như Galaxy J7 Prime vốn giật ở mọi lần chuyển cảnh. Máy yếu không có Vulkan sẽ tự bắt đầu ở mức Tối giản cho tới khi bạn chọn mức khác; các máy còn lại giữ nguyên. Trên iPhone và web bạn tự chọn.
+- Mức Nhẹ nay cũng làm êm các tờ chọn, hộp thoại, menu và những chuyển động nhỏ trước đây vẫn chạy (bìa hiện dần, nền trình phát đổi theo bài). Lựa chọn "Hiệu ứng nhẹ" cũ của bạn được giữ nguyên.
+- Trình phát kiểu Thẻ có lại nút hẹn giờ tắt, hiện rõ khi đang bật.
+- Sửa lỗi bìa nhạc bay sai chỗ khi xoay điện thoại lúc đang mở trình phát.

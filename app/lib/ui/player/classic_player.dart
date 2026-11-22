@@ -19,6 +19,7 @@ import '../widgets/playback_bar.dart';
 import '../widgets/volume_bar.dart';
 import 'look.dart';
 import 'parts.dart';
+import '../widgets/motion.dart';
 
 /// Side of the full player's cover. It depends only on the screen, so the cover can be decoded
 /// at this size before the player is ever opened.
@@ -101,7 +102,7 @@ class ClassicPlayer extends StatelessWidget {
             children: [
               Expanded(
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 240),
+                  duration: Motion.of(context, 240),
                   layoutBuilder: (current, previous) => Stack(
                     fit: StackFit.expand,
                     children: [...previous, ?current],
@@ -175,12 +176,17 @@ class ClassicPlayer extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: playerColumnMax),
-        child: _tallColumn(p, current, docked: docked),
+        child: _tallColumn(context, p, current, docked: docked),
       ),
     );
   }
 
-  Widget _tallColumn(Palette p, QueueEntry current, {required bool docked}) {
+  Widget _tallColumn(
+    BuildContext context,
+    Palette p,
+    QueueEntry current, {
+    required bool docked,
+  }) {
     // Beside the pages the card is narrow and the cover is all it has to show: its margins are smaller
     final margin = docked ? playerDockMargin : playerMargin;
     return Column(
@@ -196,7 +202,7 @@ class ClassicPlayer extends StatelessWidget {
         ModePill(controller: _c),
         Expanded(
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 240),
+            duration: Motion.of(context, 240),
             layoutBuilder: (current, previous) =>
                 Stack(fit: StackFit.expand, children: [...previous, ?current]),
             child: switch (panel) {

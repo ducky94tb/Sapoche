@@ -6,6 +6,7 @@ import 'package:flutter/physics.dart';
 import '../../data/calm.dart';
 import '../../data/chat_media.dart';
 import '../../strings.dart';
+import '../../theme/theme.dart';
 import 'album_image.dart';
 import 'on_screen.dart';
 
@@ -230,9 +231,9 @@ class _PhotoStackState extends State<PhotoStack> with TickerProviderStateMixin {
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(_radius),
-          boxShadow: [
+          boxShadow: context.shadowsOf([
             BoxShadow(color: Colors.black.withValues(alpha: 0.28), blurRadius: 12, offset: const Offset(0, 4)),
-          ],
+          ]),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(_radius),

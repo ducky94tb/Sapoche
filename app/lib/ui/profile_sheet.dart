@@ -4,6 +4,7 @@ import '../strings.dart';
 import '../theme/theme.dart';
 import 'scope.dart';
 import 'widgets/avatars.dart';
+import 'widgets/motion.dart';
 
 /// Lets the person change the name others see and the picture of themselves, in a room or not.
 Future<void> showProfileSheet(BuildContext context) {
@@ -11,6 +12,7 @@ Future<void> showProfileSheet(BuildContext context) {
   final model = AppScope.of(context);
   return showModalBottomSheet<void>(
     context: context,
+    sheetAnimationStyle: Motion.sheet(context),
     useRootNavigator: true,
     isScrollControlled: true,
     builder: (_) => AppScope(model: model, child: const _ProfileSheet()),

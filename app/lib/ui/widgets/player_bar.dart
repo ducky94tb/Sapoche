@@ -9,6 +9,7 @@ import 'glass.dart';
 import 'marquee_text.dart';
 import 'playback_bar.dart';
 import 'transport.dart';
+import 'motion.dart';
 
 /// The player along the bottom of a wide screen, in the manner of Apple Music on an iPad or a Mac: the song on the
 /// left, the controls over the seek bar in the middle, the lyrics and the queue on the right. Tap it, or drag it up,
@@ -26,7 +27,7 @@ class PlayerBar extends StatelessWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) => AnimatedSwitcher(
-        duration: const Duration(milliseconds: 280),
+        duration: Motion.of(context, 280),
         switchInCurve: Curves.easeOutCubic,
         // The bar that was leaving is dropped as a new one comes, see MiniPlayer
         layoutBuilder: (shown, leaving) => Stack(

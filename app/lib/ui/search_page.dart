@@ -24,6 +24,7 @@ import 'widgets/shimmer.dart';
 import 'widgets/track_columns.dart';
 import 'widgets/track_menu.dart';
 import 'widgets/track_tile.dart';
+import 'widgets/motion.dart';
 
 /// Search YouTube Music (or paste a link) for anything: songs, videos, albums, artists, playlists, profiles and
 /// podcasts. While the person types, a few completions and what is found so far are listed under one another; once
@@ -645,7 +646,7 @@ class _SearchPageState extends State<SearchPage> {
   Widget _content(BuildContext context) {
     final bottom = HomeShell.bottomInsetOf(context);
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
+      duration: Motion.of(context, 220),
       // The loading rows and the results are different shapes: the one that goes is gone at once, instead of showing
       // through the one that comes
       layoutBuilder: (current, previous) =>
@@ -935,7 +936,7 @@ class _FilterChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(999),
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
+        duration: Motion.of(context, 180),
         height: 34,
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 14),

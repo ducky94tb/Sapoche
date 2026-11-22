@@ -101,6 +101,7 @@ Future<void> confirmRemoveMember(
 ) async {
   final confirmed = await showDialog<bool>(
     context: context,
+    animationStyle: Motion.dialog(context),
     builder: (context) => AlertDialog(
       title: Text(S.removeFromRoom),
       content: Text(S.removeQuestion(member.name)),

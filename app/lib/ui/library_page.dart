@@ -29,6 +29,7 @@ import 'widgets/scroll_edge.dart';
 import 'widgets/text_dialog.dart';
 import 'widgets/track_menu.dart';
 import 'widgets/track_tile.dart';
+import 'widgets/motion.dart';
 
 /// What a person keeps: liked songs, what they heard lately, and their playlists. Opening one puts its page
 /// over the tab, as the page of an album is, with a way back.
@@ -273,6 +274,7 @@ class _LibraryScreen extends StatelessWidget {
   ) async {
     final ok = await showDialog<bool>(
       context: context,
+      animationStyle: Motion.dialog(context),
       builder: (context) => AlertDialog(
         content: Text(S.deleteDownloadsQuestion),
         actions: [
@@ -296,6 +298,7 @@ class _LibraryScreen extends StatelessWidget {
   ) async {
     final ok = await showDialog<bool>(
       context: context,
+      animationStyle: Motion.dialog(context),
       builder: (context) => AlertDialog(
         content: Text(S.clearHistoryQuestion),
         actions: [
@@ -389,6 +392,7 @@ class _Overview extends StatelessWidget {
                 Expanded(child: Text(S.playlists, style: theme.titleLarge)),
                 PopupMenuButton<String>(
                   useRootNavigator: true,
+                  popUpAnimationStyle: Motion.dialog(context),
                   style: roundButtonStyle(context, size: 40),
                   icon: Icon(Icons.add_rounded, color: p.text),
                   tooltip: S.newPlaylist,
@@ -690,6 +694,7 @@ class _PlaylistPage extends StatelessWidget {
   Future<void> _delete(BuildContext context, SavedPlaylist? playlist) async {
     final ok = await showDialog<bool>(
       context: context,
+      animationStyle: Motion.dialog(context),
       builder: (context) => AlertDialog(
         content: Text(S.deletePlaylistQuestion(playlist?.name ?? '')),
         actions: [
@@ -981,6 +986,7 @@ class _FolderPage extends StatelessWidget {
   Future<void> _delete(BuildContext context, PlaylistFolder folder) async {
     final ok = await showDialog<bool>(
       context: context,
+      animationStyle: Motion.dialog(context),
       builder: (context) => AlertDialog(
         content: Text(S.deleteFolderQuestion(folder.name)),
         actions: [

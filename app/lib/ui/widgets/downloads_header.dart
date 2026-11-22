@@ -6,6 +6,7 @@ import '../../format.dart';
 import '../../strings.dart';
 import '../../theme/theme.dart';
 import 'download_actions.dart';
+import 'motion.dart';
 
 /// What the page of the downloaded songs says above the songs: what they take, the run in hand with a way to stop it,
 /// the songs that did not get downloaded with a way to try them again or let them go.
@@ -24,6 +25,7 @@ class _DownloadsHeaderState extends State<DownloadsHeader> {
   Future<bool> _ask(String question, String action) async =>
       await showDialog<bool>(
         context: context,
+        animationStyle: Motion.dialog(context),
         builder: (context) => AlertDialog(
           content: Text(question),
           actions: [

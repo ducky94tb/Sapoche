@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/models.dart';
 import '../../strings.dart';
 import '../../theme/theme.dart';
+import 'motion.dart';
 
 /// A small pill that slides in when the connection to the room is not healthy.
 class LinkBanner extends StatelessWidget {
@@ -23,7 +24,7 @@ class LinkBanner extends StatelessWidget {
     final p = context.palette;
     final text = _text;
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 250),
+      duration: Motion.of(context, 250),
       transitionBuilder: (child, animation) => SizeTransition(
         sizeFactor: animation,
         child: FadeTransition(opacity: animation, child: child),

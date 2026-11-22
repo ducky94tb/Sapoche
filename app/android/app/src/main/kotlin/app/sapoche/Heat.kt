@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +34,12 @@ class Heat(private val context: Context) {
         manager.isLowRamDevice || ActivityManager.MemoryInfo().also { manager.getMemoryInfo(it) }.totalMem <= WEAK_BYTES
     }
 
+    /**
+     * A weak phone that also lacks Vulkan 1.1, so the screen is drawn with Skia on a weak GPU (see
+     * [hasVulkan11]): it starts with the Minimal effects. Told to the screen along with [calm].
+     */
+    val veryWeak: Boolean = weak && !hasVulkan11(context)
+
     init {
         if (Build.VERSION.SDK_INT >= 29) {
             power.addThermalStatusListener(context.mainExecutor) { update() }
@@ -56,8 +63,18 @@ class Heat(private val context: Context) {
         return warm || power.isPowerSaveMode
     }
 
-    private companion object {
+    companion object {
         /** What a "3 GB" phone reports is a little below 3 GiB; one with 4 GB reports about 3.7. */
-        const val WEAK_BYTES = 3L shl 30
+        private const val WEAK_BYTES = 3L shl 30
+
+        /** `FEATURE_VULKAN_HARDWARE_VERSION` encodes 1.1 as (1 shl 22) or (1 shl 12). */
+        private const val VULKAN_1_1 = 0x401000
+
+        /**
+         * Impeller needs Vulkan 1.1; without it the screen is drawn with Skia (`MainActivity`), and the first frame
+         * and every full-screen layer cost more. The same test picks the renderer and the weakest effects level.
+         */
+        fun hasVulkan11(context: Context): Boolean =
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION, VULKAN_1_1)
     }
 }

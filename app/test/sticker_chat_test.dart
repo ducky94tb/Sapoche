@@ -417,12 +417,12 @@ void main() {
       await tester.pump();
       expect(moving(), isTrue);
 
-      Calm.chosen = true;
+      Calm.chosen = EffectsLevel.light;
       addTearDown(() => Calm.chosen = null);
       await tester.pump();
       expect(moving(), isFalse, reason: 'calm mode');
 
-      Calm.chosen = false;
+      Calm.chosen = EffectsLevel.full;
       await tester.pump();
       expect(moving(), isTrue);
     });

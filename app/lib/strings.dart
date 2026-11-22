@@ -1426,10 +1426,25 @@ abstract final class S {
     'purple' => _t('Purple', 'Tím'),
     _ => _t('Graphite', 'Than chì'),
   };
-  static String get lightEffects => _t('Light effects', 'Hiệu ứng nhẹ');
-  static String get lightEffectsHelp => _t(
-    'For older phones: solid bars instead of frosted glass, a still player background, no shimmer, less memory for pictures. On by default on phones with little memory.',
-    'Cho máy cũ: thanh đặc thay vì kính mờ, nền player đứng yên, không lấp lánh, ít bộ nhớ cho ảnh hơn. Máy ít bộ nhớ mặc định bật.',
+  static String get effectsTitle => _t('Effects', 'Hiệu ứng');
+  static String get effectsFull => _t('Full', 'Đầy đủ');
+  static String get effectsFullAbout => _t(
+    'Frosted glass, moving colours and all animations',
+    'Kính mờ, nền chuyển động và đủ hoạt ảnh',
+  );
+  static String get effectsLight => _t('Light', 'Nhẹ');
+  static String get effectsLightAbout => _t(
+    'Solid bars, still player background, quieter motion',
+    'Thanh đặc, nền trình phát đứng yên, bớt hoạt ảnh',
+  );
+  static String get effectsMinimal => _t('Minimal', 'Tối giản');
+  static String get effectsMinimalAbout => _t(
+    'Instant pages and player, flat backgrounds, no blur or shadows',
+    'Chuyển trang và trình phát tức thì, nền phẳng, bỏ mờ và bóng',
+  );
+  static String get effectsHelp => _t(
+    'Picked for this device automatically until you choose one here.',
+    'Tự chọn theo sức máy cho tới khi bạn tự chọn ở đây.',
   );
   static String get languageLabel => _t('Language', 'Ngôn ngữ');
   static String get languageSystem => _t('System', 'Theo hệ thống');

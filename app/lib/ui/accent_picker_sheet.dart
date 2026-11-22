@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import '../strings.dart';
 import '../theme/palette.dart';
 import '../theme/theme.dart';
+import 'widgets/motion.dart';
 
 /// Lets the person mix a colour of their own for the app; resolves to it, or null when they close the sheet.
 Future<Color?> showAccentPicker(BuildContext context, Color initial) =>
     showModalBottomSheet<Color>(
       useRootNavigator: true,
       context: context,
+      sheetAnimationStyle: Motion.sheet(context),
       isScrollControlled: true,
       builder: (_) => _AccentPicker(initial: initial),
     );

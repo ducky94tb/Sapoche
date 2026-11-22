@@ -24,6 +24,7 @@ import 'look.dart';
 import 'lyrics_ticker.dart';
 import 'parts.dart';
 import 'up_next_view.dart' show RepeatButton, ShuffleButton;
+import '../widgets/motion.dart';
 
 /// What the head of the card says the song is playing from: its album, else the room, else who made it (a song with no
 /// album would have the head say only "Now playing"). Null where none of them is known.
@@ -215,7 +216,7 @@ class _TallState extends State<_Tall> {
             ),
             Expanded(
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 240),
+                duration: Motion.of(context, 240),
                 layoutBuilder: (current, previous) => Stack(
                   fit: StackFit.expand,
                   children: [...previous, ?current],
@@ -324,7 +325,7 @@ class _TallState extends State<_Tall> {
                 ignoring: !past,
                 child: AnimatedOpacity(
                   opacity: past ? 1 : 0,
-                  duration: const Duration(milliseconds: 160),
+                  duration: Motion.of(context, 160),
                   child: ExcludeSemantics(
                     excluding: !past,
                     child: _StickyHeader(
@@ -425,7 +426,7 @@ class _Compact extends StatelessWidget {
                 ),
               Expanded(
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 240),
+                  duration: Motion.of(context, 240),
                   layoutBuilder: (current, previous) => Stack(
                     fit: StackFit.expand,
                     children: [...previous, ?current],
@@ -872,7 +873,7 @@ class _LiveLinesState extends State<_LiveLines> {
         .toInt();
     final end = min(lines.length, start + _shown);
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
+      duration: Motion.of(context, 300),
       child: Column(
         key: ValueKey(start),
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -883,7 +884,7 @@ class _LiveLinesState extends State<_LiveLines> {
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 child: AnimatedOpacity(
                   opacity: i == _active ? 1 : 0.5,
-                  duration: const Duration(milliseconds: 300),
+                  duration: Motion.of(context, 300),
                   child: Text(
                     lines[i].text,
                     maxLines: 2,

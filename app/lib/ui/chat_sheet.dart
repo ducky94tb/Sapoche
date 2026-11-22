@@ -438,6 +438,7 @@ class _ChatSheetState extends State<ChatSheet> with WidgetsBindingObserver {
   Future<PhotoSource?> _choosePhotoSource() {
     return showModalBottomSheet<PhotoSource>(
       context: context,
+      sheetAnimationStyle: Motion.sheet(context),
       useRootNavigator: true,
       builder: (_) => _PhotoSourceSheet(camera: chatCameraAvailable),
     );
@@ -1055,8 +1056,8 @@ class _AttachButtons extends StatelessWidget {
   Widget build(BuildContext context) {
     // Part of the field as far as a touch outside it goes: adding must not put the keyboard away
     return TextFieldTapRegion(
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 150),
+      child: MotionSize(
+        milliseconds: 150,
         alignment: Alignment.centerLeft,
         child: collapsed && !preparing
             ? IconButton(
@@ -1395,6 +1396,7 @@ class _MuteButton extends StatelessWidget {
     final until = controller.roomMutedUntil;
     return PopupMenuButton<_Mute>(
       key: const ValueKey('chat-mute'),
+      popUpAnimationStyle: Motion.dialog(context),
       tooltip: S.noticesMute,
       icon: Icon(
         until == null
@@ -2207,7 +2209,7 @@ class _Flash extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       key: lit ? const ValueKey('chat-flash') : null,
-      duration: const Duration(milliseconds: 350),
+      duration: Motion.of(context, 350),
       // No decoration at rest: the message is drawn as if nothing wrapped it
       decoration: lit
           ? BoxDecoration(
@@ -2236,7 +2238,7 @@ class _ToNewestButton extends StatelessWidget {
         ignoring: !shown,
         child: AnimatedOpacity(
           opacity: shown ? 1 : 0,
-          duration: const Duration(milliseconds: 150),
+          duration: Motion.of(context, 150),
           child: Tooltip(
             message: S.chatToNewest,
             child: Material(
@@ -2474,6 +2476,7 @@ Future<void> _showMessageMenu(
     useRootNavigator: true,
     useSafeArea: true,
     context: context,
+    sheetAnimationStyle: Motion.sheet(context),
     isScrollControlled: true,
     builder: (_) => _MessageMenu(
       controller: controller,

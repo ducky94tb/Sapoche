@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../strings.dart';
+import 'widgets/motion.dart';
 
 /// Asks for a room code. Gives back the six characters, or null when closed. A code on the clipboard
 /// or one that came with an invitation is filled in.
@@ -9,6 +10,7 @@ Future<String?> showCodeSheet(BuildContext context, {String? initialCode}) =>
     showModalBottomSheet<String>(
       useRootNavigator: true,
       context: context,
+      sheetAnimationStyle: Motion.sheet(context),
       isScrollControlled: true,
       builder: (_) => CodeSheet(initialCode: initialCode),
     );

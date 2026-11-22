@@ -8,6 +8,7 @@ import '../../theme/theme.dart';
 import '../player/look.dart';
 import 'low_rate_timer.dart';
 import 'touch_box.dart';
+import 'motion.dart';
 
 /// Seek bar with elapsed and remaining time. It moves five times a second while playing, which is
 /// finer than a pixel of the bar, and it grows under the finger like Apple's.
@@ -119,7 +120,7 @@ class _PlaybackBarState extends State<PlaybackBar> {
                       ? (dragging ? 6 : 4)
                       : (dragging ? 10 : 5),
                 ),
-                duration: const Duration(milliseconds: 160),
+                duration: Motion.of(context, 160),
                 curve: Curves.easeOut,
                 builder: (context, height, _) => thin
                     ? _thinLine(p, height, fraction, box.maxWidth, dragging)

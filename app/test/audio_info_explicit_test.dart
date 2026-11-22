@@ -89,6 +89,8 @@ void main() {
           ),
         ),
       );
+      // One turn to deliver the event, one frame to draw it: no animation keeps frames coming now
+      await tester.pump();
       await tester.pump();
       expect(find.text('AAC · 129 kbps · 44.1 kHz'), findsOneWidget);
 
@@ -98,6 +100,7 @@ void main() {
           PlayerPosition(playing: true, positionMs: 16000, durationMs: 177000),
         ),
       );
+      await tester.pump();
       await tester.pump();
       expect(find.byIcon(Icons.graphic_eq_rounded), findsNothing);
     });

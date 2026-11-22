@@ -64,10 +64,10 @@ void main() {
           ),
         ),
       );
-      Calm.chosen = true;
+      Calm.chosen = EffectsLevel.light;
       expect(Motion.reduced(context), isTrue);
       expect(Motion.of(context, 240), Duration.zero);
-      Calm.chosen = false;
+      Calm.chosen = EffectsLevel.full;
       expect(Motion.reduced(context), isFalse);
     });
   });
@@ -103,7 +103,7 @@ void main() {
     );
 
     testWidgets('and with Light effects on', (tester) async {
-      Calm.chosen = true;
+      Calm.chosen = EffectsLevel.light;
       await tester.pumpWidget(
         host(reduce: false, child: const Pop(animate: true, child: face)),
       );

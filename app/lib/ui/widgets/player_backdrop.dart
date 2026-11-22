@@ -8,6 +8,7 @@ import '../../theme/theme.dart';
 import '../cover_glow.dart';
 import 'low_rate_timer.dart';
 import 'wash.dart';
+import 'motion.dart';
 
 /// Background of the full player, in the manner of Apple Music: the cover's own colours, enlarged and blurred
 /// until they are only light. In the dark theme the colours are deep and the bottom is darkened for the controls;
@@ -214,7 +215,7 @@ class _PlayerBackdropState extends State<PlayerBackdrop> {
       children: [
         ColoredBox(color: p.base),
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 900),
+          duration: Motion.of(context, 900),
           switchInCurve: Curves.easeInOut,
           switchOutCurve: Curves.easeInOut,
           layoutBuilder: (current, previous) =>
@@ -282,7 +283,7 @@ extension on _PlayerBackdropState {
             width: double.infinity,
             height: height,
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 900),
+              duration: Motion.of(context, 900),
               switchInCurve: Curves.easeInOut,
               switchOutCurve: Curves.easeInOut,
               layoutBuilder: (current, previous) => Stack(
@@ -312,7 +313,7 @@ extension on _PlayerBackdropState {
       children: [
         ColoredBox(color: context.palette.base),
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 900),
+          duration: Motion.of(context, 900),
           switchInCurve: Curves.easeInOut,
           switchOutCurve: Curves.easeInOut,
           layoutBuilder: (current, previous) =>

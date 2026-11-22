@@ -6,6 +6,7 @@ import '../../data/calm.dart';
 import '../../theme/theme.dart';
 import '../home_shell.dart';
 import 'glass.dart';
+import 'motion.dart';
 
 /// The top edge of a page that scrolls up under the status bar, in the manner of iOS (on a tablet or a wide screen;
 /// a phone's page ends below the status bar). While the page is at its top
@@ -106,7 +107,7 @@ class _ScrollEdgeState extends State<ScrollEdge> {
               // to blur until the fade is over
               child: TweenAnimationBuilder<double>(
                 tween: Tween(end: _shown ? 1 : 0),
-                duration: const Duration(milliseconds: 200),
+                duration: Motion.of(context, 200),
                 builder: (context, t, _) {
                   if (t == 0) return const SizedBox.shrink();
                   return ClipRect(

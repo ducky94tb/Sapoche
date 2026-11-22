@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/models.dart';
 import '../../strings.dart';
 import '../scope.dart';
+import 'motion.dart';
 
 /// Asks for [tracks] to be downloaded. On mobile data the person is asked first, since a playlist can be
 /// a lot of it, unless [allowMetered]. Says what happened in a snackbar. With [kept] the songs are those of a playlist
@@ -21,6 +22,7 @@ Future<void> startDownload(
     if (!context.mounted) return;
     final agreed = await showDialog<bool>(
       context: context,
+      animationStyle: Motion.dialog(context),
       builder: (context) => AlertDialog(
         title: Text(S.useMobileData),
         content: Text(S.useMobileDataBody),

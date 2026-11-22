@@ -10,6 +10,7 @@ import '../../strings.dart';
 import '../../theme/palette.dart';
 import '../../theme/theme.dart';
 import '../widgets/like_button.dart';
+import '../widgets/motion.dart';
 import '../widgets/playback_bar.dart';
 import '../widgets/video_view.dart';
 
@@ -240,7 +241,7 @@ class VideoControlsState extends State<VideoControls> {
                 ignoring: !_shown,
                 child: AnimatedOpacity(
                   opacity: _shown ? 1 : 0,
-                  duration: const Duration(milliseconds: 200),
+                  duration: Motion.of(context, 200),
                   child: full
                       ? _fullControls(context)
                       : _inlineControls(context, box),
@@ -496,7 +497,7 @@ class _SkipNote extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedOpacity(
       opacity: side == 0 ? 0 : 1,
-      duration: const Duration(milliseconds: 150),
+      duration: Motion.of(context, 150),
       child: side == 0
           ? const SizedBox.expand()
           : Align(
@@ -654,6 +655,7 @@ Future<void> openVideoFullScreen(
   if (VideoFullScreen.open.value) return;
   final navigator = Navigator.of(context, rootNavigator: true);
   final phone = MediaQuery.sizeOf(context).shortestSide < 600;
+  final still = Motion.still(context);
   final picture = controller.player.value;
   final upright =
       picture.videoWidth > 0 && picture.videoHeight > picture.videoWidth;
@@ -672,12 +674,14 @@ Future<void> openVideoFullScreen(
     }
     await navigator.push(
       PageRouteBuilder<void>(
-        transitionDuration: const Duration(milliseconds: 200),
-        reverseTransitionDuration: const Duration(milliseconds: 160),
+        transitionDuration:
+            still ? Duration.zero : const Duration(milliseconds: 200),
+        reverseTransitionDuration:
+            still ? Duration.zero : const Duration(milliseconds: 160),
         pageBuilder: (context, _, _) =>
             VideoFullScreen(controller: controller, turned: turned),
         transitionsBuilder: (context, animation, _, child) =>
-            FadeTransition(opacity: animation, child: child),
+            still ? child : FadeTransition(opacity: animation, child: child),
       ),
     );
   } finally {
@@ -697,6 +701,7 @@ Future<void> showVideoSettings(
   useRootNavigator: true,
   isScrollControlled: true,
   showDragHandle: true,
+  sheetAnimationStyle: Motion.sheet(context),
   builder: (context) => _VideoSettings(controller: controller),
 );
 

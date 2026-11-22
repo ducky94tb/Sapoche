@@ -169,7 +169,7 @@ class PlayerCoverArt extends StatelessWidget {
       // Paused covers shrink, like in Apple Music; the shadow settles with the cover rather than jumping ahead of it
       builder: (context, _) => TweenAnimationBuilder<double>(
         tween: Tween(end: controller.isPlaying || !look.coverShrinks ? 1 : 0),
-        duration: const Duration(milliseconds: 420),
+        duration: Motion.of(context, 420),
         curve: Curves.easeOutBack,
         builder: (context, t, child) => Transform.scale(
           scale: 0.86 + 0.14 * t,
@@ -177,14 +177,14 @@ class PlayerCoverArt extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(radius),
               // A cover that does not shrink lies flat on the ground, with no shadow under it
-              boxShadow: [
+              boxShadow: context.shadowsOf([
                 if (look.coverShrinks)
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.14 + 0.14 * t),
                     blurRadius: 18 + 18 * t,
                     offset: Offset(0, 8 + 10 * t),
                   ),
-              ],
+              ]),
             ),
             child: child,
           ),
@@ -1045,7 +1045,7 @@ class ModePill extends StatelessWidget {
             height: touchSize,
             child: Center(
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
+                duration: Motion.of(context, 200),
                 width: 52,
                 height: 32,
                 decoration: BoxDecoration(

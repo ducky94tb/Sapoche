@@ -5,6 +5,7 @@ import '../data/ios_update.dart';
 import '../strings.dart';
 import '../theme/theme.dart';
 import 'widgets/release_notes_text.dart';
+import 'widgets/motion.dart';
 
 /// Tells an iPhone a newer version is out and takes the person to its page; SideStore, not the app, installs it. It never
 /// blocks: it closes with a swipe, a tap outside or "Later".
@@ -12,6 +13,7 @@ Future<void> showIosUpdateSheet(BuildContext context, ReleaseOffer offer) =>
     showModalBottomSheet<void>(
       useRootNavigator: true,
       context: context,
+      sheetAnimationStyle: Motion.sheet(context),
       isScrollControlled: true,
       builder: (_) => _IosUpdateSheet(offer: offer),
     );

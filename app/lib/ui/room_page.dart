@@ -1006,6 +1006,7 @@ class _ClearButton extends StatelessWidget {
       onPressed: () async {
         final confirmed = await showDialog<bool>(
           context: context,
+          animationStyle: Motion.dialog(context),
           builder: (context) => AlertDialog(
             title: Text(S.clearQueue),
             content: Text(S.clearQueueQuestion),

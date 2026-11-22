@@ -1,0 +1,5 @@
+Minimal effects for very weak phones, and a sleep timer in the Cards player
+- New "Minimal" level of effects (Settings > Appearance > Effects, now Full, Light or Minimal): pages and the player open at once instead of sliding, nothing is blurred, nothing casts a shadow, backgrounds are flat, and touches light the row up without a ripple. Made for phones such as the Galaxy J7 Prime that struggled with every transition. A weak phone that has no Vulkan starts with Minimal by itself until you choose another level; the other phones are unchanged. On iPhone and the web you pick it by hand.
+- Light effects now also quiet the sheets, dialogs, menus and the small fades that used to keep moving (covers fading in, the player background changing with the song). Your old "Light effects" choice is kept.
+- The Cards player has a sleep timer button again, showing when it is on.
+- Fixed the cover flying to the wrong place when the phone is turned while the player is open.

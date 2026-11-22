@@ -186,11 +186,15 @@ class Artwork extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 placeholder,
-                AnimatedOpacity(
-                  opacity: frame == null ? 0 : 1,
-                  duration: const Duration(milliseconds: 300),
-                  child: crop(child),
-                ),
+                // With motion reduced the picture is there when it is decoded: no layer of its own for each cover of a list
+                if (Motion.reduced(context))
+                  ...[if (frame != null) crop(child)]
+                else
+                  AnimatedOpacity(
+                    opacity: frame == null ? 0 : 1,
+                    duration: Motion.of(context, 300),
+                    child: crop(child),
+                  ),
               ],
             ),
     );

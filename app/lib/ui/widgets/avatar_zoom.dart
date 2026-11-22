@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../strings.dart';
+import 'motion.dart';
 
 /// Shows a picture of someone over the whole screen, to pinch, drag and double-tap. A touch outside it, or the cross,
 /// puts it away.
@@ -11,19 +12,23 @@ Future<void> showAvatarZoom(
   BuildContext context, {
   required String name,
   required Uint8List image,
-}) => Navigator.of(context, rootNavigator: true).push(
-  PageRouteBuilder<void>(
-    opaque: false,
-    barrierColor: Colors.black.withValues(alpha: 0.92),
-    barrierDismissible: true,
-    barrierLabel: S.close,
-    transitionDuration: const Duration(milliseconds: 180),
-    reverseTransitionDuration: const Duration(milliseconds: 140),
-    pageBuilder: (_, _, _) => _AvatarZoom(name: name, image: image),
-    transitionsBuilder: (_, animation, _, child) =>
-        FadeTransition(opacity: animation, child: child),
-  ),
-);
+}) {
+  final still = Motion.still(context);
+  return Navigator.of(context, rootNavigator: true).push(
+    PageRouteBuilder<void>(
+      opaque: false,
+      barrierColor: Colors.black.withValues(alpha: 0.92),
+      barrierDismissible: true,
+      barrierLabel: S.close,
+      transitionDuration: still ? Duration.zero : const Duration(milliseconds: 180),
+      reverseTransitionDuration:
+          still ? Duration.zero : const Duration(milliseconds: 140),
+      pageBuilder: (_, _, _) => _AvatarZoom(name: name, image: image),
+      transitionsBuilder: (_, animation, _, child) =>
+          still ? child : FadeTransition(opacity: animation, child: child),
+    ),
+  );
+}
 
 class _AvatarZoom extends StatefulWidget {
   const _AvatarZoom({required this.name, required this.image});

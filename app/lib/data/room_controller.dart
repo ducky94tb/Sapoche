@@ -348,8 +348,9 @@ class RoomController extends ChangeNotifier {
         break; // LibraryController listens for these itself
       case UpdateEvent():
         break; // and UpdateController for this
-      case CalmEvent(:final on, :final weak):
+      case CalmEvent(:final on, :final weak, :final veryWeak):
         Calm.weak = weak;
+        Calm.veryWeak = veryWeak;
         Calm.warm = on;
       case PipEvent(:final on):
         pictureInPicture.value = on;

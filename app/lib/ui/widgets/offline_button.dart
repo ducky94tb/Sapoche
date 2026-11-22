@@ -7,6 +7,7 @@ import '../../theme/theme.dart';
 import '../scope.dart';
 import 'download_actions.dart';
 import 'play_row.dart';
+import 'motion.dart';
 
 /// The round button beside Play that keeps a playlist or a folder on the phone, as Spotify's does: off (an arrow), coming
 /// (a ring that fills by the songs on the phone), or all there (an arrow on a disc of the accent colour). Switched on, the
@@ -149,6 +150,7 @@ class _OfflineButtonState extends State<OfflineButton> {
     if (n > 0) {
       remove = await showDialog<bool>(
         context: context,
+        animationStyle: Motion.dialog(context),
         builder: (context) => AlertDialog(
           title: Text(folder == null ? S.stopOfflinePlaylist : S.stopOfflineFolder),
           content: Text(S.stopOfflineBody(n)),

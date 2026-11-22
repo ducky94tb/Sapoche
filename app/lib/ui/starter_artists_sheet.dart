@@ -9,12 +9,14 @@ import '../strings.dart';
 import '../theme/theme.dart';
 import 'scope.dart';
 import 'widgets/artwork.dart';
+import 'widgets/motion.dart';
 
 /// "Pick a few artists you like": for a new person, whose taste is not known yet. Each artist picked puts their best
 /// known song among the starter songs of the taste, and the suggestions are made again from them.
 Future<void> showStarterArtists(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
+    sheetAnimationStyle: Motion.sheet(context),
     useRootNavigator: true,
     isScrollControlled: true,
     useSafeArea: true,

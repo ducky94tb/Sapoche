@@ -11,6 +11,7 @@ import '../scope.dart';
 import '../widgets/low_rate_timer.dart';
 import 'look.dart';
 import 'parts.dart';
+import '../widgets/motion.dart';
 
 /// One small line of the lyrics on the face of the player: the line being sung, moving on as the song does. A line that is
 /// longer than the place runs sideways, in the time of the line, until all of it has been shown (never cut with dots). Three dots stand for a rest between lines and for the lyrics still on
@@ -119,8 +120,8 @@ class _LyricsTickerState extends State<LyricsTicker> {
       final active = done && lyrics != null
           ? lyrics.lineAt(_c.positionMs() + _leadMs)
           : null;
-      return AnimatedSize(
-        duration: const Duration(milliseconds: 200),
+      return MotionSize(
+        milliseconds: 200,
         alignment: Alignment.topCenter,
         child: show
             // A line that runs sideways repaints every frame: in a layer of its own, so that the cover and the colours
@@ -184,7 +185,7 @@ class _Lines extends StatelessWidget {
         ? 0
         : positionMs - lines[active!].ms;
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 250),
+      duration: Motion.of(context, 250),
       layoutBuilder: (current, previous) => Stack(
         alignment: Alignment.centerLeft,
         children: [...previous, ?current],

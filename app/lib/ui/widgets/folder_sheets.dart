@@ -6,6 +6,7 @@ import '../../theme/theme.dart';
 import '../scope.dart';
 import 'playlist_cover.dart';
 import 'text_dialog.dart';
+import 'motion.dart';
 
 /// What a person can do to a folder that is not a tap on it, as a list in a sheet; [ListView] keeps a long one reachable.
 Future<T?> _sheet<T>(
@@ -14,6 +15,7 @@ Future<T?> _sheet<T>(
 ) => showModalBottomSheet<T>(
   useRootNavigator: true,
   context: context,
+  sheetAnimationStyle: Motion.sheet(context),
   isScrollControlled: true,
   builder: builder,
 );

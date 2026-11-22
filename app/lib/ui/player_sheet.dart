@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 
 import 'home_shell.dart';
 import 'now_playing_page.dart';
@@ -20,10 +21,13 @@ import 'widgets/player_bar.dart';
 /// travels from the mini player to the top of the screen, and a finger that holds the sheet stays
 /// level with it all the way.
 class PlayerSheetController extends ChangeNotifier {
-  PlayerSheetController(TickerProvider vsync)
+  PlayerSheetController(TickerProvider vsync, {this.isStill})
     : position = AnimationController(vsync: vsync);
 
   final AnimationController position;
+
+  /// Asks whether the sheet should jump to where it is going instead of gliding (Minimal effects, reduce motion).
+  final bool Function()? isStill;
 
   /// Keys the cover flight measures: the mini player's cover, the full player's cover and page.
   final miniCover = GlobalKey();
@@ -59,6 +63,10 @@ class PlayerSheetController extends ChangeNotifier {
   bool _open = false;
   bool _disposed = false;
 
+  /// Which jump to the end is the latest: a finger that takes hold, or another jump, cancels the one waiting for the
+  /// end of the frame.
+  int _jump = 0;
+
   static const _openMs = 420;
   static const _closeMs = 380;
   static const _fingerMs = 380;
@@ -66,14 +74,18 @@ class PlayerSheetController extends ChangeNotifier {
 
   /// Where the mini player's capsule is on the screen; a guess while it is not on it.
   Rect miniRect(Size screen) {
-    RenderObject? box;
     try {
-      box = miniBar.currentContext?.findRenderObject();
+      final box = miniBar.currentContext?.findRenderObject();
+      if (box is RenderBox && box.attached && box.hasSize) {
+        return box.localToGlobal(Offset.zero) & box.size;
+      }
     } on FlutterError {
       // The capsule is on its way to another place in the tree, as when a phone is turned while the player is open
-    }
-    if (box is RenderBox && box.attached && box.hasSize) {
-      return box.localToGlobal(Offset.zero) & box.size;
+    } on AssertionError {
+      // A box above it is made anew in this very frame and not laid out yet (a build without assertions fails the
+      // same way, in a null check): the guess below will do for a frame
+    } on TypeError {
+      // The same, in a build without assertions
     }
     return Rect.fromLTWH(12, screen.height * 0.85, screen.width - 24, 64);
   }
@@ -143,6 +155,7 @@ class PlayerSheetController extends ChangeNotifier {
 
   /// The finger has taken hold; the sheet stops wherever it was.
   void beginDrag() {
+    _jump++;
     position.stop();
     linear = true;
     _setOpen(true);
@@ -182,6 +195,20 @@ class PlayerSheetController extends ChangeNotifier {
 
   void _animate(double target, {required int ms, required bool byFinger}) {
     if (_disposed) return;
+    final jump = ++_jump;
+    if (isStill?.call() ?? false) {
+      linear = false;
+      // At the end of this frame, not in it: the screen is being built, and what the sheet grows out of (the mini
+      // player) may not be laid out yet
+      SchedulerBinding.instance
+        ..addPostFrameCallback((_) {
+          if (_disposed || jump != _jump) return;
+          position.value = target;
+          if (target == 0 && !_open) panel.value = NowPlayingPanel.cover;
+        })
+        ..scheduleFrame();
+      return;
+    }
     linear = byFinger;
     final distance = (position.value - target).abs();
     final duration = Duration(
@@ -260,7 +287,9 @@ class PlayerSheetLayer extends StatelessWidget {
         // The sheet's top edge, on the screen: the mini player's at first, then the screen's
         final top = (1 - open) * mini.top;
         // What shows of it, in the sheet's own space: the mini player's capsule grows into the whole page
-        final grown = Curves.easeOut.transform((open / _settled).clamp(0.0, 1.0));
+        final grown = Curves.easeOut.transform(
+          (open / _settled).clamp(0.0, 1.0),
+        );
         final shape = RRect.fromLTRBR(
           mini.left * (1 - grown),
           0,
@@ -303,7 +332,9 @@ class PlayerSheetLayer extends StatelessWidget {
                           final layout => MiniPlayerCapsule(
                             controller: AppScope.roomOf(context),
                             ghost: true,
-                            folded: layout == ShellLayout.bars ? folded.value : 0,
+                            folded: layout == ShellLayout.bars
+                                ? folded.value
+                                : 0,
                           ),
                         },
                       ),
@@ -409,10 +440,8 @@ class CoverSlot extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller.position,
       child: child,
-      builder: (context, child) => Opacity(
-        opacity: controller.inMotion && flies ? 0 : 1,
-        child: child,
-      ),
+      builder: (context, child) =>
+          Opacity(opacity: controller.inMotion && flies ? 0 : 1, child: child),
     );
   }
 }

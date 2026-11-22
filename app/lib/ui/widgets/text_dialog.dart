@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../strings.dart';
+import 'motion.dart';
 
 /// Asks for one line of text. Gives back what was typed, trimmed, or null when the person cancels.
 Future<String?> showTextDialog(
@@ -14,6 +15,7 @@ Future<String?> showTextDialog(
   bool digits = false,
 }) => showDialog<String>(
   context: context,
+  animationStyle: Motion.dialog(context),
   builder: (_) => _TextDialog(
     title: title,
     hint: hint,

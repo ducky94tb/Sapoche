@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'data/calm.dart';
 import 'strings.dart';
 import 'theme/palette.dart';
 import 'theme/theme.dart';
 import 'ui/home_shell.dart';
 import 'ui/scope.dart';
 import 'ui/widgets/ambient_backdrop.dart';
+import 'ui/widgets/motion.dart';
 import 'ui/widgets/pip_host.dart';
 import 'ui/widgets/settle_on_growth_physics.dart';
 import 'ui/widgets/toast_layout.dart';
@@ -23,10 +25,11 @@ class SapocheApp extends StatefulWidget {
   State<SapocheApp> createState() => _SapocheAppState();
 }
 
-class _SapocheAppState extends State<SapocheApp> {
+class _SapocheAppState extends State<SapocheApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // The first screen is built before Flutter has resolved the locale, so the language is settled here too
     S.current = _languageFor(
       widget.model.settings.language,
@@ -34,6 +37,15 @@ class _SapocheAppState extends State<SapocheApp> {
     );
     widget.model.room.setLanguage(S.current);
   }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAccessibilityFeatures() => setState(() {});
 
   /// The person's choice, or else the phone's language when the app has it, or English.
   static String _languageFor(String? chosen, ui.Locale? phone) {
@@ -66,19 +78,33 @@ class _SapocheAppState extends State<SapocheApp> {
     return AppScope(
       model: model,
       child: ListenableBuilder(
-        listenable: model.settings,
+        listenable: Listenable.merge([model.settings, Calm.level]),
         builder: (context, _) {
           final chosen = model.settings.language;
+          final effects = Calm.level.value;
+          final instant =
+              effects == EffectsLevel.minimal ||
+              WidgetsBinding
+                  .instance
+                  .platformDispatcher
+                  .accessibilityFeatures
+                  .disableAnimations;
           return MaterialApp(
             title: S.appName,
             debugShowCheckedModeBanner: false,
-            scrollBehavior: const _ScrollBehavior(),
+            scrollBehavior: _ScrollBehavior(
+              minimal: effects == EffectsLevel.minimal,
+            ),
             themeMode: model.settings.themeMode,
             theme: buildTheme(
               Palette.forAccent(model.settings.accent, Brightness.light),
+              effects: effects,
+              instantTransitions: instant,
             ),
             darkTheme: buildTheme(
               Palette.forAccent(model.settings.accent, Brightness.dark),
+              effects: effects,
+              instantTransitions: instant,
             ),
             // Null: the phone decides (and a change in the phone's settings arrives here too)
             locale: chosen == null ? null : ui.Locale(chosen),
@@ -102,7 +128,9 @@ class _SapocheAppState extends State<SapocheApp> {
 }
 
 class _ScrollBehavior extends MaterialScrollBehavior {
-  const _ScrollBehavior();
+  const _ScrollBehavior({this.minimal = false});
+
+  final bool minimal;
 
   // A mouse (DeX, a computer) drags a row of covers the way a finger does
   @override
@@ -116,6 +144,14 @@ class _ScrollBehavior extends MaterialScrollBehavior {
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) =>
       SettleOnGrowthPhysics(parent: super.getScrollPhysics(context));
+
+  // Minimal skips Android's stretch overscroll shader to save full-screen raster work on weak GPUs
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => minimal ? child : super.buildOverscrollIndicator(context, child, details);
 }
 
 /// Shows the home screen once the first state arrived, and paints the colours of the song that is playing behind it.
@@ -144,7 +180,7 @@ class _Root extends StatelessWidget {
                 ? const HomeShell(key: ValueKey('home'))
                 : const SizedBox.expand(key: ValueKey('splash'));
             return AnimatedSwitcher(
-              duration: const Duration(milliseconds: 350),
+              duration: Motion.of(context, 350),
               switchInCurve: Curves.easeOut,
               child: page,
             );

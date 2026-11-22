@@ -132,13 +132,13 @@ class _VideoViewState extends State<VideoView> with WidgetsBindingObserver {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [
+                boxShadow: context.shadowsOf([
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.28),
                     blurRadius: 30,
                     offset: const Offset(0, 14),
                   ),
-                ],
+                ]),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),

@@ -80,8 +80,12 @@ object UiJson {
             .toString()
     }
 
-    /** The phone is warm or saving power ([on]): the screen should move less. [weak]: it has little memory. */
-    fun calm(on: Boolean, weak: Boolean = false): String = JSONObject().put("type", "calm").put("on", on).put("weak", weak).toString()
+    /**
+     * The phone is warm or saving power ([on]): the screen should move less. [weak]: it has little memory.
+     * [veryWeak]: and it has no Vulkan 1.1, so it is drawn with Skia on a weak GPU.
+     */
+    fun calm(on: Boolean, weak: Boolean = false, veryWeak: Boolean = false): String =
+        JSONObject().put("type", "calm").put("on", on).put("weak", weak).put("veryWeak", veryWeak).toString()
 
     /** The volume of the music, 0 to 1. */
     fun volume(level: Float): String = JSONObject().put("type", "volume").put("level", level.toDouble()).toString()

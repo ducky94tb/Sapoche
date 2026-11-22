@@ -16,6 +16,11 @@ abstract final class Motion {
   static bool reduced(BuildContext context) =>
       MediaQuery.disableAnimationsOf(context) || Calm.on.value;
 
+  /// Whether page, player and bar transitions should jump straight to their end: the system's "reduce motion" setting
+  /// or the Minimal effects level ([Calm.minimal]).
+  static bool still(BuildContext context) =>
+      MediaQuery.disableAnimationsOf(context) || Calm.minimal.value;
+
   /// [ms] milliseconds, or nothing while [reduced].
   static Duration of(BuildContext context, int ms) =>
       reduced(context) ? Duration.zero : Duration(milliseconds: ms);
@@ -28,6 +33,34 @@ abstract final class Motion {
           reverseDuration: Duration(milliseconds: 220),
           curve: curve,
           reverseCurve: Curves.easeInCubic,
+        );
+
+  /// How a dialog or popup menu opens and closes: none while [reduced], Material's default otherwise.
+  static AnimationStyle? dialog(BuildContext context) =>
+      reduced(context) ? AnimationStyle.noAnimation : null;
+}
+
+/// An [AnimatedSize] that is left out while motion is [Motion.reduced]: the size changes at once. Not an
+/// [AnimatedSize] with no duration, which starts its animation in the middle of layout and fails there.
+class MotionSize extends StatelessWidget {
+  const MotionSize({
+    super.key,
+    required this.milliseconds,
+    required this.alignment,
+    required this.child,
+  });
+
+  final int milliseconds;
+  final AlignmentGeometry alignment;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Motion.reduced(context)
+      ? child
+      : AnimatedSize(
+          duration: Duration(milliseconds: milliseconds),
+          alignment: alignment,
+          child: child,
         );
 }
 

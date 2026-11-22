@@ -65,6 +65,8 @@ void main() {
     backend.emit(
       const OutputEvent(AudioOutput(kind: 'bluetooth', name: 'AirPods Pro')),
     );
+    // One turn to deliver the event, one frame to draw it: no animation keeps frames coming now
+    await tester.pump();
     await tester.pump();
     expect(find.byTooltip('Play on · AirPods Pro'), findsOneWidget);
     await tester.tap(find.byTooltip('Play on · AirPods Pro'));
@@ -88,6 +90,7 @@ void main() {
     expect(double.parse(set.split(' ').last), closeTo(0.5, 0.05));
     // The buttons of the phone move the bar
     backend.emit(const VolumeEvent(0.25));
+    await tester.pump();
     await tester.pump();
     final fill = tester.widget<FractionallySizedBox>(
       find.descendant(of: bar, matching: find.byType(FractionallySizedBox)),

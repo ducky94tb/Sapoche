@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/update_controller.dart';
 import '../strings.dart';
+import 'widgets/motion.dart';
 
 /// Fetches the version on offer, asking first when it would use mobile data.
 Future<void> downloadUpdate(
@@ -12,6 +13,7 @@ Future<void> downloadUpdate(
   if (!context.mounted) return;
   final agreed = await showDialog<bool>(
     context: context,
+    animationStyle: Motion.dialog(context),
     builder: (context) => AlertDialog(
       title: Text(S.useMobileData),
       content: Text(S.useMobileDataBody),
@@ -37,6 +39,7 @@ Future<void> installUpdate(
 ) async {
   final agreed = await showDialog<bool>(
     context: context,
+    animationStyle: Motion.dialog(context),
     builder: (context) => AlertDialog(
       title: Text(S.updateRestartTitle),
       content: Text(S.updateRestartBody),
@@ -57,6 +60,7 @@ Future<void> installUpdate(
   // Android has not yet allowed this app to install: say so, and take the person to the page for it
   final open = await showDialog<bool>(
     context: context,
+    animationStyle: Motion.dialog(context),
     builder: (context) => AlertDialog(
       title: Text(S.updatePermissionTitle),
       content: Text(S.updatePermissionBody),

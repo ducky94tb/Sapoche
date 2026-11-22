@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/palette.dart';
 import '../../theme/theme.dart';
 import '../cover_glow.dart';
+import 'motion.dart';
 
 /// The ground of the player in the style of cards: one colour, that of the top of the picture the classic player and
 /// the full cover are drawn on ([CoverGlow.ground]), fading down to near black (to a pale tint of itself in the light
@@ -52,7 +53,7 @@ class _FlatBackdropState extends State<FlatBackdrop> {
     final floor = light ? Palette.light.base : FlatBackdrop.floor;
     return TweenAnimationBuilder<Color?>(
       tween: ColorTween(end: _tone ?? floor),
-      duration: const Duration(milliseconds: 600),
+      duration: Motion.of(context, 600),
       builder: (context, tone, _) {
         final top = tone ?? floor;
         // In the light theme it does not fade to plain white: the lower part keeps a good deal of the colour

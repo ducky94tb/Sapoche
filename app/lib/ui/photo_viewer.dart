@@ -16,6 +16,7 @@ Future<void> showPhotoViewer(
   int initial = 0,
 }) => Navigator.of(context, rootNavigator: true).push(
   growRoute<void>(
+    context: context,
     from: from,
     builder: (_) => PhotoViewer(controller: controller, slots: slots, initial: initial),
   ),

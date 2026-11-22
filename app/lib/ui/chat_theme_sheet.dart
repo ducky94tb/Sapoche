@@ -12,11 +12,13 @@ import '../data/photo_picker.dart';
 import 'chat_look.dart';
 import 'chat_wallpaper_editor.dart';
 import 'scope.dart';
+import 'widgets/motion.dart';
 
 /// The looks the chat of the room can have. One touch on a look is the choice: the room has it at once, for everyone.
 Future<void> showChatThemeSheet(BuildContext context, RoomController room) =>
     showModalBottomSheet<void>(
       context: context,
+      sheetAnimationStyle: Motion.sheet(context),
       useRootNavigator: true,
       isScrollControlled: true,
       builder: (_) => AppScope(

@@ -10,12 +10,14 @@ import 'scope.dart';
 import 'widgets/artwork.dart';
 import 'widgets/avatar_zoom.dart';
 import 'widgets/avatars.dart';
+import 'widgets/motion.dart';
 
 /// Who someone in the room is: their picture, big and to be zoomed, and what they are doing.
 Future<void> showMemberProfile(BuildContext context, String memberId) {
   final model = AppScope.of(context);
   return showModalBottomSheet<void>(
     context: context,
+    sheetAnimationStyle: Motion.sheet(context),
     useRootNavigator: true,
     isScrollControlled: true,
     builder: (_) =>

@@ -139,6 +139,14 @@ class _AlbumImageState extends State<AlbumImage> {
     });
   }
 
+  /// The small picture shown while the real one loads, blurred; not blurred at the minimum of effects.
+  Widget _softened(BuildContext context, Widget picture) => context.flat
+      ? picture
+      : ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5, tileMode: TileMode.clamp),
+          child: picture,
+        );
+
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
@@ -148,9 +156,9 @@ class _AlbumImageState extends State<AlbumImage> {
       children: [
         if (widget.backdrop) ColoredBox(color: p.surface),
         if (!_ready && _thumb != null)
-          ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5, tileMode: TileMode.clamp),
-            child: Image.memory(
+          _softened(
+            context,
+            Image.memory(
               _thumb!,
               fit: widget.fit,
               filterQuality: FilterQuality.low,

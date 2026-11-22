@@ -6,6 +6,7 @@ import '../../data/models.dart';
 import '../../strings.dart';
 import '../../theme/theme.dart';
 import '../scope.dart';
+import 'motion.dart';
 
 /// Soft pastel tints that sit well on a pink background, picked per person from their name.
 const _tints = [
@@ -222,7 +223,7 @@ class _PopIn extends StatelessWidget {
   @override
   Widget build(BuildContext context) => TweenAnimationBuilder<double>(
     tween: Tween(begin: 0.5, end: 1),
-    duration: const Duration(milliseconds: 450),
+    duration: Motion.of(context, 450),
     curve: Curves.easeOutBack,
     builder: (context, scale, child) =>
         Transform.scale(scale: scale, child: child),

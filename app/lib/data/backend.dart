@@ -106,11 +106,13 @@ class ReactionEvent extends BackendEvent {
 }
 
 /// The phone became warm or went into battery saver ([on]), or stopped being so. [weak]: the phone has little memory,
-/// which the native side says along with this (Android; a platform that does not leaves it false).
+/// which the native side says along with this (Android; a platform that does not leaves it false). [veryWeak]: and no
+/// Vulkan 1.1 either, so it draws with Skia on a weak GPU; such a phone starts with the Minimal effects.
 class CalmEvent extends BackendEvent {
-  const CalmEvent(this.on, {this.weak = false});
+  const CalmEvent(this.on, {this.weak = false, this.veryWeak = false});
   final bool on;
   final bool weak;
+  final bool veryWeak;
 }
 
 /// The sound is now played to another place: headphones, a Bluetooth speaker, the phone itself.
@@ -619,7 +621,11 @@ class NativeBackend implements Backend {
         ),
       ),
       'update' => UpdateEvent(UpdateInfo.fromJson(json)),
-      'calm' => CalmEvent(json['on'] as bool, weak: json['weak'] == true),
+      'calm' => CalmEvent(
+        json['on'] as bool,
+        weak: json['weak'] == true,
+        veryWeak: json['veryWeak'] == true,
+      ),
       'pip' => PipEvent(json['on'] as bool),
       'output' => OutputEvent(AudioOutput.fromJson(json)),
       'volume' => VolumeEvent((json['level'] as num).toDouble()),

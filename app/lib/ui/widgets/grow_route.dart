@@ -1,16 +1,25 @@
 import 'package:flutter/material.dart';
 
+import 'motion.dart';
+
 /// A full-screen page that grows out of [from], the place on screen of what was touched, and shrinks back into it. A
-/// Hero cannot do this from the chat, which is a sheet and not a page. Without [from], or with the system's animations
-/// off, the page just fades.
-Route<T> growRoute<T>({required Rect? from, required WidgetBuilder builder}) {
+/// Hero cannot do this from the chat, which is a sheet and not a page. Without [from] it fades; when [Motion.still]
+/// is on (Minimal effects or system "reduce motion") it opens and closes at once.
+Route<T> growRoute<T>({
+  required BuildContext context,
+  required Rect? from,
+  required WidgetBuilder builder,
+}) {
+  final still = Motion.still(context);
   return PageRouteBuilder<T>(
-    transitionDuration: const Duration(milliseconds: 300),
-    reverseTransitionDuration: const Duration(milliseconds: 240),
+    transitionDuration: still ? Duration.zero : const Duration(milliseconds: 300),
+    reverseTransitionDuration:
+        still ? Duration.zero : const Duration(milliseconds: 240),
     pageBuilder: (context, _, _) => builder(context),
     transitionsBuilder: (context, animation, _, child) {
+      if (still || Motion.still(context)) return child;
       final start = from;
-      if (start == null || MediaQuery.disableAnimationsOf(context)) {
+      if (start == null) {
         return FadeTransition(opacity: animation, child: child);
       }
       final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);

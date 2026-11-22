@@ -10,6 +10,7 @@ import 'glass.dart';
 import 'low_rate_timer.dart';
 import 'marquee_text.dart';
 import 'transport.dart';
+import 'motion.dart';
 
 /// Floating capsule above the tab bar. Tap it, or drag it up, to open the full player.
 class MiniPlayer extends StatelessWidget {
@@ -39,7 +40,7 @@ class MiniPlayer extends StatelessWidget {
       builder: (context, _) {
         final current = controller.snapshot.current;
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 280),
+          duration: Motion.of(context, 280),
           switchInCurve: Curves.easeOutCubic,
           // A new list empties the queue and fills it again at once: the capsule that was leaving is dropped as the
           // new one comes, as the two cannot share the keys the opening player finds the capsule and its cover by

@@ -131,7 +131,7 @@ class _Backdrop extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           ColoredBox(color: tint),
-          if (url != null)
+          if (url != null && !context.flat)
             ClipRect(
               child: Transform.scale(
                 scale: 1.6,
@@ -288,9 +288,9 @@ class _RecordState extends State<_Record> with SingleTickerProviderStateMixin {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
-                boxShadow: [
+                boxShadow: context.shadowsOf([
                   BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(2, 3)),
-                ],
+                ]),
               ),
               child: Artwork(url: widget.art, size: sleeve, radius: 8),
             ),

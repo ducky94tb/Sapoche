@@ -7,6 +7,7 @@ import '../strings.dart';
 import '../theme/theme.dart';
 import 'update_actions.dart';
 import 'widgets/release_notes_text.dart';
+import 'widgets/motion.dart';
 
 /// Tells the person a newer version is there and lets them take it now or later. It never blocks: it closes with a
 /// swipe, a tap outside or "Later".
@@ -14,6 +15,7 @@ Future<void> showUpdateSheet(BuildContext context, UpdateController update) =>
     showModalBottomSheet<void>(
       useRootNavigator: true,
       context: context,
+      sheetAnimationStyle: Motion.sheet(context),
       isScrollControlled: true,
       builder: (_) => _UpdateSheet(update: update),
     );

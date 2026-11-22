@@ -4,6 +4,7 @@ import '../../data/room_controller.dart';
 import '../../strings.dart';
 import '../../theme/theme.dart';
 import 'touch_box.dart';
+import 'motion.dart';
 
 /// The volume of the device, between a quiet and a loud speaker, as in Apple Music. It follows the buttons of the phone
 /// and grows under the finger like the seek bar above it.
@@ -56,7 +57,7 @@ class _VolumeBarState extends State<VolumeBar> {
                       builder: (context, level, _) =>
                           TweenAnimationBuilder<double>(
                             tween: Tween(end: _dragging ? 10 : 5),
-                            duration: const Duration(milliseconds: 160),
+                            duration: Motion.of(context, 160),
                             curve: Curves.easeOut,
                             builder: (context, height, _) => ClipRRect(
                               borderRadius: BorderRadius.circular(height),

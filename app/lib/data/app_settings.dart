@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'calm.dart';
 import 'shelf_stats.dart';
 
+export 'calm.dart' show EffectsLevel;
+
 /// How the full player is drawn: the one Sapoche began with, or one laid out like the players of two other music apps.
 /// The app names them without a brand (`S.playerStyleCards`, `S.playerStyleFullCover`).
 enum PlayerStyle {
@@ -26,7 +28,7 @@ class AppSettings extends ChangeNotifier {
       _language = _prefs.getString(_languageKey),
       _avatar = _readAvatar(_prefs),
       shelves = ShelfStats(_prefs, random: shelfRandom) {
-    Calm.chosen = _prefs.getBool(_lightEffectsKey);
+    Calm.chosen = _readEffects(_prefs);
   }
 
   final SharedPreferences _prefs;
@@ -91,15 +93,17 @@ class AppSettings extends ChangeNotifier {
   void updateSheetWasShown(String version, DateTime at) =>
       _prefs.setInt('$_updateSheetKey$version', at.millisecondsSinceEpoch);
 
-  /// Whether the person turned "Light effects" on or off; null while they have not chosen, when a weak phone has it on
-  /// and the others off ([Calm.light] is what is in force).
-  bool? get lightEffects => _prefs.getBool(_lightEffectsKey);
+  /// Which effects level the person picked in Settings; null while they have not chosen, when the phone's own
+  /// capability decides ([Calm.level] is what is in force).
+  EffectsLevel? get effects => _readEffects(_prefs);
 
-  set lightEffects(bool? value) {
+  set effects(EffectsLevel? value) {
     if (value == null) {
+      _prefs.remove(_effectsKey);
       _prefs.remove(_lightEffectsKey);
     } else {
-      _prefs.setBool(_lightEffectsKey, value);
+      _prefs.setString(_effectsKey, value.name);
+      _prefs.remove(_lightEffectsKey);
     }
     Calm.chosen = value;
     notifyListeners();
@@ -160,6 +164,7 @@ class AppSettings extends ChangeNotifier {
   static const _noticeOfferedKey = 'noticeOfferedAt';
   static const _key = 'theme_mode';
   static const _languageKey = 'language';
+  static const _effectsKey = 'effects';
   static const _lightEffectsKey = 'light_effects';
   static const _accentKey = 'accent';
   static const _playerStyleKey = 'player_style';
@@ -167,4 +172,12 @@ class AppSettings extends ChangeNotifier {
 
   static ThemeMode _read(SharedPreferences prefs) =>
       ThemeMode.values.asNameMap()[prefs.getString(_key)] ?? ThemeMode.system;
+
+  static EffectsLevel? _readEffects(SharedPreferences prefs) {
+    final saved = EffectsLevel.values.asNameMap()[prefs.getString(_effectsKey)];
+    if (saved != null) return saved;
+    final legacy = prefs.getBool(_lightEffectsKey);
+    if (legacy == null) return null;
+    return legacy ? EffectsLevel.light : EffectsLevel.full;
+  }
 }

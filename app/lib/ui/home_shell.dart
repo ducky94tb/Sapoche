@@ -217,7 +217,10 @@ class _HomeShellState extends State<HomeShell>
 
   /// The last tab of the capsule that was open, where its lens waits while Search is.
   int _browsing = 0;
-  late final _sheet = PlayerSheetController(this);
+  late final _sheet = PlayerSheetController(
+    this,
+    isStill: () => mounted && Motion.still(context),
+  );
 
   /// 0 with the bars open, 1 with them folded away while a page is scrolled down, as Apple Music does: the tabs shrink
   /// to the one that is open and the mini player moves down between it and Search.
@@ -614,6 +617,7 @@ class _HomeShellState extends State<HomeShell>
     if (!room.snapshot.inRoom) return showRoomSheet(context, invitedCode: code);
     final confirmed = await showDialog<bool>(
       context: context,
+      animationStyle: Motion.dialog(context),
       builder: (context) => AlertDialog(
         title: Text(S.switchRoom),
         content: Text(S.inviteSwitch(code)),
@@ -712,7 +716,11 @@ class _HomeShellState extends State<HomeShell>
   void _fold(bool fold) {
     if (fold == _isFolded) return;
     _isFolded = fold;
-    _folded.animateTo(fold ? 1 : 0);
+    if (Motion.still(context)) {
+      _folded.value = fold ? 1 : 0;
+    } else {
+      _folded.animateTo(fold ? 1 : 0);
+    }
   }
 
   /// Scrolling a page down folds the bars away, and they stay folded, however the page is scrolled back, until it is
@@ -1754,13 +1762,13 @@ class _Tabs extends StatelessWidget {
                       // Slides to the tab that is opened; gone while Search is open
                       AnimatedOpacity(
                         opacity: index == 1 ? 0 : 1,
-                        duration: const Duration(milliseconds: 200),
+                        duration: Motion.of(context, 200),
                         child: AnimatedAlign(
                           alignment: Alignment(
                             2 * slot / (items.length - 1) - 1,
                             0,
                           ),
-                          duration: const Duration(milliseconds: 320),
+                          duration: Motion.of(context, 320),
                           curve: Curves.easeOutCubic,
                           child: FractionallySizedBox(
                             widthFactor: 1 / items.length,
@@ -1790,7 +1798,7 @@ class _Tabs extends StatelessWidget {
                                         ? p.primary
                                         : p.textSecondary,
                                   ),
-                                  duration: const Duration(milliseconds: 200),
+                                  duration: Motion.of(context, 200),
                                   builder: (context, color, _) {
                                     final glyph = Icon(
                                       icon,
@@ -1805,9 +1813,7 @@ class _Tabs extends StatelessWidget {
                                             ? p.link
                                             : p.textSecondary,
                                       ),
-                                      duration: const Duration(
-                                        milliseconds: 200,
-                                      ),
+                                      duration: Motion.of(context, 200),
                                       builder: (context, color, _) => Text(
                                         label,
                                         style: Theme.of(context)

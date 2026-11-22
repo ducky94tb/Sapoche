@@ -24,6 +24,7 @@ import 'widgets/player_backdrop.dart';
 import 'widgets/queue_actions.dart';
 import 'widgets/track_menu.dart';
 import 'widgets/track_tile.dart';
+import 'widgets/motion.dart';
 
 /// Opens an album or a playlist in the tab that is showing, with a way back. [title] and [thumb] are what the
 /// person was looking at, shown until the page itself arrives.
@@ -169,13 +170,13 @@ class CollectionCover extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [
+          boxShadow: context.shadowsOf([
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.2),
               blurRadius: 28,
               offset: const Offset(0, 14),
             ),
-          ],
+          ]),
         ),
         child:
             picture?.call(size) ??
@@ -603,8 +604,8 @@ class _ContentState extends State<_Content> {
           : const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: GestureDetector(
         onTap: () => setState(() => _open = !_open),
-        child: AnimatedSize(
-          duration: const Duration(milliseconds: 220),
+        child: MotionSize(
+          milliseconds: 220,
           alignment: wide ? Alignment.topLeft : Alignment.topCenter,
           child: Text(
             _page.description!,

@@ -7,12 +7,14 @@ import '../data/setup_link.dart';
 import '../strings.dart';
 import '../theme/theme.dart';
 import 'widgets/qr_code_view.dart';
+import 'widgets/motion.dart';
 
 /// Shows this phone's server and key as a code another phone can scan, so that a phone without them (an iPhone) is set
 /// up without typing the key.
 Future<void> showSetupLinkDialog(BuildContext context, RoomController room) {
   return showDialog<void>(
     context: context,
+    animationStyle: Motion.dialog(context),
     builder: (context) => AlertDialog(
       title: Text(kIsWeb ? S.setupAnotherWeb : S.setupAnother),
       content: FutureBuilder<String?>(
@@ -74,6 +76,7 @@ Future<void> askToUseSetup(
 ) async {
   final agreed = await showDialog<bool>(
     context: context,
+    animationStyle: Motion.dialog(context),
     builder: (context) => AlertDialog(
       title: Text(S.setupUseTitle),
       content: Text(S.setupUseBody(link.host)),

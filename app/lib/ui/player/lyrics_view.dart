@@ -10,6 +10,7 @@ import '../scope.dart';
 import '../widgets/low_rate_timer.dart';
 import 'look.dart';
 import 'player_message.dart';
+import '../widgets/motion.dart';
 
 /// The words of the song. With times they run along with the music like in Apple Music: the line being sung is
 /// bright and stays where the eye is, and a touch on a line jumps the song there.
@@ -209,7 +210,7 @@ class _SyncedLyricsState extends State<_SyncedLyrics> {
                   padding: const EdgeInsets.symmetric(vertical: 9),
                   child: AnimatedOpacity(
                     opacity: i == _active ? 1 : 0.55,
-                    duration: const Duration(milliseconds: 300),
+                    duration: Motion.of(context, 300),
                     child: lines[i].text.isEmpty
                         ? Icon(Icons.more_horiz_rounded, color: p.text)
                         : Text(lines[i].text, style: style),

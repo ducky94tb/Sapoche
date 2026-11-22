@@ -20,6 +20,7 @@ Future<void> showVideoPage(
   required Rect? from,
 }) => Navigator.of(context, rootNavigator: true).push(
   growRoute<void>(
+    context: context,
     from: from,
     builder: (_) => VideoPage(controller: controller, album: album),
   ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/app_settings.dart';
+import '../data/calm.dart';
 import '../data/models.dart';
 import '../data/room_controller.dart';
 import '../theme/palette.dart';
@@ -29,14 +30,23 @@ class NowPlayingPage extends StatelessWidget {
   final double bottomInset;
 
   /// Dark theme kept for the full-cover player while the app is in the light theme, built again only when the accent
-  /// changes so `_BodyState._onCoverTheme` keeps its cached copy.
+  /// or effects level changes so `_BodyState._onCoverTheme` keeps its cached copy.
   static Color? _darkAccent;
+  static EffectsLevel? _darkEffects;
   static ThemeData? _darkTheme;
 
-  static ThemeData _darkFor(Color? accent) {
-    if (_darkTheme != null && _darkAccent == accent) return _darkTheme!;
+  static ThemeData _darkFor(Color? accent, EffectsLevel effects) {
+    if (_darkTheme != null &&
+        _darkAccent == accent &&
+        _darkEffects == effects) {
+      return _darkTheme!;
+    }
     _darkAccent = accent;
-    return _darkTheme = buildTheme(Palette.forAccent(accent, Brightness.dark));
+    _darkEffects = effects;
+    return _darkTheme = buildTheme(
+      Palette.forAccent(accent, Brightness.dark),
+      effects: effects,
+    );
   }
 
   @override
@@ -44,7 +54,11 @@ class NowPlayingPage extends StatelessWidget {
     final settings = AppScope.of(context).settings;
     return ListenableBuilder(
       // The style has a notifier of its own (the accent, which the dark theme of the full cover is made in, is in the settings)
-      listenable: Listenable.merge([settings, settings.playerStyleListenable]),
+      listenable: Listenable.merge([
+        settings,
+        settings.playerStyleListenable,
+        Calm.level,
+      ]),
       builder: (context, _) {
         final style = settings.playerStyle;
         // Full cover always uses white text and controls on the deep colours of the cover, as Apple Music does: dark
@@ -60,7 +74,10 @@ class NowPlayingPage extends StatelessWidget {
           bottomInset: docked ? bottomInset : 0,
         );
         if (forceDark && !appDark) {
-          page = Theme(data: _darkFor(settings.accent), child: page);
+          page = Theme(
+            data: _darkFor(settings.accent, Calm.level.value),
+            child: page,
+          );
         }
         // Beside the pages the status bar is theirs
         if (docked) return page;
@@ -175,7 +192,7 @@ class _BodyState extends State<_Body> {
     if (!identical(base, _baseTheme)) {
       _baseTheme = base;
       _coverTheme = base.copyWith(
-        extensions: [SapocheTheme(context.palette.onCover)],
+        extensions: [SapocheTheme(context.palette.onCover, flat: context.flat)],
       );
     }
     return _coverTheme!;

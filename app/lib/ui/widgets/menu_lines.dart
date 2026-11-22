@@ -182,6 +182,7 @@ Future<String?> showPopup(
   return showMenu<String>(
     context: button,
     useRootNavigator: true,
+    popUpAnimationStyle: Motion.dialog(button),
     color: p.menu,
     surfaceTintColor: Colors.transparent,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

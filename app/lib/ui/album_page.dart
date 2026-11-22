@@ -21,6 +21,7 @@ Future<void> showAlbumPage(
   String? caption,
 }) => Navigator.of(context, rootNavigator: true).push(
   growRoute<void>(
+    context: context,
     from: from,
     builder: (_) => AlbumPage(controller: controller, slots: slots, sender: sender, when: when, caption: caption),
   ),

@@ -16,6 +16,7 @@ import '../widgets/queued_autoplay.dart';
 import '../widgets/track_tile.dart';
 import 'player_message.dart';
 import 'track_section.dart';
+import '../widgets/motion.dart';
 
 /// What plays after this song: the queue, which can be put in another order or thinned out, then what would
 /// play once it runs out, as Apple Music's Up Next does with its Autoplay.
@@ -326,7 +327,7 @@ class _ShuffleButtonState extends State<ShuffleButton> {
       on: on,
       icon: AnimatedRotation(
         turns: _turns.toDouble(),
-        duration: const Duration(milliseconds: 420),
+        duration: Motion.of(context, 420),
         curve: Curves.easeOutCubic,
         child: Icon(Icons.shuffle_rounded, color: color),
       ),

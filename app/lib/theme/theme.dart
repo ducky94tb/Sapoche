@@ -2,14 +2,19 @@ import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../data/calm.dart';
 import 'palette.dart';
 
 /// Palette and shapes for widgets that need more than Material's colour scheme offers.
 @immutable
 class SapocheTheme extends ThemeExtension<SapocheTheme> {
-  const SapocheTheme(this.palette);
+  const SapocheTheme(this.palette, {this.flat = false});
 
   final Palette palette;
+
+  /// Minimal effects: nothing blurred, no shadows, flat backgrounds. A widget that reads it is built again when the
+  /// level changes, because the theme is.
+  final bool flat;
 
   static const cardRadius = 14.0;
   static const artworkRadius = 10.0;
@@ -18,8 +23,8 @@ class SapocheTheme extends ThemeExtension<SapocheTheme> {
   static const groupRadius = 22.0;
 
   @override
-  SapocheTheme copyWith({Palette? palette}) =>
-      SapocheTheme(palette ?? this.palette);
+  SapocheTheme copyWith({Palette? palette, bool? flat}) =>
+      SapocheTheme(palette ?? this.palette, flat: flat ?? this.flat);
 
   @override
   SapocheTheme lerp(SapocheTheme? other, double t) =>
@@ -28,11 +33,22 @@ class SapocheTheme extends ThemeExtension<SapocheTheme> {
 
 extension SapocheThemeContext on BuildContext {
   Palette get palette => Theme.of(this).extension<SapocheTheme>()!.palette;
+
+  /// Whether the effects are at the minimum: no blur, no shadows, flat backgrounds.
+  bool get flat => Theme.of(this).extension<SapocheTheme>()!.flat;
+
+  /// [shadows], or none at the minimum: a soft shadow is a blur drawn under every frame that moves.
+  List<BoxShadow> shadowsOf(List<BoxShadow> shadows) =>
+      flat ? const [] : shadows;
 }
 
 const fontFamily = 'Inter';
 
-ThemeData buildTheme(Palette p) {
+ThemeData buildTheme(
+  Palette p, {
+  EffectsLevel effects = EffectsLevel.full,
+  bool instantTransitions = false,
+}) {
   final scheme = ColorScheme(
     brightness: p.brightness,
     primary: p.primary,
@@ -90,12 +106,16 @@ ThemeData buildTheme(Palette p) {
     textTheme: text,
     scaffoldBackgroundColor: Colors.transparent,
     canvasColor: p.base,
-    splashFactory: InkSparkle.splashFactory,
+    splashFactory: switch (effects) {
+      EffectsLevel.full => InkSparkle.splashFactory,
+      EffectsLevel.light => InkRipple.splashFactory,
+      EffectsLevel.minimal => NoSplash.splashFactory,
+    },
     // A mouse lights the row it is over, and a remote's or a keyboard's focus is clearly seen
     hoverColor: p.text.withValues(alpha: 0.06),
     focusColor: p.primary.withValues(alpha: 0.24),
     dividerColor: p.outlineSoft,
-    extensions: [SapocheTheme(p)],
+    extensions: [SapocheTheme(p, flat: effects == EffectsLevel.minimal)],
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
@@ -229,10 +249,40 @@ ThemeData buildTheme(Palette p) {
       color: p.primary,
       linearTrackColor: p.outline,
     ),
-    pageTransitionsTheme: const PageTransitionsTheme(
-      builders: {TargetPlatform.android: CupertinoPageTransitionsBuilder()},
-    ),
+    pageTransitionsTheme: instantTransitions
+        ? const PageTransitionsTheme(
+            builders: {
+              TargetPlatform.android: _InstantTransitionsBuilder(),
+              TargetPlatform.iOS: _InstantTransitionsBuilder(),
+              TargetPlatform.linux: _InstantTransitionsBuilder(),
+              TargetPlatform.macOS: _InstantTransitionsBuilder(),
+              TargetPlatform.windows: _InstantTransitionsBuilder(),
+              TargetPlatform.fuchsia: _InstantTransitionsBuilder(),
+            },
+          )
+        : const PageTransitionsTheme(
+            builders: {TargetPlatform.android: CupertinoPageTransitionsBuilder()},
+          ),
   );
+}
+
+class _InstantTransitionsBuilder extends PageTransitionsBuilder {
+  const _InstantTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration => Duration.zero;
+
+  @override
+  Duration get reverseTransitionDuration => Duration.zero;
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => child;
 }
 
 TextStyle _style(double size, FontWeight weight, double spacing, Color color) =>

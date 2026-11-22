@@ -10,6 +10,7 @@ import '../../data/room_controller.dart';
 import '../../strings.dart';
 import '../../theme/theme.dart';
 import 'touch_box.dart';
+import 'motion.dart';
 
 /// The quick reactions, one tap each, and the way to all the others: they fly up here at once and on the screens of
 /// the others.
@@ -87,6 +88,7 @@ void showReactionPicker(BuildContext context, RoomController controller) {
     useRootNavigator: true,
     useSafeArea: true,
     context: context,
+    sheetAnimationStyle: Motion.sheet(context),
     isScrollControlled: true,
     builder: (context) => _ReactionPicker(controller: controller),
   );
@@ -138,6 +140,7 @@ Future<Reaction?> pickReaction(BuildContext context) =>
       useRootNavigator: true,
       useSafeArea: true,
       context: context,
+      sheetAnimationStyle: Motion.sheet(context),
       isScrollControlled: true,
       builder: (context) => SafeArea(
         top: false,
