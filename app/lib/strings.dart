@@ -1187,8 +1187,9 @@ abstract final class S {
     'Trên iPhone chỉ bài phát từ tệp (đã tải hoặc đã lưu) đi qua bộ chỉnh âm; video thì không.',
   );
 
-  // ListenBrainz
-  static String get scrobbleTitle => 'ListenBrainz';
+  // Scrobble: ListenBrainz and Last.fm
+  static String get scrobbleTitle => 'Scrobble';
+  static String get scrobbleTitleListenBrainz => 'ListenBrainz';
   static String get scrobbleNotConnected => _t('Not connected', 'Chưa kết nối');
   static String scrobbleConnectedAs(String user) =>
       _t('Connected as $user', 'Đã kết nối: $user');
@@ -1221,6 +1222,45 @@ abstract final class S {
   static String get scrobbleNowPlayingHelp => _t(
     'The song that plays now shows on your ListenBrainz page a few seconds after it starts.',
     'Bài đang phát hiện trên trang ListenBrainz của bạn vài giây sau khi bắt đầu.',
+  );
+  static String get lastFmName => 'Last.fm';
+  static String get lastFmHelp => _t(
+    'Sends the songs you play here to your Last.fm account. You allow Sapoche on the Last.fm page; no password is typed here. Nothing is sent until you connect, and nothing about the room. The room server signs for the app and keeps nothing.',
+    'Gửi các bài bạn nghe trên máy này lên tài khoản Last.fm. Bạn cho phép Sapoche ngay trên trang Last.fm, không gõ mật khẩu ở đây. Chưa kết nối thì không gửi gì, và không có gì về phòng. Server của phòng ký thay app và không lưu gì.',
+  );
+  static String get lastFmConnect => _t('Connect Last.fm', 'Kết nối Last.fm');
+  static String get lastFmAllowed => _t('I have allowed it', 'Tôi đã cho phép');
+  static String get lastFmWaiting => _t(
+    'Allow Sapoche on the Last.fm page, then come back',
+    'Hãy cho phép Sapoche trên trang Last.fm rồi quay lại',
+  );
+  static String get lastFmNotAllowedYet => _t(
+    'Last.fm has not seen you allow it yet. Allow it on its page, then try again.',
+    'Chưa thấy bạn cho phép trên Last.fm. Hãy cho phép trên trang đó rồi thử lại.',
+  );
+  static String get lastFmCannotOpen => _t(
+    'Could not open the Last.fm page. Try again with a browser installed.',
+    'Không mở được trang Last.fm. Hãy thử lại khi máy có trình duyệt.',
+  );
+  static String get lastFmExpired => _t(
+    'That request has expired. Connect again.',
+    'Yêu cầu đã hết hạn. Hãy kết nối lại.',
+  );
+  static String get lastFmUnavailable => _t(
+    'Last.fm is not set up on this server.',
+    'Server này chưa bật Last.fm.',
+  );
+  static String get lastFmOffline => _t(
+    'Could not reach Last.fm. Check the connection and try again.',
+    'Không nối được tới Last.fm. Hãy kiểm tra kết nối rồi thử lại.',
+  );
+  static String get lastFmReconnect => _t(
+    'Last.fm no longer accepts this connection. Connect again to go on.',
+    'Last.fm không còn nhận kết nối này. Hãy kết nối lại để tiếp tục.',
+  );
+  static String get lastFmNowPlayingHelp => _t(
+    'The song that plays now shows on your Last.fm page a few seconds after it starts.',
+    'Bài đang phát hiện trên trang Last.fm của bạn vài giây sau khi bắt đầu.',
   );
   static String get scrobbleDisconnect => _t('Disconnect', 'Ngắt kết nối');
   static String scrobbleDisconnectQuestion(int pending) => _t(

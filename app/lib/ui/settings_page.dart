@@ -892,7 +892,10 @@ class _SettingsPageState extends State<SettingsPage> {
   ];
 
   static List<Widget> _scrobble(BuildContext context, AppModel model) => [
-    _ScrobbleGroup(room: model.room),
+    _ScrobbleGroup(room: model.room, service: ScrobbleServices.listenBrainz),
+    // Last.fm is signed by the room server, so it needs one, and its key: a build without them has no row that does nothing
+    if (model.room.profile.configured && model.room.profile.hasKey)
+      _ScrobbleGroup(room: model.room, service: ScrobbleServices.lastFm),
   ];
 
   static List<Widget> _server(BuildContext context, AppModel model) => [
@@ -944,26 +947,42 @@ class _VersionLabelState extends State<_VersionLabel> {
   );
 }
 
-/// ListenBrainz: pasting the token of the account connects it, and from then on the songs this phone plays are sent.
+/// One service the songs this phone plays are sent to. ListenBrainz: pasting the token of the account connects it. Last.fm:
+/// the person allows Sapoche on its page (no password is typed here) and comes back. From then on the songs are sent.
 class _ScrobbleGroup extends StatefulWidget {
-  const _ScrobbleGroup({required this.room});
+  const _ScrobbleGroup({required this.room, required this.service});
 
   final RoomController room;
+
+  /// One of [ScrobbleServices].
+  final String service;
 
   @override
   State<_ScrobbleGroup> createState() => _ScrobbleGroupState();
 }
 
-class _ScrobbleGroupState extends State<_ScrobbleGroup> {
+class _ScrobbleGroupState extends State<_ScrobbleGroup>
+    with WidgetsBindingObserver {
   ScrobbleState _state = const ScrobbleState();
   Timer? _refresh;
 
-  /// The token has gone to ListenBrainz and the answer has not come back: on a slow network that takes a while.
+  /// The token has gone to the service and the answer has not come back: on a slow network that takes a while.
   bool _connecting = false;
+
+  /// Last.fm: the token the person is allowing on its page. Kept here only, never stored: it lives for an hour.
+  String? _allowing;
+
+  bool get _lastFm => widget.service == ScrobbleServices.lastFm;
+
+  /// What this group's rows are called, so that the two groups of the page do not share keys.
+  String get _key => _lastFm ? 'lastfm' : 'scrobble';
+
+  String get _name => _lastFm ? S.lastFmName : S.scrobbleTitleListenBrainz;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
     // The listens waiting to be sent go down while the page is open
     _refresh = Timer.periodic(const Duration(seconds: 5), (_) => _load());
@@ -971,12 +990,21 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _refresh?.cancel();
     super.dispose();
   }
 
+  /// Back from the page of Last.fm: the person has most likely allowed it, so the session is asked for without another tap.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _allowing != null && !_connecting) {
+      _finishLastFm();
+    }
+  }
+
   Future<void> _load() async {
-    final state = await widget.room.scrobbleState();
+    final state = await widget.room.scrobbleState(widget.service);
     if (mounted) setState(() => _state = state);
   }
 
@@ -994,7 +1022,7 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
     );
     if (token == null || token.trim().isEmpty || _connecting) return;
     setState(() => _connecting = true);
-    final state = await widget.room.scrobbleConnect(token);
+    final state = await widget.room.scrobbleConnect(widget.service, token);
     if (!mounted) return;
     setState(() {
       _state = state;
@@ -1004,6 +1032,60 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
       'ok' => S.scrobbleConnectedAs(state.user ?? ''),
       'invalid' => S.scrobbleBadToken,
       _ => S.scrobbleOffline,
+    });
+  }
+
+  /// Last.fm: asks for a token, opens the page where it is allowed, and waits for the person to come back.
+  Future<void> _beginLastFm() async {
+    if (_connecting) return;
+    setState(() => _connecting = true);
+    final begin = await widget.room.lastfmBegin();
+    if (!mounted) return;
+    final token = begin.token;
+    final url = begin.url;
+    if (token == null || url == null) {
+      setState(() => _connecting = false);
+      _say(begin.result == 'unavailable' ? S.lastFmUnavailable : S.lastFmOffline);
+      return;
+    }
+    setState(() {
+      _allowing = token;
+      _connecting = false;
+    });
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+    } on Object {
+      // No browser to open it: said below, like a page that did not open
+    }
+    if (!opened && mounted) {
+      setState(() => _allowing = null);
+      _say(S.lastFmCannotOpen);
+    }
+  }
+
+  Future<void> _finishLastFm() async {
+    final token = _allowing;
+    if (token == null || _connecting) return;
+    setState(() => _connecting = true);
+    final state = await widget.room.scrobbleConnect(widget.service, token);
+    if (!mounted) return;
+    setState(() {
+      _state = state;
+      _connecting = false;
+      // Not allowed yet, or no network: the same token still works; any other answer ends it
+      if (state.result != 'pending' && state.result != 'offline') {
+        _allowing = null;
+      }
+    });
+    _say(switch (state.result) {
+      'ok' => S.scrobbleConnectedAs(state.user ?? ''),
+      'pending' => S.lastFmNotAllowedYet,
+      'invalid' => S.lastFmExpired,
+      _ => S.lastFmOffline,
     });
   }
 
@@ -1028,7 +1110,7 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
       );
       if (ok != true) return;
     }
-    final state = await widget.room.scrobbleDisconnect();
+    final state = await widget.room.scrobbleDisconnect(widget.service);
     if (mounted) setState(() => _state = state);
   }
 
@@ -1042,52 +1124,39 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
         reconnect: _state.reconnect,
       ),
     );
-    final state = await widget.room.scrobbleNowPlaying(on);
+    final state = await widget.room.scrobbleNowPlaying(widget.service, on);
     if (mounted) setState(() => _state = state);
   }
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    final busy = const SizedBox.square(
+      dimension: 18,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    );
     final icon = _connecting
-        ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+        ? busy
         : Icon(Icons.edit_outlined, size: 18, color: p.textSecondary);
     if (!_state.connected) {
       return _Group(
-        footer: S.scrobbleHelp,
-        children: [
-          _Row(
-            key: const ValueKey('scrobble-get-token'),
-            label: S.scrobbleGetToken,
-            trailing: Icon(
-              Icons.open_in_new_rounded,
-              size: 18,
-              color: p.textSecondary,
-            ),
-            onTap: () => launchUrl(
-              Uri.parse('https://listenbrainz.org/settings/'),
-              mode: LaunchMode.externalApplication,
-            ),
-          ),
-          _Row(
-            key: const ValueKey('scrobble-paste'),
-            label: S.scrobbleEnterToken,
-            value: _connecting ? S.scrobbleConnecting : S.scrobbleNotConnected,
-            trailing: icon,
-            onTap: _connecting ? null : _connect,
-          ),
-        ],
+        title: _name,
+        footer: _lastFm ? S.lastFmHelp : S.scrobbleHelp,
+        children: _lastFm ? _lastFmSteps(p, busy) : _listenBrainzSteps(p, icon),
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _Group(
-          footer: _state.reconnect ? S.scrobbleReconnect : null,
+          title: _name,
+          footer: _state.reconnect
+              ? (_lastFm ? S.lastFmReconnect : S.scrobbleReconnect)
+              : null,
           children: [
             _Row(
-              key: const ValueKey('scrobble-user'),
-              label: S.scrobbleTitle,
+              key: ValueKey('$_key-user'),
+              label: _name,
               value: _state.user,
               leading: Icon(
                 _state.reconnect
@@ -1096,27 +1165,29 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
                 color: _state.reconnect ? p.error : p.primary,
               ),
               trailing: _state.reconnect ? icon : null,
-              onTap: _state.reconnect && !_connecting ? _connect : null,
+              onTap: _state.reconnect && !_connecting
+                  ? (_lastFm ? _beginLastFm : _connect)
+                  : null,
             ),
             if (_state.pending > 0)
               _Row(
-                key: const ValueKey('scrobble-pending'),
+                key: ValueKey('$_key-pending'),
                 label: S.scrobblePending(_state.pending),
               ),
             _Row(
-              key: const ValueKey('scrobble-disconnect'),
+              key: ValueKey('$_key-disconnect'),
               label: S.scrobbleDisconnect,
               onTap: _disconnect,
             ),
           ],
         ),
         _Group(
-          footer: S.scrobbleNowPlayingHelp,
+          footer: _lastFm ? S.lastFmNowPlayingHelp : S.scrobbleNowPlayingHelp,
           children: [
             Material(
               type: MaterialType.transparency,
               child: SwitchListTile(
-                key: const ValueKey('scrobble-now-playing'),
+                key: ValueKey('$_key-now-playing'),
                 title: Text(S.scrobbleNowPlaying),
                 value: _state.nowPlaying,
                 onChanged: _setNowPlaying,
@@ -1127,6 +1198,67 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup> {
       ],
     );
   }
+
+  List<Widget> _listenBrainzSteps(Palette p, Widget icon) => [
+    _Row(
+      key: const ValueKey('scrobble-get-token'),
+      label: S.scrobbleGetToken,
+      trailing: Icon(
+        Icons.open_in_new_rounded,
+        size: 18,
+        color: p.textSecondary,
+      ),
+      onTap: () => launchUrl(
+        Uri.parse('https://listenbrainz.org/settings/'),
+        mode: LaunchMode.externalApplication,
+      ),
+    ),
+    _Row(
+      key: const ValueKey('scrobble-paste'),
+      label: S.scrobbleEnterToken,
+      value: _connecting ? S.scrobbleConnecting : S.scrobbleNotConnected,
+      trailing: icon,
+      onTap: _connecting ? null : _connect,
+    ),
+  ];
+
+  /// Before the page is opened, one row; after, the person says they allowed it (or gives up).
+  List<Widget> _lastFmSteps(Palette p, Widget busy) => _allowing == null
+      ? [
+          _Row(
+            key: const ValueKey('lastfm-connect'),
+            label: S.lastFmConnect,
+            value: _connecting ? S.scrobbleConnecting : S.scrobbleNotConnected,
+            trailing: _connecting
+                ? busy
+                : Icon(
+                    Icons.open_in_new_rounded,
+                    size: 18,
+                    color: p.textSecondary,
+                  ),
+            onTap: _connecting ? null : _beginLastFm,
+          ),
+        ]
+      : [
+          _Row(
+            key: const ValueKey('lastfm-allowed'),
+            label: S.lastFmAllowed,
+            value: _connecting ? S.scrobbleConnecting : S.lastFmWaiting,
+            trailing: _connecting
+                ? busy
+                : Icon(
+                    Icons.check_rounded,
+                    size: 18,
+                    color: p.textSecondary,
+                  ),
+            onTap: _connecting ? null : _finishLastFm,
+          ),
+          _Row(
+            key: const ValueKey('lastfm-cancel'),
+            label: S.cancel,
+            onTap: _connecting ? null : () => setState(() => _allowing = null),
+          ),
+        ];
 }
 
 /// Where the room server is and the key it asks for, for the phones that are not built with them.

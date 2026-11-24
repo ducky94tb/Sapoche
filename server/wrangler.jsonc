@@ -21,7 +21,7 @@
 	"assets": {
 		"directory": "./web-dist",
 		"not_found_handling": "single-page-application",
-		"run_worker_first": ["/health", "/rooms", "/room/*", "/join/*", "/update/*", "/yt/*", "/push/*", "/media/*", "/.well-known/*"]
+		"run_worker_first": ["/health", "/rooms", "/room/*", "/join/*", "/update/*", "/yt/*", "/lastfm", "/push/*", "/media/*", "/.well-known/*"]
 	},
 	// Releases of the app, for updates from inside it. Create it first: wrangler r2 bucket create sapoche-releases
 	"r2_buckets": [
@@ -35,12 +35,15 @@
 			"bucket_name": "sapoche-media"
 		}
 	],
+	// The API key of Sapoche at Last.fm (lastfm.ts); public by nature, the shared secret is `wrangler secret put LASTFM_SECRET`. Empty: no Last.fm
+	"vars": { "LASTFM_KEY": "515b6a541bb1269fe0d98c922682c04f" },
 	// A rough limit for one address in one minute (the count is kept per Cloudflare location, see index.ts): enough to stop a
 	// stranger who got hold of the key from using the day's requests, wide enough for friends behind one mobile address
 	"ratelimits": [
 		{ "name": "LIMIT_ROOMS", "namespace_id": "5101", "simple": { "limit": 20, "period": 60 } },
 		{ "name": "LIMIT_YT", "namespace_id": "5102", "simple": { "limit": 300, "period": 60 } },
-		{ "name": "LIMIT_JOIN", "namespace_id": "5103", "simple": { "limit": 120, "period": 60 } }
+		{ "name": "LIMIT_JOIN", "namespace_id": "5103", "simple": { "limit": 120, "period": 60 } },
+		{ "name": "LIMIT_LASTFM", "namespace_id": "5104", "simple": { "limit": 120, "period": 60 } }
 	],
 	// Workers Logs keep only the lines the code writes (log.ts). The log of each request is off: the web app opens its
 	// WebSocket with the room key in the address, and a log of addresses would be a log of keys

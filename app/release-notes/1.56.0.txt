@@ -1,0 +1,4 @@
+Scrobble to Last.fm
+- Settings > Scrobble now has Last.fm next to ListenBrainz. Choose Connect Last.fm, allow Sapoche on the Last.fm page that opens, and come back: the songs you listen to are sent to your Last.fm once you have heard half of them or four minutes, with what plays now if you want it.
+- You never type a password or paste a token. It is off until you connect, you can connect Last.fm, ListenBrainz or both, and each has its own switch for showing what plays now.
+- Only the song goes out, nothing about the room. Songs wait on your phone when there is no network and are sent later. It works on Android, iPhone and the web.

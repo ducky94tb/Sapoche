@@ -478,18 +478,22 @@ abstract class Backend {
   /// Opens the equalizer that the phone has of its own (Android, see [Profile.systemEqualizer]).
   Future<void> openSystemEqualizer();
 
-  /// ListenBrainz, where the songs this phone plays can be sent (see [ScrobbleState]); off until the person connects it
-  /// with the token of their account, and it sends nothing before. What it sends is the song, never the room.
-  Future<ScrobbleState> scrobbleState();
+  /// ListenBrainz and Last.fm ([service], one of [ScrobbleServices]), where the songs this phone plays can be sent (see
+  /// [ScrobbleState]); each is off until the person connects it, and sends nothing before. What it sends is the song, never the room.
+  Future<ScrobbleState> scrobbleState({String service = ScrobbleServices.listenBrainz});
 
-  /// Checks [token] with ListenBrainz and, when it is good, keeps it ([ScrobbleState.result] says how it went).
-  Future<ScrobbleState> scrobbleConnect(String token);
+  /// Checks [token] with the service and, when it is good, keeps what it gives ([ScrobbleState.result] says how it went). For
+  /// Last.fm the token is the one [lastfmBegin] gave, once the person has allowed it on the page.
+  Future<ScrobbleState> scrobbleConnect(String token, {String service = ScrobbleServices.listenBrainz});
 
-  /// Forgets the token and the listens that had not been sent.
-  Future<ScrobbleState> scrobbleDisconnect();
+  /// Forgets the connection and the listens that had not been sent.
+  Future<ScrobbleState> scrobbleDisconnect({String service = ScrobbleServices.listenBrainz});
 
-  /// Whether the song that plays now is shown on ListenBrainz while it plays.
-  Future<ScrobbleState> scrobbleNowPlaying(bool on);
+  /// Whether the song that plays now is shown on the service while it plays.
+  Future<ScrobbleState> scrobbleNowPlaying(bool on, {String service = ScrobbleServices.listenBrainz});
+
+  /// Starts connecting Last.fm without a password: a token and the page where the person allows the app (the server signs for it).
+  Future<LastFmBegin> lastfmBegin();
 
   /// The person's playlists, the one changed last first.
   Future<List<SavedPlaylist>> playlists();
@@ -1214,28 +1218,49 @@ class NativeBackend implements Backend {
   Future<void> openSystemEqualizer() => _call('openSystemEqualizer');
 
   @override
-  Future<ScrobbleState> scrobbleState() async => ScrobbleState.fromMap(
-    (await _call<Map<Object?, Object?>>('scrobbleState'))!,
+  Future<ScrobbleState> scrobbleState({
+    String service = ScrobbleServices.listenBrainz,
+  }) async => ScrobbleState.fromMap(
+    (await _call<Map<Object?, Object?>>('scrobbleState', {
+      'service': service,
+    }))!,
   );
 
   @override
-  Future<ScrobbleState> scrobbleConnect(String token) async =>
-      ScrobbleState.fromMap(
-        (await _call<Map<Object?, Object?>>('scrobbleConnect', {
-          'token': token,
-        }))!,
-      );
-
-  @override
-  Future<ScrobbleState> scrobbleDisconnect() async => ScrobbleState.fromMap(
-    (await _call<Map<Object?, Object?>>('scrobbleDisconnect'))!,
+  Future<ScrobbleState> scrobbleConnect(
+    String token, {
+    String service = ScrobbleServices.listenBrainz,
+  }) async => ScrobbleState.fromMap(
+    (await _call<Map<Object?, Object?>>('scrobbleConnect', {
+      'token': token,
+      'service': service,
+    }))!,
   );
 
   @override
-  Future<ScrobbleState> scrobbleNowPlaying(bool on) async =>
-      ScrobbleState.fromMap(
-        (await _call<Map<Object?, Object?>>('scrobbleNowPlaying', {'on': on}))!,
-      );
+  Future<ScrobbleState> scrobbleDisconnect({
+    String service = ScrobbleServices.listenBrainz,
+  }) async => ScrobbleState.fromMap(
+    (await _call<Map<Object?, Object?>>('scrobbleDisconnect', {
+      'service': service,
+    }))!,
+  );
+
+  @override
+  Future<ScrobbleState> scrobbleNowPlaying(
+    bool on, {
+    String service = ScrobbleServices.listenBrainz,
+  }) async => ScrobbleState.fromMap(
+    (await _call<Map<Object?, Object?>>('scrobbleNowPlaying', {
+      'on': on,
+      'service': service,
+    }))!,
+  );
+
+  @override
+  Future<LastFmBegin> lastfmBegin() async => LastFmBegin.fromMap(
+    (await _call<Map<Object?, Object?>>('lastfmBegin'))!,
+  );
 
   @override
   Future<SongRadio> musicNext(String videoId) async => SongRadio.fromMap(

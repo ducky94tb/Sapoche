@@ -18,6 +18,16 @@ interface Env {
   LIMIT_ROOMS?: RateLimit;
   LIMIT_YT?: RateLimit;
   LIMIT_JOIN?: RateLimit;
+  LIMIT_LASTFM?: RateLimit;
+  /**
+   * Last.fm (see lastfm.ts): the API key of the account made at last.fm/api/account/create is in `vars` of wrangler.jsonc (it is
+   * not secret: it is in the address of the page where a person allows the app), and its shared secret is a secret:
+   * `wrangler secret put LASTFM_SECRET`. Without both the server answers 503 and the apps hide Last.fm.
+   */
+  LASTFM_KEY?: string;
+  LASTFM_SECRET?: string;
+  /** Only the tests set this: where Last.fm is asked instead of its real address. */
+  LASTFM_API?: string;
   /**
    * Shared secret every client must present, set with `wrangler secret put ROOM_KEY`. When it is not
    * set (local development) the server is open.

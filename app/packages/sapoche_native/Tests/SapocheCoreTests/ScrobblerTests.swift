@@ -48,9 +48,9 @@ final class ScrobblerTests: XCTestCase {
     }
 
     private func scrobbler(_ storage: Storage? = nil) -> Scrobbler {
-        Scrobbler(storage: storage ?? self.storage, http: http, scope: scope, time: time,
+        Scrobbler(storage: storage ?? self.storage, service: ListenBrainzService(http: http, version: "1.50.0"), scope: scope, time: time,
                   namer: { ($0.title.replacingOccurrences(of: " (Official Video)", with: ""), $0.artist.replacingOccurrences(of: " - Topic", with: "")) },
-                  version: "1.50.0", wall: { [unowned self] in 1_700_000_000_000 + self.time.now })
+                  wall: { [unowned self] in 1_700_000_000_000 + self.time.now })
     }
 
     private func pending(_ storage: Storage) -> Int {
@@ -67,7 +67,7 @@ final class ScrobblerTests: XCTestCase {
                 Listen(listenedAt: $0["listenedAt"].int64!, videoId: $0["videoId"].string!, title: $0["title"].string!,
                        artist: $0["artist"].string!, durationMs: $0["durationMs"].int64!)
             }
-            let body = Scrobbler.body(item["type"].string!, listens, version: version)
+            let body = ListenBrainzService.body(item["type"].string!, listens, version: version)
             let made = try JSONSerialization.jsonObject(with: Data(body.utf8)) as! NSDictionary
             XCTAssertEqual(made, item["body"].object! as NSDictionary, item["name"].string!)
         }

@@ -46,9 +46,9 @@ class ScrobblerTest {
     private val song = TrackRef("vid1", "Song (Official Video)", "Artist - Topic", null, 200_000)
 
     private fun TestScope.scrobbler(storage: Storage = this@ScrobblerTest.storage, http: Http = this@ScrobblerTest.http) = Scrobbler(
-        storage, http, this,
+        storage, ListenBrainzService(http, "1.50.0"), this,
         namer = { SongNamesStub.title(it) to SongNamesStub.artist(it) },
-        version = "1.50.0", mono = { currentTime }, wall = { 1_700_000_000_000L + currentTime }, log = {},
+        mono = { currentTime }, wall = { 1_700_000_000_000L + currentTime }, log = {},
     )
 
     private object SongNamesStub {
@@ -71,7 +71,7 @@ class ScrobblerTest {
                     o.getValue("durationMs").jsonPrimitive.content.toLong(),
                 )
             }
-            val body = Scrobbler.body(case.getValue("type").jsonPrimitive.content, listens, version)
+            val body = ListenBrainzService.body(case.getValue("type").jsonPrimitive.content, listens, version)
             assertEquals(case.getValue("body"), Json.parseToJsonElement(body), case.getValue("name").jsonPrimitive.content)
         }
     }

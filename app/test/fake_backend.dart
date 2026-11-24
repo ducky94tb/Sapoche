@@ -629,40 +629,82 @@ class FakeBackend implements Backend {
   /// What a connect answers: `ok`, `invalid` or `offline`.
   String scrobbleAnswer = 'ok';
 
-  @override
-  Future<ScrobbleState> scrobbleState() async => scrobble;
+  /// The same for Last.fm, which also answers `pending`; its commands are recorded with `lastfm` in front.
+  ScrobbleState lastFm = const ScrobbleState();
+  String lastFmAnswer = 'ok';
+
+  /// What starting to connect Last.fm gives.
+  LastFmBegin lastFmBegin = const LastFmBegin(
+    token: 't1',
+    url: 'https://www.last.fm/api/auth/?api_key=k&token=t1',
+  );
+
+  bool _isLastFm(String service) => service == ScrobbleServices.lastFm;
+
+  Future<void> _recordScrobble(String service, String command) =>
+      _record(_isLastFm(service) ? 'lastfm $command' : command);
 
   @override
-  Future<ScrobbleState> scrobbleConnect(String token) async {
-    await _record('scrobbleConnect $token');
-    if (scrobbleAnswer == 'ok') {
-      scrobble = const ScrobbleState(connected: true, user: 'tvh');
+  Future<ScrobbleState> scrobbleState({
+    String service = ScrobbleServices.listenBrainz,
+  }) async => _isLastFm(service) ? lastFm : scrobble;
+
+  @override
+  Future<ScrobbleState> scrobbleConnect(
+    String token, {
+    String service = ScrobbleServices.listenBrainz,
+  }) async {
+    await _recordScrobble(service, 'scrobbleConnect $token');
+    final answer = _isLastFm(service) ? lastFmAnswer : scrobbleAnswer;
+    if (answer == 'ok') {
+      final connected = const ScrobbleState(connected: true, user: 'tvh');
+      if (_isLastFm(service)) {
+        lastFm = connected;
+      } else {
+        scrobble = connected;
+      }
     }
+    final state = _isLastFm(service) ? lastFm : scrobble;
     return ScrobbleState(
-      connected: scrobble.connected,
-      user: scrobble.user,
-      nowPlaying: scrobble.nowPlaying,
-      pending: scrobble.pending,
-      reconnect: scrobble.reconnect,
-      result: scrobbleAnswer,
+      connected: state.connected,
+      user: state.user,
+      nowPlaying: state.nowPlaying,
+      pending: state.pending,
+      reconnect: state.reconnect,
+      result: answer,
     );
   }
 
   @override
-  Future<ScrobbleState> scrobbleDisconnect() async {
-    await _record('scrobbleDisconnect');
-    return scrobble = const ScrobbleState();
+  Future<ScrobbleState> scrobbleDisconnect({
+    String service = ScrobbleServices.listenBrainz,
+  }) async {
+    await _recordScrobble(service, 'scrobbleDisconnect');
+    return _isLastFm(service)
+        ? lastFm = const ScrobbleState()
+        : scrobble = const ScrobbleState();
   }
 
   @override
-  Future<ScrobbleState> scrobbleNowPlaying(bool on) async {
-    await _record('scrobbleNowPlaying $on');
-    return scrobble = ScrobbleState(
-      connected: scrobble.connected,
-      user: scrobble.user,
+  Future<ScrobbleState> scrobbleNowPlaying(
+    bool on, {
+    String service = ScrobbleServices.listenBrainz,
+  }) async {
+    await _recordScrobble(service, 'scrobbleNowPlaying $on');
+    final state = _isLastFm(service) ? lastFm : scrobble;
+    final next = ScrobbleState(
+      connected: state.connected,
+      user: state.user,
       nowPlaying: on,
-      pending: scrobble.pending,
+      pending: state.pending,
     );
+    return _isLastFm(service) ? lastFm = next : scrobble = next;
+  }
+
+  @override
+  Future<LastFmBegin> lastfmBegin() async {
+    await _record('lastfmBegin');
+    return lastFmBegin;
   }
 
   SongRadio radioResult = const SongRadio();

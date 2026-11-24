@@ -5,6 +5,7 @@
 // connections and empty rooms are seconds long, so "gone after a week" can be watched.
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
+import { createServer } from "node:http";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { tmpdir } from "node:os";
@@ -63,6 +64,26 @@ function seedRelease(persistTo) {
   return { apk, latest };
 }
 
+// A Last.fm that is this process: it keeps the last form it was sent, which `/_last` gives back, and answers a token to the first call
+const LASTFM_FAKE_PORT = 8797;
+let lastfmLast = "";
+const lastfmFake = createServer((req, res) => {
+  if (req.method === "GET") {
+    res.end(lastfmLast);
+    return;
+  }
+  let text = "";
+  req.on("data", (chunk) => (text += chunk));
+  req.on("end", () => {
+    lastfmLast = text;
+    const method = new URLSearchParams(text).get("method");
+    const answer = method === "auth.getToken" ? { token: "tok-1" } : method === "auth.getSession" ? { error: 14, message: "Unauthorized Token" } : { ok: 1 };
+    res.writeHead(method === "auth.getSession" ? 403 : 200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(answer));
+  });
+});
+lastfmFake.listen(LASTFM_FAKE_PORT, "127.0.0.1");
+
 // The keys that sign pushes, made for this run: the private half never leaves this process and the server it starts
 const vapid = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ format: "jwk" });
 const vapidPublic = Buffer.concat([Buffer.of(4), Buffer.from(vapid.x, "base64url"), Buffer.from(vapid.y, "base64url")]).toString("base64url");
@@ -73,20 +94,21 @@ rmSync(".wrangler/state-lifetime", { recursive: true, force: true });
 const release = seedRelease(".wrangler/state");
 const MEDIA_TICKET_MS = 3000;
 const FILL_MS = 2500;
-const main = startServer(8798, { STALE_MS: 2000, FILL_MS, MEDIA_FILE_MAX: 20_000, MEDIA_ROOM_MAX: 60_000, MEDIA_PER_DAY: 30, MEDIA_TICKET_MS, VAPID_PRIVATE: vapid.d, VAPID_PUBLIC: vapidPublic, PUSH_LOCAL: 1, PUSH_FRESH_MS }, ".wrangler/state");
+const main = startServer(8798, { STALE_MS: 2000, FILL_MS, MEDIA_FILE_MAX: 20_000, MEDIA_ROOM_MAX: 60_000, MEDIA_PER_DAY: 30, MEDIA_TICKET_MS, VAPID_PRIVATE: vapid.d, VAPID_PUBLIC: vapidPublic, PUSH_LOCAL: 1, PUSH_FRESH_MS, LASTFM_KEY: "test-key", LASTFM_SECRET: "test-secret", LASTFM_API: `http://127.0.0.1:${LASTFM_FAKE_PORT}/` }, ".wrangler/state");
 const quick = startServer(
   8799,
-  { STALE_MS: 2000, MEDIA_ACCOUNT_MAX: 10_000, DROP_MS: 2500, SWEEP_MS: 1000, EMPTY_MS: 6000, EMPTY_BARE_MS: 1500, CHAT_KEEP_MS: 4000, CHAT_KEEP_MAX: 20, CHAT_PRUNE_MS: 1 },
+  { STALE_MS: 2000, MEDIA_ACCOUNT_MAX: 10_000, DROP_MS: 2500, SWEEP_MS: 1000, EMPTY_MS: 6000, EMPTY_BARE_MS: 1500, CHAT_KEEP_MS: 4000, CHAT_KEEP_MAX: 20, CHAT_PRUNE_MS: 1, LASTFM_KEY: "", LASTFM_SECRET: "" },
   ".wrangler/state-lifetime",
 );
 
 let code = 1;
 try {
   await Promise.all([waitUntilUp(8798), waitUntilUp(8799)]);
-  code = (await simulate(8798, { SIM_STALE_MS: "2000", SIM_FILL_MS: String(FILL_MS), SIM_MEDIA_TICKET_MS: String(MEDIA_TICKET_MS), SIM_VAPID_PUBLIC: vapidPublic, SIM_PUSH_FRESH_MS: String(PUSH_FRESH_MS), SIM_RELEASE: JSON.stringify({ apk: release.apk.toString("base64"), latest: release.latest }) })) ?? 1;
+  code = (await simulate(8798, { SIM_STALE_MS: "2000", SIM_FILL_MS: String(FILL_MS), SIM_MEDIA_TICKET_MS: String(MEDIA_TICKET_MS), SIM_VAPID_PUBLIC: vapidPublic, SIM_LASTFM_FAKE: `http://127.0.0.1:${LASTFM_FAKE_PORT}`, SIM_NO_LASTFM: "http://127.0.0.1:8799", SIM_PUSH_FRESH_MS: String(PUSH_FRESH_MS), SIM_RELEASE: JSON.stringify({ apk: release.apk.toString("base64"), latest: release.latest }) })) ?? 1;
   if (code === 0) code = (await simulate(8799, { SIM_ONLY: "lifetime" })) ?? 1;
   if (code === 0 && process.env.SIM_STRESS) code = (await simulate(8798, {}, "scripts/stress.mjs")) ?? 1;
 } finally {
+  lastfmFake.close();
   for (const server of [main, quick]) {
     try {
       process.kill(-server.pid, "SIGTERM");

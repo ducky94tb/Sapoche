@@ -109,14 +109,22 @@ final class SapocheRuntime {
                                     online: { NetworkState.shared.online }, discard: { files.removeDownload($0) },
                                     onProgress: { batch in Task { @MainActor in SapocheRuntime.shared.bridge.downloadsChanged(batch) } })
 
+        let songNamer: (TrackRef) -> (title: String, artist: String) = { (SongNames.title($0.title, artist: $0.artist), SongNames.credit($0.artist)) }
         let scrobbler = Scrobbler(
             storage: AppleScrobbleStorage(folder: support.appendingPathComponent("scrobble", isDirectory: true)),
-            http: ListenBrainzHTTP(), scope: Scope(), time: SystemTime.shared,
-            namer: { (SongNames.title($0.title, artist: $0.artist), SongNames.credit($0.artist)) },
-            version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+            service: ListenBrainzService(http: ListenBrainzHTTP(), version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""),
+            scope: Scope(), time: SystemTime.shared, namer: songNamer,
             wall: { Int64(Date().timeIntervalSince1970 * 1000) }, log: { EventLog.d("scrobble", $0) }
         )
         scrobbler.resume()
+        // Last.fm goes through the room server, which signs for the app (the secret cannot be in it)
+        let lastFmService = LastFmService(http: RoomLastFmHTTP(config: { ServerConfig.load(prefs) }), log: { EventLog.d("scrobble", $0) })
+        let lastFm = Scrobbler(
+            storage: AppleScrobbleStorage(folder: support.appendingPathComponent("scrobble-lastfm", isDirectory: true)),
+            service: lastFmService, scope: Scope(), time: SystemTime.shared, namer: songNamer,
+            wall: { Int64(Date().timeIntervalSince1970 * 1000) }, log: { EventLog.d("scrobble", $0) }
+        )
+        lastFm.resume()
         let engine = AVPlayerEngine(library: media, maxVideoHeight: { Int(prefs.int64("video_height") ?? 720) }, log: { EventLog.d("player", $0) })
         self.engine = engine
         let platform = platform
@@ -138,7 +146,7 @@ final class SapocheRuntime {
             moreLike: { seeds, exclude, count in try await suggestions.afterMany(seeds, exclude: exclude, count: count) },
             tasteOffer: { try await suggestions.offer() },
             secrets: KeychainSecrets(),
-            scrobbler: scrobbler,
+            scrobbler: scrobbler, lastFm: lastFm, lastFmService: lastFmService,
             // The songs autoplay looks for between two songs are fetched in the background too: iOS suspends the app a few seconds after the sound stops
             awake: { work in await platform.whileInBackground(timeUp: {}, work) }
         )

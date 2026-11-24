@@ -1,0 +1,4 @@
+Scrobble lên Last.fm
+- Cài đặt > Scrobble có thêm Last.fm bên cạnh ListenBrainz. Chọn Kết nối Last.fm, cho phép Sapoche trên trang Last.fm vừa mở rồi quay lại: các bài bạn nghe được gửi lên Last.fm khi nghe xong một nửa hoặc 4 phút, kèm bài đang phát nếu bạn muốn.
+- Không phải nhập mật khẩu hay dán token. Mặc định tắt cho tới khi bạn kết nối; bạn nối Last.fm, ListenBrainz hoặc cả hai, mỗi bên có công tắc riêng cho việc hiện bài đang nghe.
+- Chỉ bài hát được gửi đi, không có gì về phòng. Khi mất mạng, bài được giữ trên điện thoại và gửi sau. Dùng được trên Android, iPhone và web.

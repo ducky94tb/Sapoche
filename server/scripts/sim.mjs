@@ -430,6 +430,50 @@ async function authSection() {
   check("the completions of a search are an endpoint of it", (await ask("music/get_search_suggestions", { body: "not json" })).status === 400);
   check("the comments of a video are an endpoint of it", (await ask("comments", { body: "not json" })).status === 400);
   check("a body that is too large is refused", (await ask("search", { body: JSON.stringify({ query: "x".repeat(9000) }) })).status === 413);
+  await lastfmSection();
+}
+
+/** The route that signs for Last.fm: a Last.fm that is the test itself (`SIM_LASTFM_FAKE`) shows what it was sent. */
+async function lastfmSection() {
+  console.log("Last.fm");
+  const fake = process.env.SIM_LASTFM_FAKE;
+  const none = process.env.SIM_NO_LASTFM;
+  if (!fake) return;
+  const form = (fields) => new URLSearchParams(fields).toString();
+  const send = (fields, init = {}) => fetch(`${BASE}/lastfm`, { method: "POST", headers: { ...keyHeaders, "Content-Type": "application/x-www-form-urlencoded" }, body: form(fields), ...init });
+  const last = async () => new URLSearchParams(await (await fetch(`${fake}/_last`)).text());
+  const md5 = (text) => createHash("md5").update(text).digest("hex");
+
+  check("Last.fm is not asked for without the key", (await fetch(`${BASE}/lastfm`, { method: "POST", body: form({ method: "auth.getToken" }) })).status === 401);
+  check("Last.fm takes POST only", (await send({}, { method: "GET", body: undefined })).status === 405);
+  check("a method that is not one of the four is refused", (await send({ method: "user.getInfo", user: "x" })).status === 400);
+  check("a form that is too large is refused", (await send({ method: "track.scrobble", "artist[0]": "x".repeat(17000) })).status === 413);
+  check("a name twice is refused", (await send({}, { body: "method=track.scrobble&sk=a&sk=b" })).status === 400);
+  if (none) {
+    const bare = await fetch(`${none}/lastfm`, { method: "POST", headers: keyHeaders, body: form({ method: "auth.getToken" }) });
+    check("without the secret the server says Last.fm is not set up", bare.status === 503, `status=${bare.status}`);
+  }
+
+  // The app asks for a token and is handed the page where the person allows it, made here because the app has no API key
+  const token = await send({ method: "auth.getToken", api_key: "app-key", api_sig: "app-sig", format: "xml" });
+  const tokenBody = await token.json();
+  check("a token comes with the page that allows it", token.status === 200 && tokenBody.token === "tok-1" && tokenBody.url === "https://www.last.fm/api/auth/?api_key=test-key&token=tok-1", JSON.stringify(tokenBody));
+  const asked = await last();
+  check("what the app says of the key, the signature and the format is dropped", asked.get("api_key") === "test-key" && asked.get("format") === "json" && asked.get("api_sig") !== "app-sig", asked.toString());
+  check("the signature of the first call is the one of the specification", asked.get("api_sig") === md5("api_keytest-keymethodauth.getTokentest-secret"), asked.get("api_sig"));
+
+  // A scrobble: the parameters are signed in the order of their names, with their text as it is (not as it travels)
+  await send({ method: "track.scrobble", sk: "session", "artist[0]": "Sơn Tùng M-TP", "track[0]": "Chúng ta & \"nay\"", "timestamp[0]": "1700000000", "duration[0]": "215" });
+  const scrobble = await last();
+  const expected = md5(
+    ["api_keytest-key", "artist[0]Sơn Tùng M-TP", "duration[0]215", "methodtrack.scrobble", "sksession", "timestamp[0]1700000000", 'track[0]Chúng ta & "nay"'].join("") + "test-secret",
+  );
+  check("a scrobble is signed over the names in order, with the text as it is", scrobble.get("api_sig") === expected, `${scrobble.get("api_sig")} vs ${expected}`);
+  check("the text of a scrobble arrives whole", scrobble.get("artist[0]") === "Sơn Tùng M-TP" && scrobble.get("track[0]") === 'Chúng ta & "nay"');
+
+  // What Last.fm says is handed on with its status, for the app to read
+  const session = await send({ method: "auth.getSession", token: "tok-1" });
+  check("the answer of Last.fm is handed on as it is", session.status === 403 && (await session.json()).error === 14);
 }
 
 async function freshRoom(names) {

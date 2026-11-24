@@ -25,8 +25,8 @@ class ListenHistory(
     private val sourceOf: (String) -> String = { ListenSource.CHOSEN },
     /** The song now playing was left because another member of the room skipped it: not a skip of this person's. */
     private val leftByOther: () -> Boolean = { false },
-    /** Told what plays, for the listens that go to ListenBrainz when the person connected it. */
-    private val scrobbler: Scrobbler? = null,
+    /** Told what plays, for the listens that go to ListenBrainz and Last.fm when the person connected them. */
+    private val scrobblers: List<Scrobbler> = emptyList(),
     private val log: (String) -> Unit = {},
 ) : Player.Listener {
 
@@ -67,7 +67,10 @@ class ListenHistory(
             tracker.setPlaying(player.isPlaying, now())
         }
         schedule()
-        scrobbler?.let { it.watch(item?.let { song -> trackOf(song.mediaId, duration) }, player.isPlaying, duration) }
+        if (scrobblers.isNotEmpty()) {
+            val track = item?.let { song -> trackOf(song.mediaId, duration) }
+            scrobblers.forEach { it.watch(track, player.isPlaying, duration) }
+        }
     }
 
     private fun schedule() {

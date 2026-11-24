@@ -6,10 +6,12 @@ import Security
 /// app's own, in a folder that is kept out of the backups. Neither is read by the library backup or the diagnostic report.
 final class AppleScrobbleStorage: ScrobbleStorage {
     private let service = "app.sapoche.scrobble"
-    private let account = "listenbrainz"
+    private let account: String
     private let file: URL
 
-    init(folder: URL) {
+    /// [account] is the Keychain item: one for each service.
+    init(folder: URL, account: String = "listenbrainz") {
+        self.account = account
         var folder = folder
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         // The folder, not the file: a file written over is a new file, and the folder's mark stays

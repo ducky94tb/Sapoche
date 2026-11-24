@@ -1497,9 +1497,32 @@ class EqSettings {
   int get hashCode => Object.hash(preset, Object.hashAll(gains));
 }
 
-/// What the settings show of ListenBrainz, where the songs this phone plays can be sent: whether a token was pasted and
-/// whose it is, whether "playing now" goes too, how many listens wait to be sent, and whether the token was refused and a
-/// new one is needed. [result] is only set by a connect: `ok`, `invalid` (the token is wrong) or `offline`.
+/// The places the songs this phone plays can be sent to (the `service` of the scrobble commands of [Backend]).
+abstract final class ScrobbleServices {
+  static const listenBrainz = 'listenbrainz';
+  static const lastFm = 'lastfm';
+}
+
+/// The start of connecting Last.fm: the [token] to allow and the [url] of the page where it is allowed, or, with neither, in
+/// [result] why not: `unavailable` (the server has no Last.fm set up) or `offline`.
+class LastFmBegin {
+  const LastFmBegin({this.token, this.url, this.result});
+
+  final String? token;
+  final String? url;
+  final String? result;
+
+  factory LastFmBegin.fromMap(Map<Object?, Object?> map) => LastFmBegin(
+    token: map['token'] as String?,
+    url: map['url'] as String?,
+    result: map['result'] as String?,
+  );
+}
+
+/// What the settings show of a service the songs this phone plays can be sent to (ListenBrainz or Last.fm): whether it
+/// was connected and whose account it is, whether "playing now" goes too, how many listens wait to be sent, and whether
+/// the connection was refused and a new one is needed. [result] is only set by a connect: `ok`, `invalid` (the token is
+/// wrong or has expired), `pending` (Last.fm: not yet allowed on its page) or `offline`.
 class ScrobbleState {
   const ScrobbleState({
     this.connected = false,

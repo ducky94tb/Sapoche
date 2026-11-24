@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderBackdropFilter;
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sapoche/data/backend.dart';
@@ -3145,7 +3146,8 @@ void main() {
       await tester.pumpAndSettle();
       await openTopic(tester, 'scrobble');
 
-      expect(find.text('Not connected'), findsOneWidget);
+      // Last.fm, below, is not connected either
+      expect(find.text('Not connected'), findsNWidgets(2));
       expect(find.byKey(const ValueKey('scrobble-user')), findsNothing);
 
       backend.scrobbleAnswer = 'invalid';
@@ -3156,7 +3158,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(backend.calls, contains('scrobbleConnect secret-token'));
       expect(find.textContaining('That token is not valid'), findsOneWidget);
-      expect(find.text('Not connected'), findsOneWidget);
+      expect(find.text('Not connected'), findsNWidgets(2));
 
       backend.scrobbleAnswer = 'ok';
       await tester.tap(find.byKey(const ValueKey('scrobble-paste')));
@@ -3174,7 +3176,93 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('scrobble-disconnect')));
       await tester.pumpAndSettle();
       expect(backend.calls.last, 'scrobbleDisconnect');
-      expect(find.text('Not connected'), findsOneWidget);
+      expect(find.text('Not connected'), findsNWidgets(2));
+    });
+
+    testWidgets('Last.fm is connected on its own page: the person allows it and comes back', (tester) async {
+      final opened = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('plugins.flutter.io/url_launcher'), (call) async {
+        if (call.method == 'launch') opened.add((call.arguments as Map)['url'] as String);
+        return true;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('plugins.flutter.io/url_launcher'), null));
+      final (backend, _) = await pumpApp(tester);
+      backend.emit(const StateEvent(RoomSnapshot()));
+      await tester.pumpAndSettle();
+      await openTopic(tester, 'scrobble');
+
+      // Asked for a token, the page is opened, and the rows say what is being waited for
+      await tester.ensureVisible(find.byKey(const ValueKey('lastfm-connect')));
+      await tester.tap(find.byKey(const ValueKey('lastfm-connect')));
+      await tester.pumpAndSettle();
+      expect(backend.calls, contains('lastfmBegin'));
+      expect(opened, ['https://www.last.fm/api/auth/?api_key=k&token=t1']);
+      expect(find.byKey(const ValueKey('lastfm-allowed')), findsOneWidget);
+
+      // Back, but it was not allowed: it stays, and the person is told
+      backend.lastFmAnswer = 'pending';
+      await tester.tap(find.byKey(const ValueKey('lastfm-allowed')));
+      await tester.pumpAndSettle();
+      expect(backend.calls.last, 'lastfm scrobbleConnect t1');
+      expect(find.textContaining('has not seen you allow it'), findsOneWidget);
+      expect(find.byKey(const ValueKey('lastfm-allowed')), findsOneWidget);
+
+      // Coming back to the app does it without a tap
+      backend.lastFmAnswer = 'ok';
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('lastfm-user')), findsOneWidget);
+      expect(find.text('Connected as tvh'), findsOneWidget);
+
+      await tester.ensureVisible(find.byKey(const ValueKey('lastfm-now-playing')));
+      await tester.tap(find.byKey(const ValueKey('lastfm-now-playing')));
+      await tester.pumpAndSettle();
+      expect(backend.calls.last, 'lastfm scrobbleNowPlaying false');
+      await tester.ensureVisible(find.byKey(const ValueKey('lastfm-disconnect')));
+      await tester.tap(find.byKey(const ValueKey('lastfm-disconnect')));
+      await tester.pumpAndSettle();
+      expect(backend.calls.last, 'lastfm scrobbleDisconnect');
+      // Nothing of ListenBrainz moved
+      expect(backend.calls.where((c) => c.startsWith('scrobble')), isEmpty);
+    });
+
+    testWidgets('a server without Last.fm says so, and a request that has run out starts over', (tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('plugins.flutter.io/url_launcher'), (call) async => true);
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('plugins.flutter.io/url_launcher'), null));
+      final (backend, _) = await pumpApp(tester);
+      backend.emit(const StateEvent(RoomSnapshot()));
+      await tester.pumpAndSettle();
+      await openTopic(tester, 'scrobble');
+
+      backend.lastFmBegin = const LastFmBegin(result: 'unavailable');
+      await tester.ensureVisible(find.byKey(const ValueKey('lastfm-connect')));
+      await tester.tap(find.byKey(const ValueKey('lastfm-connect')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('not set up on this server'), findsOneWidget);
+      expect(find.byKey(const ValueKey('lastfm-allowed')), findsNothing);
+
+      backend.lastFmBegin = const LastFmBegin(token: 't2', url: 'https://www.last.fm/api/auth/?token=t2');
+      await tester.tap(find.byKey(const ValueKey('lastfm-connect')));
+      await tester.pumpAndSettle();
+      backend.lastFmAnswer = 'invalid';
+      await tester.tap(find.byKey(const ValueKey('lastfm-allowed')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('has expired'), findsOneWidget);
+      expect(find.byKey(const ValueKey('lastfm-connect')), findsOneWidget);
+    });
+
+    testWidgets('without a room key there is no Last.fm row, because nothing could sign for it', (tester) async {
+      final (backend, _) = await pumpApp(tester, profile: const Profile(name: 'Anna', hasKey: false));
+      backend.emit(const StateEvent(RoomSnapshot()));
+      await tester.pumpAndSettle();
+      await openTopic(tester, 'scrobble');
+      expect(find.byKey(const ValueKey('scrobble-paste')), findsOneWidget);
+      expect(find.byKey(const ValueKey('lastfm-connect')), findsNothing);
     });
 
     testWidgets('listens waiting to be sent are shown, and a refused token asks for a new one', (tester) async {

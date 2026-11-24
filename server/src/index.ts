@@ -1,4 +1,5 @@
 import { ASSET_LINKS, joinPage, pageLanguage } from "./join-page";
+import { LASTFM_ROUTE, serveLastFm } from "./lastfm";
 import { PROTOCOL_VERSION } from "./protocol";
 import { MEDIA_ROUTE, MediaLedger, serveMedia } from "./media";
 import { Room } from "./room";
@@ -84,13 +85,15 @@ export default {
     const update = url.pathname.match(UPDATE_ROUTE);
     const youtube = url.pathname.match(YOUTUBE_ROUTE);
     const media = url.pathname.match(MEDIA_ROUTE);
+    const lastfm = url.pathname === LASTFM_ROUTE;
     const isRoomRoute = url.pathname === "/rooms" || ROOM_ROUTE.test(url.pathname);
-    if ((isRoomRoute || update || youtube || media || pushKey) && !(await authorized(request, url, env))) {
+    if ((isRoomRoute || update || youtube || media || pushKey || lastfm) && !(await authorized(request, url, env))) {
       return new Response("Unauthorized", { status: 401 });
     }
 
     // After the key, so that a wrong key is told so as before; a stranger without it never costs a count
     if (youtube && (await tooOften(env.LIMIT_YT, request, "yt"))) return slowDown();
+    if (lastfm && (await tooOften(env.LIMIT_LASTFM, request, "lastfm"))) return slowDown();
     if (request.method === "POST" && url.pathname === "/rooms" && (await tooOften(env.LIMIT_ROOMS, request, "rooms"))) return slowDown();
     if (ROOM_ROUTE.test(url.pathname) && (await tooOften(env.LIMIT_JOIN, request, "join"))) return slowDown();
 
@@ -98,6 +101,7 @@ export default {
     if (pushKey) return env.VAPID_PUBLIC ? Response.json({ key: env.VAPID_PUBLIC }) : new Response("Not found", { status: 404 });
     if (update) return serveUpdate(request, env, update[1]);
     if (youtube) return serveYoutube(request, youtube[1]);
+    if (lastfm) return serveLastFm(request, env);
     if (media) return serveMedia(request, env, ctx, media[1], media[2]);
 
     // Room codes are only a namespace: the Durable Object is created lazily on first connection

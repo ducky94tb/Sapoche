@@ -1471,17 +1471,27 @@ class RoomController extends ChangeNotifier {
 
   Future<void> openSystemEqualizer() => _run(_backend.openSystemEqualizer);
 
-  /// ListenBrainz: see [Backend.scrobbleState]. A failure of the backend is reported as a connect that could not reach it.
-  Future<ScrobbleState> scrobbleState() => _scrobble(_backend.scrobbleState);
+  /// ListenBrainz and Last.fm: see [Backend.scrobbleState]. A failure of the backend is reported as a connect that could not reach it.
+  Future<ScrobbleState> scrobbleState(String service) =>
+      _scrobble(() => _backend.scrobbleState(service: service));
 
-  Future<ScrobbleState> scrobbleConnect(String token) =>
-      _scrobble(() => _backend.scrobbleConnect(token));
+  Future<ScrobbleState> scrobbleConnect(String service, String token) =>
+      _scrobble(() => _backend.scrobbleConnect(token, service: service));
 
-  Future<ScrobbleState> scrobbleDisconnect() =>
-      _scrobble(_backend.scrobbleDisconnect);
+  Future<ScrobbleState> scrobbleDisconnect(String service) =>
+      _scrobble(() => _backend.scrobbleDisconnect(service: service));
 
-  Future<ScrobbleState> scrobbleNowPlaying(bool on) =>
-      _scrobble(() => _backend.scrobbleNowPlaying(on));
+  Future<ScrobbleState> scrobbleNowPlaying(String service, bool on) =>
+      _scrobble(() => _backend.scrobbleNowPlaying(on, service: service));
+
+  /// The token and page to start connecting Last.fm; a failure of the backend is `offline`.
+  Future<LastFmBegin> lastfmBegin() async {
+    try {
+      return await _backend.lastfmBegin();
+    } on Object {
+      return const LastFmBegin(result: 'offline');
+    }
+  }
 
   Future<ScrobbleState> _scrobble(Future<ScrobbleState> Function() ask) async {
     try {

@@ -12,6 +12,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import app.sapoche.core.SongNames
 import app.sapoche.sync.ListenBrainzHttp
+import app.sapoche.sync.LastFmService
+import app.sapoche.sync.ListenBrainzService
+import app.sapoche.sync.RoomLastFmHttp
 import app.sapoche.sync.ScrobbleConnect
 import app.sapoche.sync.Scrobbler
 import com.google.common.util.concurrent.Futures
@@ -41,8 +44,9 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * What the player does reaches ListenBrainz: a player that says what is loaded and whether it plays, [ListenHistory]
- * watching it, the real [Scrobbler] and its storage, and a stand-in for the service.
+ * What the player does reaches ListenBrainz and Last.fm: a player that says what is loaded and whether it plays,
+ * [ListenHistory] watching it, the real [Scrobbler]s and their storage, and a stand-in for each service (Last.fm is asked
+ * through the room server, so its stand-in is that).
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 class ScrobbleWiringTest {
@@ -78,9 +82,12 @@ class ScrobbleWiringTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val server = MockWebServer()
+    private val lastFmServer = MockWebServer()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var storage: AndroidScrobbleStorage
     private lateinit var scrobbler: Scrobbler
+    private lateinit var lastFmStorage: AndroidScrobbleStorage
+    private lateinit var lastFm: Scrobbler
     private lateinit var store: LibraryStore
     private lateinit var player: ScriptedPlayer
     private lateinit var history: ListenHistory
@@ -92,24 +99,36 @@ class ScrobbleWiringTest {
     @Before
     fun start() {
         File(context.filesDir, "scrobble.json").delete()
+        File(context.filesDir, "scrobble-lastfm.json").delete()
         storage = AndroidScrobbleStorage(context).also { it.token = null }
+        lastFmStorage = AndroidScrobbleStorage(context, "lastfm_session", "scrobble-lastfm.json").also { it.token = null }
         // The app does not speak plain HTTP, so the stand-in speaks HTTPS with a certificate only this test trusts
         val held = HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
-        server.useHttps(HandshakeCertificates.Builder().heldCertificate(held).build().sslSocketFactory())
+        val certificates = HandshakeCertificates.Builder().heldCertificate(held).build()
+        server.useHttps(certificates.sslSocketFactory())
+        lastFmServer.useHttps(certificates.sslSocketFactory())
         val trusting = HandshakeCertificates.Builder().addTrustedCertificate(held.certificate).build()
         val client = OkHttpClient.Builder().sslSocketFactory(trusting.sslSocketFactory(), trusting.trustManager).build()
         server.start()
+        lastFmServer.start()
         store = LibraryStore(context, name = null)
         scrobbler = Scrobbler(
-            storage, ListenBrainzHttp(client, server.url("/").toString().trimEnd('/')), scope,
+            storage, ListenBrainzService(ListenBrainzHttp(client, server.url("/").toString().trimEnd('/')), "test"), scope,
             namer = { SongNames.title(it.title, it.artist) to SongNames.credit(it.artist) },
-            version = "test", mono = SystemClock::elapsedRealtime, wall = System::currentTimeMillis,
+            mono = SystemClock::elapsedRealtime, wall = System::currentTimeMillis,
         ) { android.util.Log.d("ScrobbleTest", it) }
+        lastFm = Scrobbler(
+            lastFmStorage,
+            LastFmService(RoomLastFmHttp({ lastFmServer.url("/").toString().trimEnd('/') }, { mapOf("X-Sapoche-Key" to "room-key") }, client)),
+            scope,
+            namer = { SongNames.title(it.title, it.artist) to SongNames.credit(it.artist) },
+            mono = SystemClock::elapsedRealtime, wall = System::currentTimeMillis,
+        ) { android.util.Log.d("ScrobbleTest", "lastfm: $it") }
         instrumentation.runOnMainSync {
             player = ScriptedPlayer()
             // Asking for anything makes it take the first state, so that a change after it is one that is told
             player.playbackState
-            history = ListenHistory(player, store, scope, scrobbler = scrobbler) { android.util.Log.d("ScrobbleTest", "history: $it") }.also { it.start() }
+            history = ListenHistory(player, store, scope, scrobblers = listOf(scrobbler, lastFm)) { android.util.Log.d("ScrobbleTest", "history: $it") }.also { it.start() }
         }
     }
 
@@ -122,8 +141,11 @@ class ScrobbleWiringTest {
         scope.cancel()
         store.close()
         server.close()
+        lastFmServer.close()
         storage.token = null
+        lastFmStorage.token = null
         File(context.filesDir, "scrobble.json").delete()
+        File(context.filesDir, "scrobble-lastfm.json").delete()
     }
 
     private fun onMain(block: () -> Unit) = instrumentation.runOnMainSync(block)
@@ -196,5 +218,40 @@ class ScrobbleWiringTest {
         Thread.sleep(500)
         assertEquals(1, scrobbler.status().pending)
         assertTrue(File(context.filesDir, "scrobble.json").readText().contains("dQw4w9WgXcQ"))
+    }
+
+    @Test
+    fun lastFmGetsTheSameSongOnItsOwnAndThroughTheRoomServer() {
+        connect()
+        lastFmServer.enqueue(MockResponse.Builder().code(200).body("""{"session":{"name":"fmtester","key":"sk-secret","subscriber":0}}""").build())
+        assertEquals(ScrobbleConnect.OK, runBlocking { lastFm.connect("allowed-token") })
+        val login = lastFmServer.takeRequest(5, TimeUnit.SECONDS)!!
+        assertEquals("/lastfm", login.url.encodedPath)
+        assertEquals("room-key", login.headers["X-Sapoche-Key"])
+        assertEquals("method=auth.getSession&token=allowed-token", login.body!!.utf8())
+
+        server.enqueue(MockResponse.Builder().code(200).body("""{"status":"ok"}""").build())
+        server.enqueue(MockResponse.Builder().code(200).body("""{"status":"ok"}""").build())
+        lastFmServer.enqueue(MockResponse.Builder().code(200).body("""{"nowplaying":{}}""").build())
+        lastFmServer.enqueue(MockResponse.Builder().code(200).body("""{"scrobbles":{"@attr":{"accepted":1,"ignored":0}}}""").build())
+        onMain { player.load(song, 31_000, playing = true) }
+
+        val now = lastFmServer.takeRequest(15, TimeUnit.SECONDS)
+        assertNotNull("playing now was not sent to Last.fm", now)
+        assertTrue(now!!.body!!.utf8(), "method=track.updateNowPlaying" in now.body!!.utf8() && "sk=sk-secret" in now.body!!.utf8())
+        val listen = lastFmServer.takeRequest(30, TimeUnit.SECONDS)
+        assertNotNull("the listen was not sent to Last.fm", listen)
+        val form = listen!!.body!!.utf8()
+        assertTrue(form, "method=track.scrobble" in form && "artist%5B0%5D=Rick%20Astley" in form && "track%5B0%5D=Never%20Gonna%20Give%20You%20Up" in form)
+        // ListenBrainz went on in parallel with what it had
+        assertNotNull(server.takeRequest(15, TimeUnit.SECONDS))
+        assertNotNull(server.takeRequest(30, TimeUnit.SECONDS))
+        val until = SystemClock.elapsedRealtime() + 3_000
+        while ((lastFm.status().pending > 0 || scrobbler.status().pending > 0) && SystemClock.elapsedRealtime() < until) Thread.sleep(50)
+        assertEquals(0, lastFm.status().pending)
+        assertEquals(0, scrobbler.status().pending)
+        // Neither the session key nor the token of the connect is in the queue file
+        val file = File(context.filesDir, "scrobble-lastfm.json").readText()
+        assertTrue(!file.contains("sk-secret") && !file.contains("allowed-token"))
     }
 }

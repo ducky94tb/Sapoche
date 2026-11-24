@@ -480,9 +480,14 @@ final class Bridge {
 
     // ------------------------------------------------------------------ commands
 
-    /// What the settings page shows of ListenBrainz; [result] says how a connect went (`ok`, `invalid` or `offline`).
-    private func scrobbleMap(_ result: String? = nil) -> [String: Any] {
-        let status = controller.scrobbler?.status() ?? ScrobbleStatus(connected: false, user: nil, nowPlaying: true, pending: 0, reconnect: false)
+    /// The scrobbler a call is for: ListenBrainz unless it says `lastfm`.
+    private func scrobbler(_ args: [String: Any]) -> Scrobbler? {
+        args["service"] as? String == "lastfm" ? controller.lastFm : controller.scrobbler
+    }
+
+    /// What the settings page shows of a service; [result] says how a connect went (`ok`, `invalid`, `pending` or `offline`).
+    private func scrobbleMap(_ scrobbler: Scrobbler?, _ result: String? = nil) -> [String: Any] {
+        let status = scrobbler?.status() ?? ScrobbleStatus(connected: false, user: nil, nowPlaying: true, pending: 0, reconnect: false)
         var map: [String: Any] = ["connected": status.connected, "nowPlaying": status.nowPlaying, "pending": status.pending, "reconnect": status.reconnect]
         if let user = status.user { map["user"] = user }
         if let result { map["result"] = result }
@@ -555,16 +560,23 @@ final class Bridge {
             controller.crossfadeSeconds = int("seconds")
             return nil
         case "scrobbleState":
-            return scrobbleMap()
+            return scrobbleMap(scrobbler(args))
         case "scrobbleConnect":
-            guard let scrobbler = controller.scrobbler else { return scrobbleMap("offline") }
-            return scrobbleMap("\(await scrobbler.connect(string("token")))")
+            guard let scrobbler = scrobbler(args) else { return scrobbleMap(nil, "offline") }
+            return scrobbleMap(scrobbler, "\(await scrobbler.connect(string("token")))")
         case "scrobbleDisconnect":
-            controller.scrobbler?.disconnect()
-            return scrobbleMap()
+            let scrobbler = scrobbler(args)
+            scrobbler?.disconnect()
+            return scrobbleMap(scrobbler)
         case "scrobbleNowPlaying":
-            controller.scrobbler?.setNowPlaying(args["on"] as? Bool ?? true)
-            return scrobbleMap()
+            let scrobbler = scrobbler(args)
+            scrobbler?.setNowPlaying(args["on"] as? Bool ?? true)
+            return scrobbleMap(scrobbler)
+        // The token to allow on the page of Last.fm and the address of that page, or why there is none (`unavailable`, `offline`)
+        case "lastfmBegin":
+            guard let begin = try await controller.lastFmService?.begin() else { return ["result": "unavailable"] }
+            if let token = begin.token, let url = begin.url { return ["token": token, "url": url] }
+            return ["result": begin.unavailable ? "unavailable" : "offline"]
         case "setEqualizer":
             controller.setEqualizer(preset: string("preset"), gains: (args["gains"] as? [Any] ?? []).map { JSON($0).int ?? 0 })
             return nil

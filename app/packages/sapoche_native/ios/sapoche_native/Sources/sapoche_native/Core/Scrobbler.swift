@@ -40,10 +40,6 @@ protocol ScrobbleStorage: AnyObject {
     func saveState(_ text: String)
 }
 
-enum ScrobbleConnect: Equatable {
-    case ok, invalid, offline
-}
-
 /// [ListenBrainz](https://listenbrainz.org) over the real network.
 struct ListenBrainzHTTP: ScrobbleHTTP {
     var client: HTTPClient = URLSessionHTTP()
@@ -63,8 +59,9 @@ struct ListenBrainzHTTP: ScrobbleHTTP {
     }
 }
 
-/// Sends what this phone plays to [ListenBrainz](https://listenbrainz.org), once the person has pasted a token of theirs.
-/// Without a token it does nothing, and nothing goes out.
+/// Sends what this phone plays to one [service] ([ListenBrainz](https://listenbrainz.org) or [Last.fm](https://www.last.fm)),
+/// once the person has connected it. There is one of these for each, with a queue and counter of its own, so that one that
+/// fails does not hold the other. Without a connection it does nothing, and nothing goes out.
 ///
 /// It follows the player through [watch]: a song counts after half of it or four minutes, whichever is first, and never
 /// when it is thirty seconds or less (the rule of ListenBrainz and Last.fm, stricter than the history's, so it has a
@@ -81,20 +78,17 @@ final class Scrobbler {
     /// A song of this length or less never counts.
     static let minSongMs: Int64 = 30_000
     static let announceDelayMs: Int64 = 5_000
-    static let batch = 100
     static let maxListens = 1000
     static let maxAgeSec: Int64 = 14 * 24 * 3600
     static let retryMinMs: Int64 = 15_000
     static let retryMaxMs: Int64 = 5 * 60_000
-    private static let submit = "/1/submit-listens"
 
     private let storage: ScrobbleStorage
-    private let http: ScrobbleHTTP
+    private let service: ScrobbleService
     private let scope: Scope
     private let time: TimeSource
     /// The title and the artist to send for a song: the cleaned names.
     private let namer: (TrackRef) -> (title: String, artist: String)
-    private let version: String
     private let wall: () -> Int64
     private let log: (String) -> Void
 
@@ -111,15 +105,14 @@ final class Scrobbler {
     private var announceJob: Job?
     private var sender: Job?
 
-    init(storage: ScrobbleStorage, http: ScrobbleHTTP, scope: Scope, time: TimeSource,
-         namer: @escaping (TrackRef) -> (title: String, artist: String), version: String,
+    init(storage: ScrobbleStorage, service: ScrobbleService, scope: Scope, time: TimeSource,
+         namer: @escaping (TrackRef) -> (title: String, artist: String),
          wall: @escaping () -> Int64, log: @escaping (String) -> Void = { _ in }) {
         self.storage = storage
-        self.http = http
+        self.service = service
         self.scope = scope
         self.time = time
         self.namer = namer
-        self.version = version
         self.wall = wall
         self.log = log
         if let text = storage.loadState(), let saved = JSON.parse(text) {
@@ -143,23 +136,16 @@ final class Scrobbler {
         ScrobbleStatus(connected: connected, user: user, nowPlaying: nowPlaying, pending: listens.count, reconnect: reconnect)
     }
 
-    /// Checks the token with the service and, if it is good, keeps it and sends what waits.
-    func connect(_ token: String) async -> ScrobbleConnect {
-        let clean = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        let reply: ScrobbleReply
-        do {
-            reply = try await http.send(path: "/1/validate-token", token: clean, body: nil)
-        } catch {
-            return .offline
-        }
-        if reply.status >= 500 || reply.status == 429 { return .offline }
-        let answer = JSON.parse(reply.body)
-        guard reply.status == 200, answer?["valid"].bool == true, let name = answer?["user_name"].string, !name.isEmpty else { return .invalid }
-        storage.token = clean
-        user = name
+    /// Checks [secret] (the token the person gave) with the service and, if it is good, keeps what it gives and sends what waits.
+    func connect(_ secret: String) async -> ScrobbleConnect {
+        guard let login = try? await service.check(secret) else { return .offline }
+        if login.result != .ok { return login.result }
+        guard let credential = login.credential else { return .invalid }
+        storage.token = credential
+        user = login.user
         reconnect = false
         save()
-        log("scrobble: connected as \(name)")
+        log("scrobble: connected as \(login.user ?? "")")
         send()
         return .ok
     }
@@ -253,7 +239,7 @@ final class Scrobbler {
             let duration = self.lastDurationMs > 0 ? self.lastDurationMs : song.durMs
             let listen = Listen(listenedAt: 0, videoId: song.videoId, title: names.title, artist: names.artist, durationMs: duration)
             do {
-                _ = try await self.http.send(path: Self.submit, token: token, body: Self.body("playing_now", [listen], version: self.version))
+                try await self.service.playingNow(token, listen)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -287,60 +273,41 @@ final class Scrobbler {
         sender = scope.launch { [weak self] in
             guard let self else { return }
             var wait = Self.retryMinMs
-            var size = Self.batch
+            var size = self.service.batch
             while !self.listens.isEmpty {
                 guard let token = self.storage.token else { return }
                 let batch = Array(self.listens.prefix(size))
-                var reply: ScrobbleReply?
-                do {
-                    reply = try await self.http.send(path: Self.submit, token: token,
-                                                     body: Self.body(batch.count == 1 ? "single" : "import", batch, version: self.version))
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch {
-                    reply = nil
-                }
-                if let reply, reply.status == 200 {
+                let sent = try await self.service.submit(token, batch)
+                switch sent.kind {
+                case .sent:
                     self.listens.removeFirst(batch.count)
                     self.save()
                     wait = Self.retryMinMs
-                } else if let reply, reply.status == 401 {
+                case .reauth:
                     self.reconnect = true
                     self.save()
                     self.log("scrobble: the token was refused")
                     return
-                } else if let reply, reply.status == 429 {
-                    try await self.time.sleep(ms: Int64(reply.resetInSec ?? 60) * 1000 + 1000)
-                } else if let reply, reply.status < 500 {
+                case .suspended:
+                    // Stops here; the next listen, or the app opened again, tries once more
+                    self.log("scrobble: the service takes nothing for now")
+                    return
+                case .wait:
+                    try await self.time.sleep(ms: Int64(sent.waitSec) * 1000 + 1000)
+                case .refused:
                     if batch.count > 1 {
                         // The service refused something in it: one at a time (until the queue is empty) finds what, and only that is dropped
                         size = 1
                     } else {
-                        self.log("scrobble: '\(batch[0].title)' refused (\(reply.status)), dropped")
+                        self.log("scrobble: '\(batch[0].title)' refused, dropped")
                         self.listens.removeFirst()
                         self.save()
                     }
-                } else {
+                case .retry:
                     try await self.time.sleep(ms: wait)
                     wait = min(wait * 2, Self.retryMaxMs)
                 }
             }
         }
-    }
-
-    /// The ask that submits [batch] as [type]: `single`, `import` or `playing_now` (which carries no time).
-    nonisolated static func body(_ type: String, _ batch: [Listen], version: String) -> String {
-        let payload: [[String: Any]] = batch.map { listen in
-            var info: [String: Any] = ["media_player": "Sapoche", "submission_client": "Sapoche", "submission_client_version": version]
-            if !listen.videoId.hasPrefix("local:") {
-                info["music_service"] = "youtube.com"
-                info["origin_url"] = "https://music.youtube.com/watch?v=\(listen.videoId)"
-            }
-            if listen.durationMs > 0 { info["duration_ms"] = listen.durationMs }
-            var item: [String: Any] = ["track_metadata": ["artist_name": listen.artist, "track_name": listen.title, "additional_info": info] as [String: Any]]
-            if type != "playing_now" { item["listened_at"] = listen.listenedAt }
-            return item
-        }
-        return JSONText.encode(["listen_type": type, "payload": payload] as [String: Any])
     }
 }

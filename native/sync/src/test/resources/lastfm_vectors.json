@@ -1,0 +1,134 @@
+{
+  "cases": [
+    {
+      "name": "one song",
+      "kind": "scrobble",
+      "session": "sk-1",
+      "listens": [
+        {
+          "listenedAt": 1700000000,
+          "videoId": "dQw4w9WgXcQ",
+          "title": "Never Gonna Give You Up",
+          "artist": "Rick Astley",
+          "durationMs": 213000
+        }
+      ],
+      "form": "artist%5B0%5D=Rick%20Astley&duration%5B0%5D=213&method=track.scrobble&sk=sk-1&timestamp%5B0%5D=1700000000&track%5B0%5D=Never%20Gonna%20Give%20You%20Up"
+    },
+    {
+      "name": "eleven: the index 10 sorts before 2, and text that needs escaping",
+      "kind": "scrobble",
+      "session": "sk 2+/=",
+      "listens": [
+        {
+          "listenedAt": 1700000000,
+          "videoId": "dQw4w9WgXcQ",
+          "title": "Never Gonna Give You Up",
+          "artist": "Rick Astley",
+          "durationMs": 213000
+        },
+        {
+          "listenedAt": 1700000400,
+          "videoId": "xyz",
+          "title": "Live Stream \"Quoted\" & more",
+          "artist": "Sơn Tùng M-TP",
+          "durationMs": 0
+        },
+        {
+          "listenedAt": 1700000700,
+          "videoId": "local:abc",
+          "title": "Tag Title",
+          "artist": "A, B & C",
+          "durationMs": 180999
+        },
+        {
+          "listenedAt": 1700001000,
+          "videoId": "dQw4w9WgXcQ",
+          "title": "Never Gonna Give You Up",
+          "artist": "Rick Astley",
+          "durationMs": 213000
+        },
+        {
+          "listenedAt": 1700001001,
+          "videoId": "dQw4w9WgXcQ",
+          "title": "Never Gonna Give You Up",
+          "artist": "Rick Astley",
+          "durationMs": 213000
+        },
+        {
+          "listenedAt": 1700001002,
+          "videoId": "dQw4w9WgXcQ",
+          "title": "Never Gonna Give You Up",
+          "artist": "Rick Astley",
+          "durationMs": 213000
+        },
+        {
+          "listenedAt": 1700001003,
+          "videoId": "dQw4w9WgXcQ",
+          "title": "Never Gonna Give You Up",
+          "artist": "Rick Astley",
+          "durationMs": 213000
+        },
+        {
+          "listenedAt": 1700001004,
+          "videoId": "dQw4w9WgXcQ",
+          "title": "Never Gonna Give You Up",
+          "artist": "Rick Astley",
+          "durationMs": 213000
+        },
+        {
+          "listenedAt": 1700001005,
+          "videoId": "dQw4w9WgXcQ",
+          "title": "Never Gonna Give You Up",
+          "artist": "Rick Astley",
+          "durationMs": 213000
+        },
+        {
+          "listenedAt": 1700001006,
+          "videoId": "dQw4w9WgXcQ",
+          "title": "Never Gonna Give You Up",
+          "artist": "Rick Astley",
+          "durationMs": 213000
+        },
+        {
+          "listenedAt": 1700001007,
+          "videoId": "dQw4w9WgXcQ",
+          "title": "Never Gonna Give You Up",
+          "artist": "Rick Astley",
+          "durationMs": 213000
+        }
+      ],
+      "form": "artist%5B0%5D=Rick%20Astley&artist%5B10%5D=Rick%20Astley&artist%5B1%5D=S%C6%A1n%20T%C3%B9ng%20M-TP&artist%5B2%5D=A%2C%20B%20%26%20C&artist%5B3%5D=Rick%20Astley&artist%5B4%5D=Rick%20Astley&artist%5B5%5D=Rick%20Astley&artist%5B6%5D=Rick%20Astley&artist%5B7%5D=Rick%20Astley&artist%5B8%5D=Rick%20Astley&artist%5B9%5D=Rick%20Astley&duration%5B0%5D=213&duration%5B10%5D=213&duration%5B2%5D=180&duration%5B3%5D=213&duration%5B4%5D=213&duration%5B5%5D=213&duration%5B6%5D=213&duration%5B7%5D=213&duration%5B8%5D=213&duration%5B9%5D=213&method=track.scrobble&sk=sk%202%2B%2F%3D&timestamp%5B0%5D=1700000000&timestamp%5B10%5D=1700001007&timestamp%5B1%5D=1700000400&timestamp%5B2%5D=1700000700&timestamp%5B3%5D=1700001000&timestamp%5B4%5D=1700001001&timestamp%5B5%5D=1700001002&timestamp%5B6%5D=1700001003&timestamp%5B7%5D=1700001004&timestamp%5B8%5D=1700001005&timestamp%5B9%5D=1700001006&track%5B0%5D=Never%20Gonna%20Give%20You%20Up&track%5B10%5D=Never%20Gonna%20Give%20You%20Up&track%5B1%5D=Live%20Stream%20%22Quoted%22%20%26%20more&track%5B2%5D=Tag%20Title&track%5B3%5D=Never%20Gonna%20Give%20You%20Up&track%5B4%5D=Never%20Gonna%20Give%20You%20Up&track%5B5%5D=Never%20Gonna%20Give%20You%20Up&track%5B6%5D=Never%20Gonna%20Give%20You%20Up&track%5B7%5D=Never%20Gonna%20Give%20You%20Up&track%5B8%5D=Never%20Gonna%20Give%20You%20Up&track%5B9%5D=Never%20Gonna%20Give%20You%20Up"
+    },
+    {
+      "name": "what plays now",
+      "kind": "nowPlaying",
+      "session": "sk-1",
+      "listens": [
+        {
+          "listenedAt": 1700000400,
+          "videoId": "xyz",
+          "title": "Live Stream \"Quoted\" & more",
+          "artist": "Sơn Tùng M-TP",
+          "durationMs": 0
+        }
+      ],
+      "form": "artist=S%C6%A1n%20T%C3%B9ng%20M-TP&method=track.updateNowPlaying&sk=sk-1&track=Live%20Stream%20%22Quoted%22%20%26%20more"
+    },
+    {
+      "name": "what plays now, with a length",
+      "kind": "nowPlaying",
+      "session": "sk-1",
+      "listens": [
+        {
+          "listenedAt": 1700000700,
+          "videoId": "local:abc",
+          "title": "Tag Title",
+          "artist": "A, B & C",
+          "durationMs": 180999
+        }
+      ],
+      "form": "artist=A%2C%20B%20%26%20C&duration=180&method=track.updateNowPlaying&sk=sk-1&track=Tag%20Title"
+    }
+  ]
+}

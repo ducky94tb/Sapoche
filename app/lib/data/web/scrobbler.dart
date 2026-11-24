@@ -6,6 +6,9 @@ import 'package:http/http.dart' as http;
 import '../models.dart';
 import 'job.dart';
 import 'listen_tracker.dart';
+import 'scrobble_service.dart';
+
+export 'scrobble_service.dart';
 
 /// One song heard, as it is sent: [listenedAt] is when it began (seconds since 1970), the names are the cleaned ones.
 class Listen {
@@ -93,10 +96,9 @@ abstract class ScrobbleStorage {
   void saveState(String text);
 }
 
-enum ScrobbleConnect { ok, invalid, offline }
-
-/// Sends what this phone plays to [ListenBrainz](https://listenbrainz.org), once the person has pasted a token of theirs.
-/// Without a token it does nothing, and nothing goes out.
+/// Sends what this phone plays to one [service] ([ListenBrainz](https://listenbrainz.org) or [Last.fm](https://www.last.fm)),
+/// once the person has connected it. There is one of these for each, with a queue and counter of its own, so that one that
+/// fails does not hold the other. Without a connection it does nothing, and nothing goes out.
 ///
 /// It follows the player through [watch]: a song counts after half of it or four minutes, whichever is first, and never
 /// when it is thirty seconds or less (the rule of ListenBrainz and Last.fm, stricter than the history's, so it has a
@@ -109,9 +111,8 @@ enum ScrobbleConnect { ok, invalid, offline }
 class Scrobbler {
   Scrobbler({
     required this.storage,
-    required this.http,
+    required this.service,
     required this.namer,
-    required this.version,
     required this.mono,
     required this.wall,
     this.log,
@@ -151,19 +152,16 @@ class Scrobbler {
   /// A song of this length or less never counts.
   static const minSongMs = 30000;
   static const announceDelay = Duration(seconds: 5);
-  static const batch = 100;
   static const maxListens = 1000;
   static const maxAgeSec = 14 * 24 * 3600;
   static const retryMin = Duration(seconds: 15);
   static const retryMax = Duration(minutes: 5);
-  static const _submit = '/1/submit-listens';
 
   final ScrobbleStorage storage;
-  final ScrobbleHttp http;
+  final ScrobbleService service;
 
   /// The title and the artist to send for a song: the cleaned names.
   final (String title, String artist) Function(Track) namer;
-  final String version;
   final int Function() mono;
   final int Function() wall;
   final void Function(String)? log;
@@ -195,37 +193,17 @@ class Scrobbler {
     reconnect: _reconnect,
   );
 
-  /// Checks the token with the service and, if it is good, keeps it and sends what waits.
-  Future<ScrobbleConnect> connect(String token) async {
-    final clean = token.trim();
-    final ScrobbleReply reply;
-    try {
-      reply = await http('/1/validate-token', clean, null);
-    } catch (_) {
-      return ScrobbleConnect.offline;
-    }
-    if (reply.status >= 500 || reply.status == 429) {
-      return ScrobbleConnect.offline;
-    }
-    Object? answer;
-    try {
-      answer = jsonDecode(reply.body);
-    } catch (_) {
-      answer = null;
-    }
-    final name = answer is Map ? answer['user_name'] : null;
-    if (reply.status != 200 ||
-        answer is! Map ||
-        answer['valid'] != true ||
-        name is! String ||
-        name.isEmpty) {
-      return ScrobbleConnect.invalid;
-    }
-    storage.token = clean;
-    _user = name;
+  /// Checks [secret] (the token the person gave) with the service and, if it is good, keeps what it gives and sends what waits.
+  Future<ScrobbleConnect> connect(String secret) async {
+    final login = await service.check(secret);
+    final credential = login.credential;
+    if (login.result != ScrobbleConnect.ok) return login.result;
+    if (credential == null) return ScrobbleConnect.invalid;
+    storage.token = credential;
+    _user = login.user;
     _reconnect = false;
     _save();
-    log?.call('scrobble: connected as $name');
+    log?.call('scrobble: connected as ${login.user}');
     _send();
     return ScrobbleConnect.ok;
   }
@@ -333,9 +311,7 @@ class Scrobbler {
         durationMs: _lastDurationMs > 0 ? _lastDurationMs : song.durMs,
       );
       try {
-        await job.guard(
-          http(_submit, token, body('playing_now', [listen], version)),
-        );
+        await job.guard(service.playingNow(token, listen));
       } on Cancelled {
         rethrow;
       } catch (e) {
@@ -377,79 +353,42 @@ class Scrobbler {
     }
     _sender = Job.launch((job) async {
       var wait = retryMin;
-      var size = batch;
+      var size = service.batch;
       while (_listens.isNotEmpty) {
         final token = storage.token;
         if (token == null) return;
         final sending = _listens.take(size).toList();
-        ScrobbleReply? reply;
-        try {
-          reply = await job.guard(
-            http(
-              _submit,
-              token,
-              body(sending.length == 1 ? 'single' : 'import', sending, version),
-            ),
-          );
-        } on Cancelled {
-          rethrow;
-        } catch (_) {
-          reply = null;
-        }
-        if (reply != null && reply.status == 200) {
-          _listens.removeRange(0, sending.length);
-          _save();
-          wait = retryMin;
-        } else if (reply != null && reply.status == 401) {
-          _reconnect = true;
-          _save();
-          log?.call('scrobble: the token was refused');
-          return;
-        } else if (reply != null && reply.status == 429) {
-          await job.delay(Duration(seconds: (reply.resetInSec ?? 60) + 1));
-        } else if (reply != null && reply.status < 500) {
-          if (sending.length > 1) {
-            // The service refused something in it: one at a time (until the queue is empty) finds what, and only that is dropped
-            size = 1;
-          } else {
-            log?.call(
-              "scrobble: '${sending[0].title}' refused (${reply.status}), dropped",
-            );
-            _listens.removeAt(0);
+        final sent = await job.guard(service.submit(token, sending));
+        switch (sent.kind) {
+          case ScrobbleSent.sent:
+            _listens.removeRange(0, sending.length);
             _save();
-          }
-        } else {
-          await job.delay(wait);
-          wait = wait * 2 > retryMax ? retryMax : wait * 2;
+            wait = retryMin;
+          case ScrobbleSent.reauth:
+            _reconnect = true;
+            _save();
+            log?.call('scrobble: the token was refused');
+            return;
+          case ScrobbleSent.suspended:
+            // Stops here; the next listen, or the app opened again, tries once more
+            log?.call('scrobble: the service takes nothing for now');
+            return;
+          case ScrobbleSent.wait:
+            await job.delay(Duration(seconds: sent.waitSec + 1));
+          case ScrobbleSent.refused:
+            if (sending.length > 1) {
+              // The service refused something in it: one at a time (until the queue is empty) finds what, and only that is dropped
+              size = 1;
+            } else {
+              log?.call("scrobble: '${sending[0].title}' refused, dropped");
+              _listens.removeAt(0);
+              _save();
+            }
+          case ScrobbleSent.retry:
+            await job.delay(wait);
+            wait = wait * 2 > retryMax ? retryMax : wait * 2;
         }
       }
     });
   }
-
-  /// The ask that submits [batch] as [type]: `single`, `import` or `playing_now` (which carries no time).
-  static String body(String type, List<Listen> batch, String version) =>
-      jsonEncode({
-        'listen_type': type,
-        'payload': [
-          for (final l in batch)
-            {
-              if (type != 'playing_now') 'listened_at': l.listenedAt,
-              'track_metadata': {
-                'artist_name': l.artist,
-                'track_name': l.title,
-                'additional_info': {
-                  'media_player': 'Sapoche',
-                  'submission_client': 'Sapoche',
-                  'submission_client_version': version,
-                  if (!l.videoId.startsWith('local:')) ...{
-                    'music_service': 'youtube.com',
-                    'origin_url':
-                        'https://music.youtube.com/watch?v=${l.videoId}',
-                  },
-                  if (l.durationMs > 0) 'duration_ms': l.durationMs,
-                },
-              },
-            },
-        ],
-      });
 }

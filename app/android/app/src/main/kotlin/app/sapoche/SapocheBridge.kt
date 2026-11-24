@@ -20,6 +20,7 @@ import app.sapoche.sync.ListenSource
 import app.sapoche.sync.LocalMusic
 import app.sapoche.sync.MissedReactions
 import app.sapoche.sync.Taste
+import app.sapoche.sync.Scrobbler
 import app.sapoche.sync.TrackRef
 import com.google.common.util.concurrent.ListenableFuture
 import io.flutter.embedding.android.FlutterActivity
@@ -444,9 +445,12 @@ class SapocheBridge(
         return if (intent.resolveActivity(activity.packageManager) != null) intent else null
     }
 
-    /** What the settings page shows of ListenBrainz; [result] says how a connect went (`ok`, `invalid` or `offline`). */
-    private fun scrobbleMap(result: String? = null): Map<String, Any?> {
-        val status = SapocheApp.scrobbler.status()
+    /** The scrobbler a call is for: ListenBrainz unless it says `lastfm`. */
+    private fun scrobblerOf(call: MethodCall) = if (call.argument<String>("service") == "lastfm") SapocheApp.lastFm else SapocheApp.scrobbler
+
+    /** What the settings page shows of a service; [result] says how a connect went (`ok`, `invalid`, `pending` or `offline`). */
+    private fun scrobbleMap(scrobbler: Scrobbler, result: String? = null): Map<String, Any?> {
+        val status = scrobbler.status()
         return mapOf(
             "connected" to status.connected, "user" to status.user, "nowPlaying" to status.nowPlaying,
             "pending" to status.pending, "reconnect" to status.reconnect, "result" to result,
@@ -559,18 +563,30 @@ class SapocheBridge(
                 EventLog.d("eq", "bands ${gains.joinToString(",")}")
                 return null
             }
-            "scrobbleState" -> return scrobbleMap()
+            "scrobbleState" -> return scrobbleMap(scrobblerOf(call))
             "scrobbleConnect" -> {
-                val result = SapocheApp.scrobbler.connect(call.argument<String>("token").orEmpty())
-                return scrobbleMap(result.name.lowercase())
+                val scrobbler = scrobblerOf(call)
+                val result = scrobbler.connect(call.argument<String>("token").orEmpty())
+                return scrobbleMap(scrobbler, result.name.lowercase())
             }
             "scrobbleDisconnect" -> {
-                SapocheApp.scrobbler.disconnect()
-                return scrobbleMap()
+                val scrobbler = scrobblerOf(call)
+                scrobbler.disconnect()
+                return scrobbleMap(scrobbler)
             }
             "scrobbleNowPlaying" -> {
-                SapocheApp.scrobbler.setNowPlaying(call.argument<Boolean>("on") ?: true)
-                return scrobbleMap()
+                val scrobbler = scrobblerOf(call)
+                scrobbler.setNowPlaying(call.argument<Boolean>("on") ?: true)
+                return scrobbleMap(scrobbler)
+            }
+            // The token to allow on the page of Last.fm and the address of that page, or why there is none (`unavailable`, `offline`)
+            "lastfmBegin" -> {
+                val begin = SapocheApp.lastFmService.begin()
+                return when {
+                    begin.token != null -> mapOf("token" to begin.token, "url" to begin.url)
+                    begin.unavailable -> mapOf("result" to "unavailable")
+                    else -> mapOf("result" to "offline")
+                }
             }
             "openSystemEqualizer" -> {
                 val intent = systemEqualizerIntent() ?: return null

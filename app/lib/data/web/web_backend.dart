@@ -1978,40 +1978,62 @@ class WebBackend extends BackendDefaults {
       _listens.setPlaying(playing, now);
       _listens.check(now);
     }
-    _scrobbler.watch(
-      item == null
-          ? null
-          : Track(
-              videoId: item.videoId,
-              title: item.title,
-              artist: item.artist,
-              thumb: item.thumb,
-              durMs: item.durMs,
-            ),
-      playing,
-      player.durationMs(),
-    );
+    final track = item == null
+        ? null
+        : Track(
+            videoId: item.videoId,
+            title: item.title,
+            artist: item.artist,
+            thumb: item.thumb,
+            durMs: item.durMs,
+          );
+    _scrobbler.watch(track, playing, player.durationMs());
+    _lastFm.watch(track, playing, player.durationMs());
   }
 
   /// Sends what plays to ListenBrainz once the person pasted a token: the page asks it straight, which lets any page.
   late final _scrobbler = Scrobbler(
     storage: _PrefsScrobbleStorage(prefs),
-    http: listenBrainzHttp(_http),
-    namer: (t) => (
-      SongNames.title(t.title, artist: t.artist),
-      SongNames.credit(t.artist),
-    ),
-    version: appVersion ?? '',
+    service: ListenBrainzService(listenBrainzHttp(_http), appVersion ?? ''),
+    namer: _scrobbleNames,
     mono: _now,
     wall: () => DateTime.now().millisecondsSinceEpoch,
     log: (m) => _note('scrobble: $m'),
   )..resume();
 
-  @override
-  Future<ScrobbleState> scrobbleState() async => _scrobbleState();
+  /// The same for Last.fm, through the room server, which signs for the page (the secret cannot be in it).
+  late final _lastFmService = LastFmService(
+    roomLastFmHttp(_http, server: () => _server, headers: () => _authHeaders),
+    log: (m) => _note('scrobble: $m'),
+  );
+  late final _lastFm = Scrobbler(
+    storage: _PrefsScrobbleStorage(
+      prefs,
+      keyToken: 'lastfm_session',
+      keyState: 'lastfm_state',
+    ),
+    service: _lastFmService,
+    namer: _scrobbleNames,
+    mono: _now,
+    wall: () => DateTime.now().millisecondsSinceEpoch,
+    log: (m) => _note('scrobble: $m'),
+  )..resume();
 
-  ScrobbleState _scrobbleState([String? result]) {
-    final s = _scrobbler.status();
+  (String, String) _scrobbleNames(Track t) => (
+    SongNames.title(t.title, artist: t.artist),
+    SongNames.credit(t.artist),
+  );
+
+  Scrobbler _scrobblerOf(String service) =>
+      service == ScrobbleServices.lastFm ? _lastFm : _scrobbler;
+
+  @override
+  Future<ScrobbleState> scrobbleState({
+    String service = ScrobbleServices.listenBrainz,
+  }) async => _scrobbleState(_scrobblerOf(service));
+
+  ScrobbleState _scrobbleState(Scrobbler scrobbler, [String? result]) {
+    final s = scrobbler.status();
     return ScrobbleState(
       connected: s.connected,
       user: s.user,
@@ -2023,19 +2045,38 @@ class WebBackend extends BackendDefaults {
   }
 
   @override
-  Future<ScrobbleState> scrobbleConnect(String token) async =>
-      _scrobbleState((await _scrobbler.connect(token)).name);
-
-  @override
-  Future<ScrobbleState> scrobbleDisconnect() async {
-    _scrobbler.disconnect();
-    return _scrobbleState();
+  Future<ScrobbleState> scrobbleConnect(
+    String token, {
+    String service = ScrobbleServices.listenBrainz,
+  }) async {
+    final scrobbler = _scrobblerOf(service);
+    return _scrobbleState(scrobbler, (await scrobbler.connect(token)).name);
   }
 
   @override
-  Future<ScrobbleState> scrobbleNowPlaying(bool on) async {
-    _scrobbler.setNowPlaying(on);
-    return _scrobbleState();
+  Future<ScrobbleState> scrobbleDisconnect({
+    String service = ScrobbleServices.listenBrainz,
+  }) async {
+    final scrobbler = _scrobblerOf(service)..disconnect();
+    return _scrobbleState(scrobbler);
+  }
+
+  @override
+  Future<ScrobbleState> scrobbleNowPlaying(
+    bool on, {
+    String service = ScrobbleServices.listenBrainz,
+  }) async {
+    final scrobbler = _scrobblerOf(service)..setNowPlaying(on);
+    return _scrobbleState(scrobbler);
+  }
+
+  @override
+  Future<LastFmBegin> lastfmBegin() async {
+    final begin = await _lastFmService.begin();
+    if (begin.token != null) {
+      return LastFmBegin(token: begin.token, url: begin.url);
+    }
+    return LastFmBegin(result: begin.unavailable ? 'unavailable' : 'offline');
   }
 
   /// A song was left after a few seconds, before it counted: the person did not want it, which the taste takes in. Not
@@ -2116,26 +2157,29 @@ class WebBackend extends BackendDefaults {
 
 /// The token and the queue of the scrobbler, in the browser's storage for this page.
 class _PrefsScrobbleStorage implements ScrobbleStorage {
-  _PrefsScrobbleStorage(this._prefs);
+  _PrefsScrobbleStorage(
+    this._prefs, {
+    this.keyToken = 'scrobble_token',
+    this.keyState = 'scrobble_state',
+  });
 
   final SharedPreferences _prefs;
-
-  static const _keyToken = 'scrobble_token';
-  static const _keyState = 'scrobble_state';
+  final String keyToken;
+  final String keyState;
 
   @override
-  String? get token => _prefs.getString(_keyToken);
+  String? get token => _prefs.getString(keyToken);
 
   @override
   set token(String? value) => unawaited(
     value == null
-        ? _prefs.remove(_keyToken)
-        : _prefs.setString(_keyToken, value),
+        ? _prefs.remove(keyToken)
+        : _prefs.setString(keyToken, value),
   );
 
   @override
-  String? loadState() => _prefs.getString(_keyState);
+  String? loadState() => _prefs.getString(keyState);
 
   @override
-  void saveState(String text) => unawaited(_prefs.setString(_keyState, text));
+  void saveState(String text) => unawaited(_prefs.setString(keyState, text));
 }

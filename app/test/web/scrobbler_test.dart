@@ -41,9 +41,8 @@ void main() {
 
   Scrobbler scrobbler([_Storage? s]) => Scrobbler(
     storage: s ?? storage,
-    http: http,
+    service: ListenBrainzService(http, '1.50.0'),
     namer: (t) => (t.title.replaceAll(' (Official Video)', ''), t.artist.replaceAll(' - Topic', '')),
-    version: '1.50.0',
     mono: () => async.elapsed.inMilliseconds,
     wall: () => 1700000000000 + async.elapsed.inMilliseconds,
   );
@@ -74,7 +73,7 @@ void main() {
         for (final l in (c['listens'] as List).cast<Map<String, dynamic>>())
           Listen(listenedAt: l['listenedAt'] as int, videoId: l['videoId'] as String, title: l['title'] as String, artist: l['artist'] as String, durationMs: l['durationMs'] as int),
       ];
-      expect(jsonDecode(Scrobbler.body(c['type'] as String, listens, version)), c['body'], reason: c['name'] as String);
+      expect(jsonDecode(ListenBrainzService.body(c['type'] as String, listens, version)), c['body'], reason: c['name'] as String);
     }
   });
 

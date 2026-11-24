@@ -20,7 +20,11 @@ import app.sapoche.core.StreamHosts
 import app.sapoche.core.UpdateClient
 import app.sapoche.core.VideoPicker
 import app.sapoche.sync.ListenBrainzHttp
+import app.sapoche.sync.LastFmService
+import app.sapoche.sync.ListenBrainzService
+import app.sapoche.sync.RoomLastFmHttp
 import app.sapoche.sync.Scrobbler
+import app.sapoche.sync.TrackRef
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -62,10 +66,17 @@ class SapocheApp : Application() {
         }
         val music = MusicClient(region = ::phoneRegion)
         musicFeed = MusicFeed(music, LyricsClient(), LyricsStore(File(cacheDir, "lyrics")))
+        val scrobbleScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val songNamer = { song: TrackRef -> SongNames.title(song.title, song.artist) to SongNames.credit(song.artist) }
         scrobbler = Scrobbler(
-            AndroidScrobbleStorage(this), ListenBrainzHttp(), CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
-            namer = { SongNames.title(it.title, it.artist) to SongNames.credit(it.artist) },
-            version = BuildConfig.VERSION_NAME, mono = SystemClock::elapsedRealtime, wall = System::currentTimeMillis,
+            AndroidScrobbleStorage(this), ListenBrainzService(ListenBrainzHttp(), BuildConfig.VERSION_NAME), scrobbleScope,
+            namer = songNamer, mono = SystemClock::elapsedRealtime, wall = System::currentTimeMillis,
+        ) { EventLog.d("scrobble", it) }.also { it.resume() }
+        // Last.fm goes through the room server, which signs for the app (the secret cannot be in it)
+        lastFmService = LastFmService(RoomLastFmHttp({ Config.SERVER }, { Config.authHeaders })) { EventLog.d("scrobble", it) }
+        lastFm = Scrobbler(
+            AndroidScrobbleStorage(this, "lastfm_session", "scrobble-lastfm.json"), lastFmService, scrobbleScope,
+            namer = songNamer, mono = SystemClock::elapsedRealtime, wall = System::currentTimeMillis,
         ) { EventLog.d("scrobble", it) }.also { it.resume() }
         suggestions = SuggestionFeed(library, resolver, musicFeed) { EventLog.d("suggest", it) }
         roomKeys = RoomKeys(this)
@@ -210,6 +221,12 @@ class SapocheApp : Application() {
 
         /** Sends what this phone plays to ListenBrainz, when the person connected it; main thread only. */
         lateinit var scrobbler: Scrobbler
+            private set
+
+        /** The same for Last.fm: its own counter and queue, so that one that fails does not hold the other. */
+        lateinit var lastFm: Scrobbler
+            private set
+        lateinit var lastFmService: LastFmService
             private set
 
         /** Songs to offer and to carry on with. */

@@ -7,13 +7,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 /** One song heard, as it is sent: [listenedAt] is when it began (seconds since 1970), the names are the cleaned ones. */
 @Serializable
@@ -43,11 +36,10 @@ interface ScrobbleStorage {
     fun saveState(text: String)
 }
 
-enum class ScrobbleConnect { OK, INVALID, OFFLINE }
-
 /**
- * Sends what this phone plays to [ListenBrainz](https://listenbrainz.org), once the person has pasted a token of theirs.
- * Without a token it does nothing, and nothing goes out.
+ * Sends what this phone plays to one [service] ([ListenBrainz](https://listenbrainz.org) or [Last.fm](https://www.last.fm)),
+ * once the person has connected it. There is one of these for each, with a queue and counter of its own, so that one that
+ * fails does not hold the other. Without a connection it does nothing, and nothing goes out.
  *
  * It follows the player through [watch]: a song counts after half of it or four minutes, whichever is first, and never
  * when it is thirty seconds or less (the rule of ListenBrainz and Last.fm, stricter than the history's, so it has a
@@ -61,11 +53,10 @@ enum class ScrobbleConnect { OK, INVALID, OFFLINE }
  */
 class Scrobbler(
     private val storage: ScrobbleStorage,
-    private val http: ScrobbleHttp,
+    private val service: ScrobbleService,
     private val scope: CoroutineScope,
     /** The title and the artist to send for a song: the cleaned names. */
     private val namer: (TrackRef) -> Pair<String, String>,
-    private val version: String,
     private val mono: () -> Long,
     private val wall: () -> Long,
     private val log: (String) -> Unit = {},
@@ -105,25 +96,15 @@ class Scrobbler(
 
     fun status() = ScrobbleStatus(connected, user, nowPlaying, listens.size, reconnect)
 
-    /** Checks the token with the service and, if it is good, keeps it and sends what waits. */
-    suspend fun connect(token: String): ScrobbleConnect {
-        val clean = token.trim()
-        val reply = try {
-            http.send("/1/validate-token", clean, null)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return ScrobbleConnect.OFFLINE
-        }
-        if (reply.status >= 500 || reply.status == 429) return ScrobbleConnect.OFFLINE
-        val answer = runCatching { json.parseToJsonElement(reply.body) as? JsonObject }.getOrNull()
-        val name = answer?.get("user_name")?.jsonPrimitive?.contentOrNull
-        if (reply.status != 200 || answer?.get("valid")?.jsonPrimitive?.booleanOrNull != true || name.isNullOrEmpty()) return ScrobbleConnect.INVALID
-        storage.token = clean
-        user = name
+    /** Checks [secret] (the token the person gave) with the service and, if it is good, keeps what it gives and sends what waits. */
+    suspend fun connect(secret: String): ScrobbleConnect {
+        val login = service.check(secret)
+        if (login.result != ScrobbleConnect.OK) return login.result
+        storage.token = login.credential
+        user = login.user
         reconnect = false
         save()
-        log("scrobble: connected as $name")
+        log("scrobble: connected as ${login.user}")
         send()
         return ScrobbleConnect.OK
     }
@@ -218,7 +199,7 @@ class Scrobbler(
             val (title, artist) = namer(song)
             val duration = if (lastDurationMs > 0) lastDurationMs else song.durMs
             try {
-                http.send(SUBMIT, token, body("playing_now", listOf(Listen(0, song.videoId, title, artist, duration)), version))
+                service.playingNow(token, Listen(0, song.videoId, title, artist, duration))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -244,38 +225,38 @@ class Scrobbler(
         if (sender?.isActive == true || listens.isEmpty() || !connected || reconnect) return
         sender = scope.launch {
             var wait = RETRY_MIN_MS
-            var size = BATCH
+            var size = service.batch
             while (listens.isNotEmpty()) {
                 val token = storage.token ?: return@launch
                 val batch = listens.take(size)
-                val reply = try {
-                    http.send(SUBMIT, token, body(if (batch.size == 1) "single" else "import", batch, version))
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    null
-                }
-                when {
-                    reply == null || reply.status >= 500 -> {
+                val sent = service.submit(token, batch)
+                when (sent.kind) {
+                    ScrobbleSent.RETRY -> {
                         delay(wait)
                         wait = minOf(wait * 2, RETRY_MAX_MS)
                     }
-                    reply.status == 200 -> {
+                    ScrobbleSent.SENT -> {
                         repeat(batch.size) { listens.removeAt(0) }
                         save()
                         wait = RETRY_MIN_MS
                     }
-                    reply.status == 429 -> delay((reply.resetInSec ?: 60) * 1000L + 1000)
-                    reply.status == 401 -> {
+                    ScrobbleSent.WAIT -> delay(sent.waitSec * 1000L + 1000)
+                    ScrobbleSent.REAUTH -> {
                         reconnect = true
                         save()
                         log("scrobble: the token was refused")
                         return@launch
                     }
+                    // Stops here; the next listen, or the app opened again, tries once more
+                    ScrobbleSent.SUSPENDED -> {
+                        log("scrobble: the service takes nothing for now")
+                        return@launch
+                    }
                     // The service refused something in it: one at a time (until the queue is empty) finds what, and only that is dropped
-                    batch.size > 1 -> size = 1
-                    else -> {
-                        log("scrobble: '${batch[0].title}' refused (${reply.status}), dropped")
+                    ScrobbleSent.REFUSED -> if (batch.size > 1) {
+                        size = 1
+                    } else {
+                        log("scrobble: '${batch[0].title}' refused, dropped")
                         listens.removeAt(0)
                         save()
                     }
@@ -285,39 +266,12 @@ class Scrobbler(
     }
 
     companion object {
-        /** The ask that submits [batch] as [type]: `single`, `import` or `playing_now` (which carries no time). */
-        fun body(type: String, batch: List<Listen>, version: String): String = buildJsonObject {
-            put("listen_type", type)
-            put("payload", buildJsonArray { batch.forEach { add(payload(it, type != "playing_now", version)) } })
-        }.toString()
-
-        private fun payload(listen: Listen, withTime: Boolean, version: String) = buildJsonObject {
-            if (withTime) put("listened_at", listen.listenedAt)
-            put("track_metadata", buildJsonObject {
-                put("artist_name", listen.artist)
-                put("track_name", listen.title)
-                put("additional_info", buildJsonObject {
-                    put("media_player", "Sapoche")
-                    put("submission_client", "Sapoche")
-                    put("submission_client_version", version)
-                    if (!listen.videoId.startsWith("local:")) {
-                        put("music_service", "youtube.com")
-                        put("origin_url", "https://music.youtube.com/watch?v=${listen.videoId}")
-                    }
-                    if (listen.durationMs > 0) put("duration_ms", listen.durationMs)
-                })
-            })
-        }
-
-        private const val SUBMIT = "/1/submit-listens"
-
         /** A song counts after this long of playing, or half of it when that is less. */
         const val HEARD_MS = 4 * 60_000L
 
         /** A song of this length or less never counts. */
         const val MIN_SONG_MS = 30_000L
         const val ANNOUNCE_DELAY_MS = 5_000L
-        const val BATCH = 100
         const val MAX_LISTENS = 1000
         const val MAX_AGE_SEC = 14 * 24 * 3600L
         const val RETRY_MIN_MS = 15_000L
