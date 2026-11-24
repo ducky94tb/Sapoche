@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../backend.dart';
+import '../log_line.dart';
 import '../models.dart';
 import '../music_models.dart';
 import 'backend_defaults.dart';
@@ -84,6 +85,7 @@ class WebBackend extends BackendDefaults {
     this.push,
     this.appVersion,
     this.sink = _ignore,
+    this.environment = _noEnvironment,
   }) : _http = client ?? http.Client(),
        _library = library ?? LibraryStore(),
        _random = random ?? Random.secure() {
@@ -94,6 +96,7 @@ class WebBackend extends BackendDefaults {
         _tasteChanged();
       })
       ..unnamed = () => _language == 'vi' ? 'Chưa đặt tên' : 'Untitled';
+    _note('log: ---- process started ---- ${appVersion ?? ''}'.trimRight());
     final watch = Stopwatch()..start();
     _now = nowMs ?? () => watch.elapsedMilliseconds;
     _events = StreamController<BackendEvent>.broadcast(
@@ -160,6 +163,7 @@ class WebBackend extends BackendDefaults {
   }
 
   static void _ignore(String _) {}
+  static List<String> _noEnvironment() => const [];
   static String _usa() => 'US';
 
   final PlayerPort player;
@@ -169,6 +173,9 @@ class WebBackend extends BackendDefaults {
   final String defaultServer;
   /// Where the lines of the diary go (the console of the browser).
   final void Function(String line) sink;
+
+  /// "name: value" lines about the browser, for the top of an exported log.
+  final List<String> Function() environment;
 
   /// The country whose music YouTube Music shows first, as a code like "VN"; follows the browser.
   final String Function() region;
@@ -466,18 +473,42 @@ class WebBackend extends BackendDefaults {
 
   final _clock = ClockSync();
   final _diary = <String>[];
+  static const _diaryLines = 2000;
 
-  void _note(String line) {
-    _diary.add(line);
-    if (_diary.length > 300) _diary.removeAt(0);
-    sink(line);
+  /// Writes [line], which reads `tag: message`, into the diary in the shape every side shares (`Diary`); the level is
+  /// [level], or the one the words say. The diary stays in memory: a page that is closed takes it along.
+  void _note(String line, [LogLevel? level]) {
+    final colon = line.indexOf(': ');
+    final tagged = colon > 0 && !line.substring(0, colon).contains(' ');
+    final tag = tagged ? line.substring(0, colon) : 'web';
+    final message = tagged ? line.substring(colon + 2) : line;
+    final text = Diary.line(Diary.stamp(DateTime.now()), level ?? Diary.infer(tag, message), tag, message);
+    _diary.add(text);
+    if (_diary.length > _diaryLines) _diary.removeRange(0, _diary.length - _diaryLines);
+    sink(text);
   }
 
   @override
   Future<List<String>> log() async => List.of(_diary);
 
   @override
-  Future<void> note(String line) async => _note('ui: $line');
+  Future<List<String>> logInfo() async => [if (appVersion != null) 'app: $appVersion', ...environment()];
+
+  @override
+  Future<void> logMark(String note) async {
+    final text = note.trim();
+    _note('mark: the person marked this moment${text.isEmpty ? '' : ': $text'}', LogLevel.main);
+  }
+
+  @override
+  Future<void> logClear() async {
+    _diary.clear();
+    _note('log: the log was cleared', LogLevel.main);
+  }
+
+  @override
+  Future<void> note(String line) async =>
+      line.startsWith('error: ') ? _note('error: ${line.substring(7)}', LogLevel.error) : _note('ui: $line');
 
   /// Seeking in a frame of the YouTube player costs a few hundred milliseconds, so a drift smaller than that is not
   /// worth a seek; measured on the first real rooms.
@@ -1973,7 +2004,7 @@ class WebBackend extends BackendDefaults {
     version: appVersion ?? '',
     mono: _now,
     wall: () => DateTime.now().millisecondsSinceEpoch,
-    log: (m) => _note(m),
+    log: (m) => _note('scrobble: $m'),
   )..resume();
 
   @override

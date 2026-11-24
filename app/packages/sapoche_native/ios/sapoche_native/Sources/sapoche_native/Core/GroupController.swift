@@ -370,7 +370,7 @@ final class GroupController {
 
         health.onChange = { weak in
             NetworkState.shared.weak = weak
-            EventLog.d("net", "weak network: \(weak)")
+            if weak { EventLog.w("net", "weak network: the room may run ahead") } else { EventLog.k("net", "network is good again") }
         }
         local = LocalSession(
             scope: ownScope,

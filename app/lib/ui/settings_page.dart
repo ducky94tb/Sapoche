@@ -25,6 +25,7 @@ import '../theme/palette.dart';
 import '../theme/theme.dart';
 import 'accent_picker_sheet.dart';
 import 'home_shell.dart';
+import 'log_page.dart';
 import 'player/video_controls.dart';
 import 'scope.dart';
 import 'setup_dialog.dart';
@@ -269,20 +270,13 @@ class _SettingsPageState extends State<SettingsPage> {
       _Group(
         footer: S.diagnosticsHelp,
         children: [
-          _Row(
-            label: S.copyLog,
-            leading: Icon(
-              Icons.content_copy_rounded,
-              color: context.palette.primary,
-            ),
-            onTap: () async {
-              final lines = await model.room.log();
-              await Clipboard.setData(ClipboardData(text: lines.join('\n')));
-              if (context.mounted) {
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(SnackBar(content: Text(S.logCopied)));
-              }
-            },
+          _NavRow(
+            key: const ValueKey('settings-log'),
+            icon: Icons.fact_check_rounded,
+            label: S.logTitle,
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => const LogPage())),
           ),
           // Android has the server built in, so it has no Server page to check it from
           if (!kIsWeb && Platform.isAndroid)

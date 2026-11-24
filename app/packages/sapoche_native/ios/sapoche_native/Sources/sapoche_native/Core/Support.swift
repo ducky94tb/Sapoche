@@ -29,30 +29,91 @@ final class MemoryStore: KeyValueStore {
     func remove(_ key: String) { values[key] = nil }
 }
 
-/// A short diary of what the native side did, for the log screen. Kept in memory; the newest lines last.
+/// The diary of the native side, mirrored to the files of `DiaryFiles` (two that take every line, one that takes the key
+/// lines alone), so that a line is there after iOS ended the app in the background. Lines reach the files in batches and
+/// when the app leaves the screen. Before `start` (and in tests) lines stay in memory only.
 final class EventLog: @unchecked Sendable {
     static let shared = EventLog()
+    static let started = "---- process started ----"
+
+    private static let batchLines = 25
+    private static let batchSeconds: TimeInterval = 60
 
     private let lock = NSLock()
-    private var lines: [String] = []
-    private let capacity = 500
+    private let format: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MM-dd HH:mm:ss.SSS"
+        return f
+    }()
+    private var files: DiaryFiles?
+    private var unwritten: [String] = []
+    private var memory: [String] = []
+    private var lastWrite = Date()
 
-    static func d(_ tag: String, _ message: String) {
-        shared.add(tag, message)
+    /// The run before this one ended without a word of the app: a crash line of ours or a `[diagnostic]` line of MetricKit.
+    private(set) var previousRunFailed = false
+
+    /// Opens the files in [dir]. Called once, as early as the app can.
+    func start(dir: URL, version: String = "") {
+        lock.lock()
+        let store = DiaryFiles(dir: dir)
+        files = store
+        let last = store.lastRun().reversed().prefix { !$0.contains(Self.started) }
+        previousRunFailed = last.contains { $0.contains(" [crash] ") || $0.contains(" [diagnostic] ") }
+        lock.unlock()
+        add(.main, "log", Self.started + (version.isEmpty ? "" : " \(version)"))
     }
 
-    func add(_ tag: String, _ message: String) {
-        let stamp = ISO8601DateFormatter().string(from: Date())
+    static func d(_ tag: String, _ message: String) { shared.add(nil, tag, message) }
+    static func e(_ tag: String, _ message: String) { shared.add(.error, tag, message) }
+    static func w(_ tag: String, _ message: String) { shared.add(.warn, tag, message) }
+    static func k(_ tag: String, _ message: String) { shared.add(.main, tag, message) }
+    static func v(_ tag: String, _ message: String) { shared.add(.detail, tag, message) }
+
+    func add(_ tag: String, _ message: String) { add(nil, tag, message) }
+
+    private func add(_ level: LogLevel?, _ tag: String, _ message: String) {
         lock.lock()
-        lines.append("\(stamp) \(tag): \(message)")
-        if lines.count > capacity { lines.removeFirst(lines.count - capacity) }
+        defer { lock.unlock() }
+        let line = Diary.line(stamp: format.string(from: Date()), level: level ?? Diary.infer(tag: tag, message: message), tag: tag, message: message)
+        if files == nil {
+            memory.append(line)
+            if memory.count > 2000 { memory.removeFirst(memory.count - 2000) }
+            return
+        }
+        unwritten.append(line)
+        if unwritten.count >= Self.batchLines || Date().timeIntervalSince(lastWrite) > Self.batchSeconds { flushLocked() }
+    }
+
+    /// Writes what is waiting; called when the app leaves the screen, before iOS may end it.
+    func flush() {
+        lock.lock()
+        flushLocked()
         lock.unlock()
     }
 
-    func snapshot() -> [String] {
+    private func flushLocked() {
+        if !unwritten.isEmpty { files?.append(unwritten) }
+        unwritten.removeAll()
+        lastWrite = Date()
+    }
+
+    /// Every line there is, oldest first.
+    func lines() -> [String] {
         lock.lock()
         defer { lock.unlock() }
-        return lines
+        flushLocked()
+        return files?.readAll() ?? memory
+    }
+
+    func clear() {
+        lock.lock()
+        unwritten.removeAll()
+        memory.removeAll()
+        files?.clear()
+        lock.unlock()
+        add(.main, "log", "the log was cleared")
     }
 }
 

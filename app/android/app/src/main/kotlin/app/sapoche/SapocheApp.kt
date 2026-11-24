@@ -37,7 +37,7 @@ class SapocheApp : Application() {
         super.onCreate()
         Config.init(this)
         instance = this
-        EventLog.init(filesDir)
+        EventLog.init(filesDir, BuildConfig.VERSION_NAME + "+" + BuildConfig.VERSION_CODE)
         CrashLog.install()
         CrashLog.readExits(this)
         StreamHosts.shared.onEvent = { EventLog.d("stream", it) }

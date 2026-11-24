@@ -1,0 +1,5 @@
+A log page for finding out what went wrong, and a file you can send
+- New Log page (Settings > Diagnostics > Log). It shows what the app did, with errors, warnings and your marked moments picked out, a count of each at the top, and filters for Main, All and Detail lines, by area (playback, room, network...) and a search. Touch a line to read it in full with the lines around it. Quiet lines fold away so the ones that matter are easy to see.
+- Mark this moment: leave a note in the log right when something goes wrong, so it can be found later.
+- Share file sends the whole log as a file through any app (Zalo, Messenger, mail...), with the phone and app details at the top. Links in it have their room key hidden. A short version can be copied too.
+- The log now keeps much more: it is written to files that survive the app closing or crashing, and the important lines (errors, warnings, song changes, leaving and returning to the app) are kept apart so noisy lines never push them out. If the last run ended badly, the page says so. On the web the log is kept while the page is open.

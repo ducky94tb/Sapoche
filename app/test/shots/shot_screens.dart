@@ -80,6 +80,25 @@ Future<void> _search(WidgetTester t, String text) async {
   await _settle(t);
 }
 
+void _logData(FakeBackend b) {
+  b.logLines = shotLog();
+  b.logInfoLines = ['app: 1.54.1+117', 'platform: Android 14 (API 34)', 'device: SHARP SH-51G', 'abi: arm64-v8a (64-bit process)', 'locale: vi-VN', 'listening: in a room, 3 in the room'];
+}
+
+/// Opens the log page: Settings, down to Diagnostics, its row.
+Future<void> _openLog(WidgetTester t, FakeBackend b) async {
+  await _state(t, b, const RoomSnapshot());
+  // The app opens on Home, where the gear is (on a phone on its side there is one in the sidebar too)
+  final gear = find.byTooltip(S.settingsTitle);
+  await t.tap(gear.evaluate().isNotEmpty ? gear.first : find.text(S.settingsTitle).first);
+  await _settle(t);
+  await _settle(t);
+  await t.scrollUntilVisible(find.byKey(const ValueKey('settings-log')), 300, scrollable: find.byType(Scrollable).first);
+  await t.tap(find.byKey(const ValueKey('settings-log')));
+  await _settle(t);
+  await t.pump(const Duration(milliseconds: 200));
+}
+
 /// Opens Settings: the gear at the top of Home, or in a wide window the row of the sidebar.
 Future<void> _openSettings(WidgetTester t) async {
   final gear = find.byTooltip(S.settingsTitle);
@@ -425,6 +444,23 @@ final shotScreens = <ShotScreen>[
       await t.tap(find.byKey(ValueKey('settings-$topic')));
       await _settle(t);
     }),
+  ShotScreen('log', prepare: _logData, (t, b) => _openLog(t, b)),
+  ShotScreen('log-land', prepare: _logData, windows: shotLandscape, (t, b) => _openLog(t, b)),
+  ShotScreen('log-detail', prepare: _logData, (t, b) async {
+    await _openLog(t, b);
+    await t.tap(find.textContaining('player error', findRichText: true).first);
+    await _settle(t);
+  }),
+  ShotScreen('log-all', prepare: _logData, (t, b) async {
+    await _openLog(t, b);
+    await t.tap(find.text(S.logModeAll));
+    await _settle(t);
+  }),
+  ShotScreen('log-clean', prepare: (b) {
+    b.logLines = [for (final l in shotLog().skip(12)) if (!l.contains(' E [') && !l.contains(' W [') && !l.contains(' K [mark]')) l];
+    b.logInfoLines = ['app: 1.54.1+117', 'platform: iOS 18.1'];
+  }, (t, b) => _openLog(t, b)),
+  ShotScreen('log-empty', prepare: (b) => b.logLines = [], (t, b) => _openLog(t, b)),
   ShotScreen('settings-scrobble-connected', prepare: (b) {
     b.scrobble = const ScrobbleState(connected: true, user: 'tvh', pending: 3);
   }, (t, b) async {

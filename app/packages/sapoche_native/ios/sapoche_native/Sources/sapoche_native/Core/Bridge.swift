@@ -8,6 +8,9 @@ import FoundationNetworking
 protocol PlatformServices: AnyObject {
     var deviceModel: String { get }
 
+    /// "name: value" lines about this app and phone for the top of an exported log: version, system, model, language.
+    func logInfo() async -> [String]
+
     /// On mobile data (or not knowing): songs are not fetched without asking.
     var isMetered: Bool { get }
 
@@ -816,9 +819,20 @@ final class Bridge {
             platform.share(string("text"))
             return nil
         case "log":
-            return EventLog.shared.snapshot()
+            return EventLog.shared.lines()
+        case "logInfo":
+            return await platform.logInfo()
+        case "logMark":
+            let note = string("note").trimmingCharacters(in: .whitespacesAndNewlines)
+            EventLog.k("mark", "the person marked this moment" + (note.isEmpty ? "" : ": \(note)"))
+            return nil
+        case "logClear":
+            EventLog.shared.clear()
+            return nil
         case "note":
-            EventLog.d("ui", string("line"))
+            // An error of the Dart side (ErrorLog) is an error line; the rest are the screen's own notes
+            let line = string("line")
+            if line.hasPrefix("error: ") { EventLog.e("error", String(line.dropFirst(7))) } else { EventLog.d("ui", line) }
             return nil
         default:
             break

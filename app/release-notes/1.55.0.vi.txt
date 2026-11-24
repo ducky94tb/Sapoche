@@ -1,0 +1,5 @@
+Trang Nhật ký để tìm ra chuyện gì đã xảy ra, và tệp nhật ký để gửi đi
+- Trang Nhật ký mới (Cài đặt > Chẩn đoán > Nhật ký). Hiện app đã làm gì, nổi bật lỗi, cảnh báo và những khoảnh khắc bạn đánh dấu, có số đếm từng loại ở đầu trang, bộ lọc dòng Chính, Tất cả và Chi tiết, lọc theo nhóm (phát nhạc, phòng, mạng...) và ô tìm kiếm. Chạm vào một dòng để đọc đủ cùng các dòng xung quanh. Các dòng ồn được gấp lại để dòng quan trọng dễ thấy.
+- Đánh dấu khoảnh khắc: để lại một ghi chú trong nhật ký ngay lúc có chuyện, sau này dễ tìm.
+- Chia sẻ tệp gửi cả nhật ký thành một tệp qua bất kỳ app nào (Zalo, Messenger, thư...), kèm thông tin máy và app ở đầu tệp. Khoá phòng trong các đường link được ẩn đi. Cũng có thể sao chép bản rút gọn.
+- Nhật ký nay giữ nhiều hơn hẳn: được ghi ra tệp, còn nguyên khi app bị đóng hoặc sập, và các dòng quan trọng (lỗi, cảnh báo, đổi bài, rời và quay lại app) được giữ riêng nên dòng ồn không đẩy chúng đi mất. Nếu lần chạy trước kết thúc không êm, trang sẽ báo. Trên web nhật ký được giữ khi trang còn mở.

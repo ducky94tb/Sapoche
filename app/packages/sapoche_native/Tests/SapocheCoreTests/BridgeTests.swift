@@ -7,6 +7,7 @@ import FoundationNetworking
 @MainActor
 final class FakePlatform: PlatformServices {
     var deviceModel = "iPhone"
+    func logInfo() async -> [String] { ["app: test"] }
     var isMetered = false
     let calm = StateFlow<Bool>(false)
     let output = StateFlow<AudioOutput>(AudioOutput(kind: "speaker", name: ""))
@@ -1359,13 +1360,33 @@ final class BridgeTests: XCTestCase {
     func testTheScreenCanWriteInTheLog() async throws {
         _ = try await call("note", ["line": "frames=120 display=120Hz"])
         let lines = try await result("log", as: [String].self)
-        XCTAssertTrue(lines.contains { $0.hasSuffix("ui: frames=120 display=120Hz") })
+        XCTAssertTrue(lines.contains { $0.hasSuffix(" I [ui] frames=120 display=120Hz") })
+    }
+
+    func testAnErrorOfTheScreenIsLoggedAsOne() async throws {
+        _ = try await call("note", ["line": "error: FlutterError: overflow"])
+        let lines = try await result("log", as: [String].self)
+        XCTAssertTrue(lines.contains { $0.hasSuffix(" E [error] FlutterError: overflow") })
+    }
+
+    func testAMarkIsAMainLineWithTheNote() async throws {
+        _ = try await call("logMark", ["note": " it stopped "])
+        let lines = try await result("log", as: [String].self)
+        XCTAssertTrue(lines.contains { $0.hasSuffix(" K [mark] the person marked this moment: it stopped") })
+    }
+
+    func testTheLogCanBeCleared() async throws {
+        EventLog.d("test", "before the clearing")
+        _ = try await call("logClear", [:])
+        let lines = try await result("log", as: [String].self)
+        XCTAssertFalse(lines.contains { $0.contains("before the clearing") })
+        XCTAssertTrue(lines.contains { $0.contains("the log was cleared") })
     }
 
     func testTheLogHoldsWhatWasDone() async throws {
         EventLog.d("test", "something happened")
         let lines = try await result("log", as: [String].self)
-        XCTAssertTrue(lines.contains { $0.hasSuffix("test: something happened") })
+        XCTAssertTrue(lines.contains { $0.hasSuffix(" I [test] something happened") })
     }
 }
 

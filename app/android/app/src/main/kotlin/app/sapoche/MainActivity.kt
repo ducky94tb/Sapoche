@@ -55,12 +55,14 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        EventLog.k("app", "on the screen")
         bridge?.setVisible(true)
     }
 
     override fun onPause() {
         // In the small window over other apps the picture is still seen
         if (!isInPictureInPictureMode) bridge?.setVisible(false)
+        EventLog.k("app", "left the screen")
         EventLog.flush()
         super.onPause()
     }

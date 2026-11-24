@@ -10,6 +10,7 @@ import 'calm.dart';
 import 'chat_extra.dart';
 import 'chat_media.dart';
 import 'invite_secret.dart';
+import 'log_line.dart';
 import 'models.dart';
 import 'recent_rooms.dart';
 import 'setup_link.dart';
@@ -1560,12 +1561,60 @@ class RoomController extends ChangeNotifier {
 
   Future<void> setVideoQuality(int height) =>
       _run(() => _backend.setVideoQuality(height));
-  /// The diary of the native side, as Settings copies it; a key or the secret of a room in any link of it is hidden,
+  /// The diary of the native side, as the log page shows it; a key or the secret of a room in any link of it is hidden,
   /// whichever side wrote the line.
   Future<List<String>> log() async => [
-    for (final line in await _backend.log())
-      line.replaceAllMapped(_secretInLink, (m) => '${m[1]}…'),
+    for (final line in await _backend.log()) _hideSecrets(line),
   ];
+
+  static String _hideSecrets(String line) =>
+      line.replaceAllMapped(_secretInLink, (m) => '${m[1]}…');
+
+  /// What a reader of an exported log would otherwise have to ask: the native side's lines (app, system, device) and what
+  /// only this side knows. Whether a key is set, never the key.
+  Future<List<String>> logInfo() async {
+    final snapshot = _snapshot;
+    final song = snapshot.current;
+    return [
+      ...await _backend.logInfo(),
+      'server: ${_profile.configured ? 'set' : 'not set'}, key: ${_profile.hasKey ? 'set' : 'not set'}',
+      'listening: ${snapshot.inRoom ? (snapshot.solo ? 'in a room, on my own' : 'in a room') : 'alone'}'
+          '${snapshot.inRoom ? ', ${snapshot.members.length} in the room' : ''}',
+      'audio quality: ${_profile.audioQuality.name}',
+      'effects: ${Calm.level.value.name}',
+      if (song != null) 'playing: ${song.videoId}',
+    ].map(_hideSecrets).toList();
+  }
+
+  /// Marks the moment in the log, with a note when the person wrote one.
+  Future<void> logMark(String note) => _run(() => _backend.logMark(note.trim()));
+
+  Future<void> logClear() => _run(_backend.logClear);
+
+  /// The whole log as a file: the head, then every line. The short form is for a chat that cuts what is long: the head,
+  /// the main lines and the last [shortTail] lines.
+  Future<String> logExport({bool short = false}) async {
+    final info = await logInfo();
+    final lines = await log();
+    final body = short ? shortLog(lines) : lines;
+    return [
+      '# Sapoche log, exported ${DateTime.now().toIso8601String()}',
+      ...info,
+      '',
+      ...body,
+    ].join('\n');
+  }
+
+  static const shortTail = 150;
+
+  /// The main lines of [lines] (errors, warnings, milestones) and the last [shortTail] of all, in order.
+  static List<String> shortLog(List<String> lines) {
+    final from = lines.length > shortTail ? lines.length - shortTail : 0;
+    return [
+      for (var i = 0; i < lines.length; i++)
+        if (i >= from || (Diary.levelOf(lines[i])?.index ?? LogLevel.info.index) <= LogLevel.main.index) lines[i],
+    ];
+  }
 
   /// Turns the notices of the chat on or off. Called from a touch: the system's leave can only be asked for from one.
   Future<void> setNotifications(bool on) => _run(() async {

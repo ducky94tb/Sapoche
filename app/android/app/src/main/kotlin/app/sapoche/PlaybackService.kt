@@ -379,7 +379,7 @@ class PlaybackService : MediaLibraryService() {
                 when (action) {
                     IdleAction.SUSPEND_ROOM -> group.suspendRoom()
                     IdleAction.STOP_SERVICE -> {
-                        EventLog.d("service", "idle for a long while, stopping")
+                        EventLog.k("service", "idle for a long while, stopping")
                         SapocheApp.announceServiceStop()
                         stopSelf()
                     }
@@ -387,7 +387,7 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
-        EventLog.d("service", "created")
+        EventLog.k("service", "created")
         main.postDelayed(heartbeat, HEARTBEAT_MS)
         if (BuildConfig.DEBUG) {
             lastWatchMs = SystemClock.elapsedRealtime()
@@ -624,7 +624,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
-        EventLog.d("service", "destroyed")
+        EventLog.k("service", "destroyed")
         EventLog.flush()
         main.removeCallbacks(heartbeat)
         main.removeCallbacks(stallWatch)
@@ -718,12 +718,15 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            EventLog.d("player", "playWhenReady=$playWhenReady reason=$reason")
+            // The system took the sound (a call, another app, the headphones out) or gave it back: a main line
+            val system = reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS ||
+                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+            if (system) EventLog.k("player", "playWhenReady=$playWhenReady reason=$reason (the system)") else EventLog.d("player", "playWhenReady=$playWhenReady reason=$reason")
             updateSoundOn()
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            EventLog.d("player", "transition to=${mediaItem?.mediaId} reason=$reason")
+            EventLog.k("player", "transition to=${mediaItem?.mediaId} reason=$reason")
             currentSong.value = mediaItem?.mediaId
             updateWakeMode(mediaItem)
         }
@@ -745,7 +748,7 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onPlayerError(error: PlaybackException) {
             // Recovering is up to whoever owns the queue: the room session, or the personal queue
-            EventLog.d("player", "error item=${currentId()} ${error.errorCodeName} cause=${error.cause?.javaClass?.simpleName}: ${error.cause?.message}")
+            EventLog.e("player", "error item=${currentId()} ${error.errorCodeName} cause=${error.cause?.javaClass?.simpleName}: ${error.cause?.message}")
         }
     }
 
@@ -758,7 +761,7 @@ class PlaybackService : MediaLibraryService() {
             error: IOException,
             wasCanceled: Boolean,
         ) {
-            EventLog.d("load", "error ${error.javaClass.simpleName}: ${error.message} canceled=$wasCanceled")
+            EventLog.w("load", "error ${error.javaClass.simpleName}: ${error.message} canceled=$wasCanceled")
         }
 
         override fun onLoadStarted(

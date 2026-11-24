@@ -1,0 +1,174 @@
+{
+  "levels": [
+    {
+      "tag": "sync",
+      "message": "drift=120ms smoothed=80ms offset=3ms rtt=40ms",
+      "level": "D"
+    },
+    {
+      "tag": "sync",
+      "message": "drift=900ms (smoothed) -> seek to 5000 within the buffer (took 80ms)",
+      "level": "D"
+    },
+    {
+      "tag": "http",
+      "message": "request position=0 length=-1",
+      "level": "D"
+    },
+    {
+      "tag": "http",
+      "message": "transfer ended, total 120KB in 2s",
+      "level": "D"
+    },
+    {
+      "tag": "player",
+      "message": "bandwidth estimate 3200000",
+      "level": "D"
+    },
+    {
+      "tag": "crash",
+      "message": "uncaught on main: java.lang.IllegalStateException: boom",
+      "level": "E"
+    },
+    {
+      "tag": "error",
+      "message": "FlutterError: overflow",
+      "level": "E"
+    },
+    {
+      "tag": "sync",
+      "message": "player error, recovering (#1): 2001",
+      "level": "E"
+    },
+    {
+      "tag": "diagnostic",
+      "message": "hang: 2 s on the main thread",
+      "level": "E"
+    },
+    {
+      "tag": "exit",
+      "message": "reason=CRASH importance=100 at=11-22 10:00:00 description=",
+      "level": "E"
+    },
+    {
+      "tag": "exit",
+      "message": "reason=ANR importance=100 at=11-22 10:00:00 description=",
+      "level": "E"
+    },
+    {
+      "tag": "exit",
+      "message": "reason=LOW_MEMORY importance=400 at=11-22 10:00:00 description=",
+      "level": "W"
+    },
+    {
+      "tag": "room",
+      "message": "closed: 1006 ",
+      "level": "W"
+    },
+    {
+      "tag": "room",
+      "message": "connection failed: SocketTimeoutException: timeout (http null)",
+      "level": "W"
+    },
+    {
+      "tag": "room",
+      "message": "reconnecting in 2000ms",
+      "level": "W"
+    },
+    {
+      "tag": "sync",
+      "message": "stalled for 3000ms, 0ms buffered now",
+      "level": "W"
+    },
+    {
+      "tag": "sync",
+      "message": "weak network: the room may run ahead of this device",
+      "level": "W"
+    },
+    {
+      "tag": "local",
+      "message": "autoplay found nothing: timeout",
+      "level": "W"
+    },
+    {
+      "tag": "bridge",
+      "message": "search failed: boom",
+      "level": "W"
+    },
+    {
+      "tag": "room",
+      "message": "connected to wss://example.workers.dev/room",
+      "level": "K"
+    },
+    {
+      "tag": "sync",
+      "message": "following the room again",
+      "level": "K"
+    },
+    {
+      "tag": "sync",
+      "message": "prepared 'Song' in 800ms, reporting ready (epoch 3)",
+      "level": "K"
+    },
+    {
+      "tag": "log",
+      "message": "---- process started ---- 1.54.1+117",
+      "level": "K"
+    },
+    {
+      "tag": "player",
+      "message": "volume 0.8",
+      "level": "I"
+    },
+    {
+      "tag": "ui",
+      "message": "opened settings",
+      "level": "I"
+    },
+    {
+      "tag": "player",
+      "message": "the sound was taken by something else (wanted: true)",
+      "level": "K"
+    },
+    {
+      "tag": "player",
+      "message": "the output went away, pausing",
+      "level": "K"
+    },
+    {
+      "tag": "player",
+      "message": "the player failed: unknown",
+      "level": "E"
+    }
+  ],
+  "lines": [
+    {
+      "line": "11-23 14:02:11.123 K [log] ---- process started ---- 1.54.1+117",
+      "level": "K"
+    },
+    {
+      "line": "11-23 14:02:11.123 D [sync] drift=1ms",
+      "level": "D"
+    },
+    {
+      "line": "11-23 14:02:11.123 E [crash] boom",
+      "level": "E"
+    },
+    {
+      "line": "14:02:11.123 [play] old shape",
+      "level": null
+    },
+    {
+      "line": "11-23 14:02:11.123 X [play] unknown letter",
+      "level": null
+    },
+    {
+      "line": "11-23 14:02:11.123 I[play] no space",
+      "level": null
+    },
+    {
+      "line": "",
+      "level": null
+    }
+  ]
+}

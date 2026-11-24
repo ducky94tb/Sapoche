@@ -569,7 +569,17 @@ abstract class Backend {
   Future<Lyrics?> lyrics(Track track);
 
   Future<void> setTrim(int ms);
+  /// Every line of the diary the native side keeps, oldest first, in the shape of `Diary` (`log_line.dart`).
   Future<List<String>> log();
+
+  /// "name: value" lines about this app and device, for the top of an exported log.
+  Future<List<String>> logInfo();
+
+  /// Writes a mark in the diary, with the person's [note] when there is one, to find the moment again.
+  Future<void> logMark(String note);
+
+  /// Empties the diary.
+  Future<void> logClear();
 
   /// Writes a line in the diary the log shows, for what only the screen can tell (how fast it was drawn).
   Future<void> note(String line);
@@ -1409,6 +1419,16 @@ class NativeBackend implements Backend {
   @override
   Future<List<String>> log() async =>
       (await _call<List<Object?>>('log') ?? const []).cast<String>();
+
+  @override
+  Future<List<String>> logInfo() async =>
+      (await _call<List<Object?>>('logInfo') ?? const []).cast<String>();
+
+  @override
+  Future<void> logMark(String note) => _call<void>('logMark', {'note': note});
+
+  @override
+  Future<void> logClear() => _call<void>('logClear');
 
   @override
   Future<void> note(String line) async {

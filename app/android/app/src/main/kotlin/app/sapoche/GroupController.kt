@@ -88,7 +88,7 @@ class GroupController(
 
     /** The queue that plays outside a room; it comes back after a restart, paused. */
     /** What is known about the network, whether listening in a room or alone: it decides the quality songs are fetched in. */
-    private val health = NetworkHealth().also { it.onChange = { weak -> SapocheApp.weakNetwork = weak; EventLog.d("net", "weak network: $weak") } }
+    private val health = NetworkHealth().also { it.onChange = { weak -> SapocheApp.weakNetwork = weak; if (weak) EventLog.w("net", "weak network: the room may run ahead") else EventLog.k("net", "network is good again") } }
 
     val local = LocalSession(
         ownScope,

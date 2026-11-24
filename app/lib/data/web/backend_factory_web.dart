@@ -63,6 +63,11 @@ Future<Backend> createBackend() async {
   push: createPushPort(),
   appVersion: appVersion,
   sink: (line) => web.console.log(line.toJS),
+  environment: () => [
+    'platform: ${web.window.navigator.platform}',
+    'browser: ${web.window.navigator.userAgent}',
+    'locale: ${web.window.navigator.language}',
+  ],
 );
   // A page that goes away does not wait for the pause before a write
   web.document.addEventListener('visibilitychange', ((web.Event _) {

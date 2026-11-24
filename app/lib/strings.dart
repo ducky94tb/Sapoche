@@ -1479,11 +1479,95 @@ abstract final class S {
   );
   static String get leave => _t('Leave', 'Rời');
   static String get diagnosticsHelp => _t(
-    'Recent events, useful when something goes wrong.',
-    'Các sự kiện gần đây, hữu ích khi có gì đó trục trặc.',
+    'Recent events and errors, useful when something goes wrong.',
+    'Sự kiện và lỗi gần đây, hữu ích khi có gì đó trục trặc.',
   );
-  static String get copyLog => _t('Copy log', 'Sao chép nhật ký');
   static String get logCopied => _t('Log copied', 'Đã sao chép nhật ký');
+
+  // The log page (Settings > Diagnostics > Log)
+  static String get logTitle => _t('Log', 'Nhật ký');
+  static String get logClean =>
+      _t('No errors in this run', 'Không có lỗi trong lần chạy này');
+  static String get logErrors => _t('Errors', 'Lỗi');
+  static String get logWarnings => _t('Warnings', 'Cảnh báo');
+  static String get logMarks => _t('Marks', 'Đánh dấu');
+  static String get logPreviousFailed => _t(
+    'The run before this one ended badly',
+    'Lần chạy trước kết thúc không êm',
+  );
+  static String get logShow => _t('Show', 'Xem');
+  static String get logDevice => _t('This device', 'Máy này');
+  static String get logModeMain => _t('Main', 'Chính');
+  static String get logModeAll => _t('All', 'Tất cả');
+  static String get logModeDetail => _t('Detail', 'Chi tiết');
+  static String get logGroupPlay => _t('Playback', 'Phát nhạc');
+  static String get logGroupRoom => _t('Room', 'Phòng');
+  static String get logGroupNetwork => _t('Network', 'Mạng');
+  static String get logGroupSystem => _t('System', 'Hệ thống');
+  static String get logGroupUpdate => _t('Updates', 'Cập nhật');
+  static String get logGroupUi => _t('Screen', 'Giao diện');
+  static String get logGroupOther => _t('Other', 'Khác');
+  static String get logSearch => _t('Search the log', 'Tìm trong nhật ký');
+  static String get logSearchOpen => _t('Search', 'Tìm');
+  static String get logSearchPrevious => _t('Previous match', 'Kết quả trước');
+  static String get logSearchNext => _t('Next match', 'Kết quả sau');
+  static String logRunStarted(String time, String? version) => _t(
+    'Opened at $time${version == null ? '' : ' · version $version'}',
+    'Mở app lúc $time${version == null ? '' : ' · bản $version'}',
+  );
+  static String get logEndRunning => _t('Running now', 'Đang chạy');
+  static String get logEndNormal =>
+      _t('Ended normally', 'Kết thúc bình thường');
+  static String get logEndCrash => _t('Crashed', 'Bị sự cố (crash)');
+  static String get logEndAnr => _t('Stopped responding', 'Bị treo (ANR)');
+  static String get logEndKilled =>
+      _t('Closed by the system', 'Bị hệ thống tắt');
+  static String get logToday => _t('Today', 'Hôm nay');
+  static String get logYesterday => _t('Yesterday', 'Hôm qua');
+  static String logFolded(int count, String tag, String from, String to) => _t(
+    '${count == 1 ? '1 line' : '$count lines'} [$tag] · $from–$to',
+    '$count dòng [$tag] · $from–$to',
+  );
+  static String logHidden(int count) => _t(
+    count == 1 ? '1 line hidden' : '$count lines hidden',
+    '$count dòng ẩn',
+  );
+  static String get logNewLines => _t('New lines', 'Có dòng mới');
+  static String get logPreviousError => _t('Previous error', 'Lỗi trước');
+  static String get logNextError => _t('Next error', 'Lỗi sau');
+  static String get logCopyLine => _t('Copy line', 'Sao chép dòng');
+  static String get logShowAround =>
+      _t('Show around this line', 'Xem quanh dòng này');
+  static String get logAround => _t('Lines around it', 'Các dòng quanh nó');
+  static String get logMark => _t('Mark', 'Đánh dấu');
+  static String get logMarkTitle =>
+      _t('Mark this moment', 'Đánh dấu thời điểm này');
+  static String get logMarkHelp => _t(
+    'Something went wrong? Mark it now and send the log later: whoever reads it finds the moment at once.',
+    'Vừa gặp lỗi? Đánh dấu ngay, gửi nhật ký lúc nào cũng được: người đọc tìm thấy đúng thời điểm.',
+  );
+  static String get logMarkHint =>
+      _t('Note (optional)', 'Ghi chú (không bắt buộc)');
+  static String get logMarked => _t('Marked', 'Đã đánh dấu');
+  static String get logShare => _t('Share file', 'Chia sẻ tệp');
+  static String get logShareFailed =>
+      _t('Could not share the file', 'Không chia sẻ được tệp');
+  static String get logCopyShort =>
+      _t('Copy short version', 'Sao chép bản ngắn');
+  static String get logClear => _t('Clear log', 'Xoá nhật ký');
+  static String get logClearQuestion => _t('Clear the log?', 'Xoá nhật ký?');
+  static String get logClearHelp => _t(
+    'The lines written so far are deleted from this device.',
+    'Các dòng đã ghi sẽ bị xoá khỏi máy này.',
+  );
+  static String get logEmpty =>
+      _t('Nothing worth noting', 'Chưa có gì đáng chú ý');
+  static String get logShowAll => _t('Show all', 'Xem tất cả');
+  static String get logPickLine => _t(
+    'Pick a line to read it in full',
+    'Chọn một dòng để đọc đủ',
+  );
+  static String get logMore => _t('More', 'Thêm');
 
   // Full player: lyrics, queue, song and artist pages
   static String get lyrics => _t('Lyrics', 'Lời bài hát');

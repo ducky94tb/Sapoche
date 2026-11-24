@@ -1,93 +1,84 @@
 package app.sapoche
 
 import android.util.Log
+import app.sapoche.sync.Diary
+import app.sapoche.sync.DiaryFiles
+import app.sapoche.sync.LogLevel
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Timestamped event log kept in memory, mirrored to logcat and to a file.
- * The file lets us pull the full history over adb after a long screen-off test. Lines reach the file
- * in batches, since a write per line keeps the storage awake for nothing.
+ * The diary of the app, mirrored to logcat and kept on disk (see [DiaryFiles]: two files that take every line, one that
+ * takes the key lines alone). It is the file that "Log" in Settings reads, so a line is there after the app was killed,
+ * and the full history can still be pulled over adb after a long screen-off test. Lines reach the file in batches, since
+ * a write per line keeps the storage awake for nothing.
  */
 object EventLog {
-    private const val MAX_LINES = 400
-    private const val MAX_FILE_BYTES = 2_000_000L
     private const val BATCH_LINES = 25
     private const val BATCH_MS = 60_000L
-    private const val PREVIOUS_RUN_LINES = 100
-    private const val PREVIOUS_RUN_BYTES = 64 * 1024
+    const val STARTED = "---- process started ----"
 
-    private val format = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
-    private val lines = ArrayDeque<String>()
-    private var file: File? = null
-    private val unwritten = StringBuilder()
-    private var unwrittenLines = 0
+    private val format = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
+    private var files: DiaryFiles? = null
+    private val unwritten = ArrayList<String>()
     private var lastWriteMs = System.currentTimeMillis()
 
-    /** The last lines the file holds of the run before this one; read at start, before this run writes anything. */
-    private var previousRun: List<String> = emptyList()
-
-    /** The run before this one ended with a crash or an ANR: its last lines come with the log that is copied. */
+    /** The run before this one ended with a crash or an ANR (the line [CrashLog] wrote, or the system's word on it). */
     @Volatile
     var previousRunFailed = false
 
-    val listeners = CopyOnWriteArrayList<(String) -> Unit>()
-
-    fun init(dir: File) {
-        val f = File(dir, "sapoche.log")
-        if (f.exists() && f.length() > MAX_FILE_BYTES) f.delete()
-        file = f
-        previousRun = runCatching { tail(f) }.getOrDefault(emptyList())
+    fun init(dir: File, version: String = "") {
+        // What is still waiting belongs to the folder it was written for, not to the one that starts now
+        flush()
+        val store = DiaryFiles(dir)
+        files = store
         // A crash the handler saw wrote its own line (see CrashLog); the system's word on ANRs and kills comes later
-        previousRunFailed = previousRun.takeLastWhile { !it.endsWith("---- process started ----") }.any { it.contains(" [crash] ") }
-        d("log", "---- process started ----")
+        previousRunFailed = store.lastRun().takeLastWhile { !it.contains(STARTED) }.any { it.contains(" [crash] ") }
+        k("log", "$STARTED${if (version.isEmpty()) "" else " $version"}")
     }
+
+    /** A line whose level is worked out from its words (see [Diary.infer]); most callers use this. */
+    fun d(tag: String, message: String) = add(null, tag, message)
+
+    fun e(tag: String, message: String) = add(LogLevel.ERROR, tag, message)
+
+    fun w(tag: String, message: String) = add(LogLevel.WARN, tag, message)
+
+    /** A milestone: what someone reading a long log looks for first. */
+    fun k(tag: String, message: String) = add(LogLevel.MAIN, tag, message)
+
+    /** Noise: kept in the file, hidden in the viewer. */
+    fun v(tag: String, message: String) = add(LogLevel.DETAIL, tag, message)
 
     @Synchronized
-    fun d(tag: String, message: String) {
-        val line = "${format.format(Date())} [$tag] $message"
+    private fun add(level: LogLevel?, tag: String, message: String) {
+        val line = Diary.line(format.format(Date()), level ?: Diary.infer(tag, message), tag, message)
         Log.i("Sapoche", line)
-        lines.addLast(line)
-        if (lines.size > MAX_LINES) lines.removeFirst()
-        unwritten.append(line).append('\n')
-        unwrittenLines++
-        if (unwrittenLines >= BATCH_LINES || System.currentTimeMillis() - lastWriteMs > BATCH_MS) flush()
-        listeners.forEach { it(line) }
+        unwritten.add(line)
+        if (unwritten.size >= BATCH_LINES || System.currentTimeMillis() - lastWriteMs > BATCH_MS) flush()
     }
 
-    /** Writes what is waiting to the file; called when the app leaves the screen or the service ends. */
+    /** Writes what is waiting to the files; called when the app leaves the screen or the service ends, and for a crash. */
     @Synchronized
     fun flush() {
-        if (unwrittenLines > 0) runCatching { file?.appendText(unwritten.toString()) }
-        unwritten.setLength(0)
-        unwrittenLines = 0
+        if (unwritten.isNotEmpty()) runCatching { files?.append(unwritten) }
+        unwritten.clear()
         lastWriteMs = System.currentTimeMillis()
     }
 
+    /** Every line the files hold, oldest first (the end of a run that was killed is there too). */
     @Synchronized
-    fun snapshot(): List<String> = lines.toList()
+    fun lines(): List<String> {
+        flush()
+        return files?.readAll().orEmpty()
+    }
 
-    /** What "Copy log" gives: this run, and before it the end of the run that crashed, when the last one did. */
     @Synchronized
-    fun snapshotForCopy(): List<String> =
-        if (previousRunFailed && previousRun.isNotEmpty())
-            previousRun + "---- end of the previous run, which ended with a crash or an ANR ----" + lines
-        else lines.toList()
-
-    /** The last [PREVIOUS_RUN_LINES] lines of [f], from its last bytes only: the file may be as big as [MAX_FILE_BYTES]. */
-    private fun tail(f: File): List<String> {
-        if (!f.exists()) return emptyList()
-        java.io.RandomAccessFile(f, "r").use { raf ->
-            val from = maxOf(0L, raf.length() - PREVIOUS_RUN_BYTES)
-            raf.seek(from)
-            val bytes = ByteArray((raf.length() - from).toInt()).also { raf.readFully(it) }
-            val all = String(bytes, Charsets.UTF_8).lines().filter { it.isNotEmpty() }
-            // The first line of a slice cut in the middle is only a part
-            return (if (from > 0) all.drop(1) else all).takeLast(PREVIOUS_RUN_LINES)
-        }
+    fun clear() {
+        unwritten.clear()
+        files?.clear()
+        k("log", "the log was cleared")
     }
 }

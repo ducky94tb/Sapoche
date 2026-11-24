@@ -867,9 +867,20 @@ class SapocheBridge(
                 )
                 return null
             }
-            "log" -> return EventLog.snapshotForCopy()
+            "log" -> return withContext(Dispatchers.IO) { EventLog.lines() }
+            "logInfo" -> return LogInfo.lines(activity)
+            "logMark" -> {
+                EventLog.k("mark", "the person marked this moment" + call.argument<String>("note").orEmpty().trim().let { if (it.isEmpty()) "" else ": $it" })
+                return null
+            }
+            "logClear" -> {
+                EventLog.clear()
+                return null
+            }
             "note" -> {
-                EventLog.d("ui", call.argument<String>("line").orEmpty())
+                // An error of the Dart side (ErrorLog) is an error line; the rest are the screen's own notes
+                val line = call.argument<String>("line").orEmpty()
+                if (line.startsWith("error: ")) EventLog.e("error", line.removePrefix("error: ")) else EventLog.d("ui", line)
                 return null
             }
         }

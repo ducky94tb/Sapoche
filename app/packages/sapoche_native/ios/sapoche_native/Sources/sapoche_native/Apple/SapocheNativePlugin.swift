@@ -48,6 +48,10 @@ final class SapocheRuntime {
         let prefs = prefs
         let region = Locale.current.regionCode ?? "US"
         let http = URLSessionHTTP()
+        // The diary lives in files from the first line on: iOS ends an app in the background without a word
+        let info = Bundle.main.infoDictionary
+        EventLog.shared.start(dir: support.appendingPathComponent("log", isDirectory: true),
+                              version: "\(info?["CFBundleShortVersionString"] as? String ?? "?")+\(info?["CFBundleVersion"] as? String ?? "?")")
         // The system tells of a crash or a hang of an earlier run now, if there was one
         DiagnosticsLog.shared.start()
 
@@ -264,12 +268,20 @@ public final class SapocheNativePlugin: NSObject, FlutterPlugin, FlutterStreamHa
     private func observeLifecycle() {
         let center = NotificationCenter.default
         center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            EventLog.k("app", "on the screen")
             Task { @MainActor in self?.runtime.bridge.setVisible(true) }
         }
         center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            EventLog.k("app", "left the screen")
+            EventLog.shared.flush()
             Task { @MainActor in self?.runtime.bridge.setVisible(false) }
         }
+        center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
+            EventLog.shared.flush()
+        }
         center.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            EventLog.k("app", "terminating")
+            EventLog.shared.flush()
             Task { @MainActor in SapocheRuntime.shared.controller.release() }
         }
         // The Runner passes on the links that open the app

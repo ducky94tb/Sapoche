@@ -84,6 +84,22 @@ final class ApplePlatform: NSObject, PlatformServices, UIDocumentPickerDelegate,
 
     var deviceModel: String { UIDevice.current.model }
 
+    func logInfo() async -> [String] {
+        var system = utsname()
+        uname(&system)
+        let identifier = withUnsafeBytes(of: &system.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        let info = Bundle.main.infoDictionary
+        return [
+            "app: \(info?["CFBundleShortVersionString"] as? String ?? "?")+\(info?["CFBundleVersion"] as? String ?? "?")",
+            "platform: \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
+            "device: \(identifier)",
+            "abi: arm64 (64-bit process)",
+            "locale: \(Locale.current.identifier)",
+            "low power mode: \(ProcessInfo.processInfo.isLowPowerModeEnabled ? "on" : "off")",
+            "notifications: \(await noticePermission())",
+        ]
+    }
+
     var isMetered: Bool { metered }
 
     // ------------------------------------------------------------------ notifications of the chat

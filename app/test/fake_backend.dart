@@ -1116,9 +1116,25 @@ class FakeBackend implements Backend {
       _record('react ${reaction.wire} $count');
 
   List<String> logLines = ['line one', 'line two'];
+  List<String> logInfoLines = ['app: 1.0.0+1', 'platform: Test 1'];
 
   @override
   Future<List<String>> log() async => logLines;
+
+  @override
+  Future<List<String>> logInfo() async => logInfoLines;
+
+  @override
+  Future<void> logMark(String note) async {
+    marks.add(note);
+    logLines = [...logLines, '11-23 14:10:00.000 K [mark] the person marked this moment${note.isEmpty ? '' : ': $note'}'];
+  }
+
+  @override
+  Future<void> logClear() async => logLines = [];
+
+  /// The notes of the marks the person made.
+  final marks = <String>[];
 
   /// What the app wrote into its own log with [note].
   final notes = <String>[];
