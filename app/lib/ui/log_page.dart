@@ -37,12 +37,18 @@ class _LogPageState extends State<LogPage> {
   static const _wideFrom = 900.0;
   static const _poll = Duration(seconds: 3);
 
+  /// From this many rows the list runs from its end (see [_reversed]).
+  static const _reverseFrom = 120;
+
   final _scroll = ScrollController();
   final _query = TextEditingController();
   final _target = GlobalKey();
   Timer? _timer;
 
   LogModel? _log;
+
+  /// A newer log, kept back while the person reads older lines so that they do not move; taken by [_refresh].
+  LogModel? _pending;
   List<String> _info = const [];
   int _rawCount = -1;
   LogMode _mode = LogMode.main;
@@ -80,14 +86,24 @@ class _LogPageState extends State<LogPage> {
 
   RoomController get _room => AppScope.of(context).room;
 
+  /// A long list is laid out from its end, where the newest lines are. Run from its start, getting to its end means laying
+  /// out every row on the way, as rows differ in height: over a second for a full log on a phone, the stutter of opening
+  /// the page. A short one runs from its start, as one from its end would sit at the bottom of the page.
+  bool get _reversed => _rows.length >= _reverseFrom;
+
   void _onScroll() {
     if (!_scroll.hasClients) return;
-    final nearEnd = _scroll.position.maxScrollExtent - _scroll.offset < 80;
+    final nearEnd = _reversed
+        ? _scroll.offset < 80
+        : _scroll.position.maxScrollExtent - _scroll.offset < 80;
     if (nearEnd != _atBottom || (nearEnd && _newLines > 0)) {
+      final caughtUp = nearEnd && _pending != null;
       setState(() {
         _atBottom = nearEnd;
         if (nearEnd) _newLines = 0;
+        if (caughtUp) _refresh();
       });
+      if (caughtUp) _toBottom();
     }
   }
 
@@ -102,19 +118,29 @@ class _LogPageState extends State<LogPage> {
     final info = first ? await room.logInfo() : _info;
     if (!mounted) return;
     final added = _rawCount < 0 ? 0 : raw.length - _rawCount;
+    final follow = first || _atBottom;
     setState(() {
-      _log = model;
       _info = info;
       _rawCount = raw.length;
       _loading = false;
-      if (!first && !_atBottom && added > 0) _newLines += added;
-      _refresh();
+      if (follow) {
+        _log = model;
+        _pending = null;
+        _refresh();
+      } else {
+        _pending = model;
+        if (added > 0) _newLines += added;
+      }
     });
-    if (first || _atBottom) _toBottom();
+    if (follow) _toBottom();
   }
 
   void _toBottom() => WidgetsBinding.instance.addPostFrameCallback((_) {
     if (!_scroll.hasClients) return;
+    if (_reversed) {
+      _scroll.jumpTo(0);
+      return;
+    }
     _scroll.jumpTo(_scroll.position.maxScrollExtent);
     // The extent of rows not drawn yet is an estimate: once more, with what was drawn
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -124,6 +150,11 @@ class _LogPageState extends State<LogPage> {
 
   /// Works the rows and the matches out again after the log or a filter changed.
   void _refresh() {
+    final pending = _pending;
+    if (pending != null) {
+      _log = pending;
+      _pending = null;
+    }
     final model = _log;
     if (model == null) return;
     final query = _query.text.trim();
@@ -162,12 +193,14 @@ class _LogPageState extends State<LogPage> {
     final position = _scroll.position;
     final per =
         (position.maxScrollExtent + position.viewportDimension) / _rows.length;
-    _scroll.jumpTo(
-      (index * per - position.viewportDimension / 3).clamp(
-        0.0,
-        position.maxScrollExtent,
-      ),
-    );
+    // Where the row is, a third of the way down the page; a list that runs from its end counts from the bottom
+    double guess(double place) =>
+        (_reversed
+                ? (_rows.length - 1 - index) * per -
+                      position.viewportDimension * (1 - place)
+                : index * per - position.viewportDimension * place)
+            .clamp(0.0, _scroll.position.maxScrollExtent);
+    _scroll.jumpTo(guess(1 / 3));
     setState(
       () => _flash =
           flash ??
@@ -183,9 +216,7 @@ class _LogPageState extends State<LogPage> {
             duration: Duration.zero,
           );
         } else if (_scroll.hasClients && attempt == 2) {
-          _scroll.jumpTo(
-            (index * per).clamp(0.0, _scroll.position.maxScrollExtent),
-          );
+          _scroll.jumpTo(guess(0));
         }
       });
     }
@@ -466,8 +497,11 @@ class _LogPageState extends State<LogPage> {
                           child: FilledButton.icon(
                             key: const ValueKey('log-new-lines'),
                             onPressed: () {
+                              setState(() {
+                                _newLines = 0;
+                                _refresh();
+                              });
                               _toBottom();
-                              setState(() => _newLines = 0);
                             },
                             icon: const Icon(Icons.arrow_downward_rounded),
                             label: Text(S.logNewLines),
@@ -618,11 +652,15 @@ class _LogPageState extends State<LogPage> {
           : empty;
     }
     final header = compact ? 1 : 0;
+    final count = _rows.length + header;
+    final reversed = _reversed;
     return ListView.builder(
       controller: _scroll,
+      reverse: reversed,
       padding: const EdgeInsets.only(bottom: 72),
-      itemCount: _rows.length + header,
-      itemBuilder: (context, at) {
+      itemCount: count,
+      itemBuilder: (context, index) {
+        final at = reversed ? count - 1 - index : index;
         if (header == 1 && at == 0) return _top(model);
         final i = at - header;
         final row = _rows[i];

@@ -1,0 +1,3 @@
+Trang Nhật ký mở ngay
+- Mở Nhật ký (Cài đặt > Chẩn đoán > Nhật ký) làm app đứng một giây hoặc hơn trên máy có nhật ký dài. Nay trang mở ngay, ở những dòng mới nhất.
+- Khi bạn đang đọc các dòng cũ, dòng mới không còn đẩy chỗ đang đọc đi: nút "Có dòng mới" đưa bạn tới đó khi bạn muốn.

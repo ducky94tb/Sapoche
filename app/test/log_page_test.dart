@@ -57,6 +57,57 @@ void main() {
     },
   );
 
+  /// A log of [count] main lines, one a second, with an error at line 5.
+  List<String> longLog(int count) => [
+    '11-25 10:00:00.000 K [log] ---- process started ---- 1.57.1+121',
+    for (var i = 0; i < count; i++)
+      '11-25 10:${(i ~/ 60).toString().padLeft(2, '0')}:${(i % 60).toString().padLeft(2, '0')}.500 '
+          '${i == 5 ? 'E [player] player error at step $i' : 'K [app] step $i'}',
+  ];
+
+  testWidgets(
+    'a long log opens on its newest line without laying out the rest, and an old error is still reached',
+    (tester) async {
+      await openLog(tester, lines: longLog(400));
+      // Laid out from its end: the newest line is there and the first ones were never built
+      expect(find.textContaining('step 399', findRichText: true), findsOneWidget);
+      expect(find.textContaining('step 10', findRichText: true), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('log-error-next')));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('player error at step 5', findRichText: true),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'new lines leave the older ones being read where they are, and "New lines" brings them',
+    (tester) async {
+      final backend = await openLog(tester, lines: longLog(400));
+      final reading = find.textContaining('step 300', findRichText: true);
+      await tester.dragUntilVisible(
+        reading,
+        find.byType(ListView).last,
+        const Offset(0, 300),
+      );
+      await tester.pumpAndSettle();
+      expect(reading, findsOneWidget);
+      final before = tester.getTopLeft(reading);
+      backend.logLines = [
+        ...backend.logLines,
+        '11-25 10:07:00.000 K [app] a new step',
+      ];
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(reading), before);
+      expect(find.textContaining('a new step', findRichText: true), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('log-new-lines')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('a new step', findRichText: true), findsOneWidget);
+    },
+  );
+
   testWidgets('a log with nothing wrong says so', (tester) async {
     await openLog(
       tester,

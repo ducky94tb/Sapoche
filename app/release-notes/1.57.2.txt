@@ -1,0 +1,3 @@
+The log page opens at once
+- Opening the log (Settings > Diagnostics > Log) froze the app for a second or more on a phone with a long log. It now opens at once, on the newest lines.
+- While you read older lines, new ones no longer move them: a "New lines" button takes you to them when you want.
