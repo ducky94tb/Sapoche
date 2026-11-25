@@ -162,6 +162,15 @@ final class GroupSession {
     /// How long the last seek took; used to aim a little ahead when correcting drift by seeking.
     private var seekCostMs: Int64 = 150
 
+    /// How much further than `seekCostMs` a seek within the buffer has to aim, learned from where it lands: a player may
+    /// stop for a while after the seek itself is done (an iPhone's waits to fill again), which the time the seek took
+    /// leaves out.
+    private var seekLagMs: Int64 = 0
+
+    /// Gap kept between the end of one correction by speed and the start of the next; see `paced`.
+    private var correctionGapMs = GroupSession.correctionGapMs
+    private var correctionEndedAt: Int64?
+
     /// What is known about the network, shared with whatever else plays on this device.
     let health: NetworkHealth
 
@@ -963,6 +972,11 @@ final class GroupSession {
             var stalledSince: Int64?
             var stallAtMs: Int64 = 0
             var lastSeekAt: Int64 = 0
+            var checkLanding = false
+            // A change of speed, to tell in the log what it cost: when, the drift then, and the speed it set
+            var probeAt: Int64?
+            var probeDriftMs: Int64 = 0
+            var probeSpeed: Float = 1
             self.filter.reset(self.time.nowMs())
             while true {
                 guard await self.time.wait(ms: Self.driftTickMs) else { return }
@@ -992,10 +1006,14 @@ final class GroupSession {
                     stalledSince = nil
                     if now - since >= Self.stallMinMs {
                         self.learnBias = false // what a stall did to the readings says nothing about how late a start is heard
+                        checkLanding = false // nor about where a seek lands
                         self.log("stalled for \(now - since)ms, \(self.player.bufferedPositionMs() - self.player.positionMs())ms buffered now")
                         if self.health.onStall(now) { self.log("weak network: the room may run ahead of this device") }
                         // A seek that is followed by a stall was too soon: leave more time before the next one
                         if now - lastSeekAt < Self.seekStallWindowMs { self.seekGapMs = min(self.seekGapMs * 2, Self.maxSeekGapMs) }
+                    } else {
+                        // Too short to be a stall, and heard all the same
+                        self.log("not playing for about \(now - since)ms (readings every \(Self.driftTickMs)ms)")
                     }
                 }
                 let ahead = max(self.player.bufferedPositionMs() - self.player.positionMs(), 0)
@@ -1006,6 +1024,12 @@ final class GroupSession {
                 }
                 let expected = self.clock.toServer(now) - started + self.trimMs
                 let driftMs = self.player.positionMs() - expected
+                if let at = probeAt, now - at >= Self.speedProbeMs {
+                    probeAt = nil
+                    // What the position would be had the change been seamless, less where it is: the sound it cost
+                    let lost = probeDriftMs + Int64(Double(probeSpeed - 1) * Double(now - at)) - driftMs
+                    self.log("the change to speed \(probeSpeed) lost \(lost)ms")
+                }
                 let weak = self.health.weak
                 self.snapshot.update { $0.driftMs = driftMs; $0.weak = weak; $0.lagMs = weak ? max(-driftMs, 0) : 0 }
                 self.tellNetwork(now)
@@ -1014,30 +1038,37 @@ final class GroupSession {
                 guard let smoothed = self.filter.estimate(now) else { continue }
                 tick += 1
                 if tick % Self.logEveryTicks == 0 {
-                    self.log("drift=\(driftMs)ms smoothed=\(smoothed)ms offset=\(Int64(self.clock.offsetMs()))ms rtt=\(self.clock.bestRttMs().map { String(Int64($0)) } ?? "-")ms")
+                    self.log("drift=\(driftMs)ms smoothed=\(smoothed)ms offset=\(Int64(self.clock.offsetMs()))ms rtt=\(self.clock.bestRttMs().map { String(Int64($0)) } ?? "-")ms speed=\(self.snapshot.value.speed)")
                 }
                 // A start far from the room (a phone that has not learned its speaker's delay yet) is learned from at
                 // once and fixed with one seek, rather than pulled in at 3 % for ten seconds or more
                 let coldStart = self.learnBias && self.filter.hasLargeDriftEvidence && abs(smoothed) > Self.coldStartSeekMs
                 if coldStart || (self.learnBias && self.filter.isFull) { self.learnStartBias() }
+                if checkLanding && self.filter.hasLargeDriftEvidence {
+                    checkLanding = false
+                    self.learnSeekLag(smoothed)
+                }
                 if !self.correctionEnabled { continue }
                 let trusted = coldStart || (abs(smoothed) > self.drift.seekThresholdMs ? self.filter.hasLargeDriftEvidence : self.filter.isFull)
                 if !trusted { continue }
 
                 let decided = coldStart ? DriftAction.seek : self.drift.decide(smoothed)
-                let action = self.health.weak && !coldStart ? self.whileWeak(decided, smoothed, ahead, now) : decided
+                let action = self.paced(self.health.weak && !coldStart ? self.whileWeak(decided, smoothed, ahead, now) : decided, now)
                 switch action {
                 case .none:
                     break
                 case let .setSpeed(factor):
                     self.player.setSpeed(factor)
                     self.filter.setSpeed(now, factor)
+                    probeAt = now
+                    probeDriftMs = driftMs
+                    probeSpeed = factor
                     self.snapshot.update { $0.speed = factor }
                     self.log("drift=\(smoothed)ms (smoothed) -> speed \(factor)")
                 case .seek:
                     let before = self.time.nowMs()
                     // Aim a little ahead: the seek itself takes time
-                    let target = self.clock.toServer(before) - started + self.seekCostMs + self.trimMs
+                    let target = self.clock.toServer(before) - started + self.seekCostMs + self.seekLagMs + self.trimMs
                     self.learnBias = false // a corrective seek muddies what the plain start looked like
                     let buffered = self.player.bufferedPositionMs()
                     if target > self.player.positionMs() && target > buffered - Self.inBufferMarginMs {
@@ -1049,9 +1080,12 @@ final class GroupSession {
                     } else {
                         try await self.player.seekTo(target)
                         self.seekCostMs = min(max(self.time.nowMs() - before, 50), 1000)
+                        checkLanding = true
                         self.log("drift=\(smoothed)ms (smoothed) -> seek to \(target) within the buffer (took \(self.seekCostMs)ms)")
                     }
                     lastSeekAt = self.time.nowMs()
+                    self.correctionEndedAt = lastSeekAt
+                    probeAt = nil
                     self.nextSeekAt = lastSeekAt + self.seekGapMs
                     self.drift.reset()
                     self.player.setSpeed(1)
@@ -1061,6 +1095,38 @@ final class GroupSession {
                 }
             }
         }
+    }
+
+    /// A correction by speed that is needed again soon after the last one ended is chasing what the corrections themselves
+    /// do to the player (an iPhone's player can stop for a moment at each change of speed): each such one doubles the gap
+    /// the next one waits for, so that a player like that stutters now and then instead of every few seconds.
+    private func paced(_ action: DriftAction, _ now: Int64) -> DriftAction {
+        guard case let .setSpeed(factor) = action else { return action }
+        if factor == 1 {
+            correctionEndedAt = now
+            return action
+        }
+        guard let ended = correctionEndedAt else { return action }
+        let since = now - ended
+        if since < correctionGapMs {
+            drift.reset()
+            return .none
+        }
+        if since >= correctionGapMs + Self.chaseWindowMs {
+            correctionGapMs = Self.correctionGapMs
+        } else if correctionGapMs < Self.maxCorrectionGapMs {
+            correctionGapMs = min(correctionGapMs * 2, Self.maxCorrectionGapMs)
+            log("drift came back \(since)ms after the last correction, the next one waits \(correctionGapMs)ms")
+        }
+        return action
+    }
+
+    /// A seek within the buffer was aimed at the room; [residualMs] is how far off it was heard once it settled.
+    private func learnSeekLag(_ residualMs: Int64) {
+        let updated = Int64((Double(seekLagMs) - Double(residualMs) * Self.seekLagLearningRate).rounded(.towardZero))
+        let clamped = min(max(updated, -Self.maxSeekLagMs), Self.maxSeekLagMs)
+        log("the seek landed \(residualMs)ms off, seeks aim \(clamped)ms further now")
+        seekLagMs = clamped
     }
 
     /// Tells the room, at most once in `netTellGapMs`, when this device's network turned weak or good. Protocol 20.
@@ -1189,6 +1255,15 @@ final class GroupSession {
     private static let waitDataMaxMs: Int64 = 20_000
     private static let seekStallWindowMs: Int64 = 5000
     private static let maxSeekGapMs: Int64 = 80_000
+    /// See `paced`: a correction that starts within the window after the gap is chasing the last one.
+    private static let correctionGapMs: Int64 = 2000
+    private static let maxCorrectionGapMs: Int64 = 32_000
+    private static let chaseWindowMs: Int64 = 10_000
+    /// How long after a change of speed the log says what it cost.
+    private static let speedProbeMs: Int64 = 1000
+    /// See `learnSeekLag`: half of each landing is learned, as one reading of the drift can be off by a sawtooth's worth.
+    private static let seekLagLearningRate = 0.5
+    private static let maxSeekLagMs: Int64 = 1000
     private static let maxJumpAttempts = 3
     private static let jumpMinSpareMs: Int64 = 100
     private static let catchUpLeadMs: Int64 = 400

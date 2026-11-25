@@ -200,6 +200,15 @@ class GroupSession {
   /// How long the last seek took; used to aim a little ahead when correcting drift by seeking.
   int _seekCostMs = 150;
 
+  /// How much further than [_seekCostMs] a seek within the buffer has to aim, learned from where it lands: a player may
+  /// stop for a while after the seek itself is done (an iPhone's waits to fill again), which the time the seek took
+  /// leaves out.
+  int _seekLagMs = 0;
+
+  /// Gap kept between the end of one correction by speed and the start of the next; see [_paced].
+  int _correctionGapMs = _baseCorrectionGapMs;
+  int? _correctionEndedAt;
+
   /// Stalls the player reports, and how this device keeps to the room when the network is weak.
   final health = NetworkHealth();
 
@@ -976,6 +985,11 @@ class GroupSession {
       int? stalledSince;
       var stallAtMs = 0;
       var lastSeekAt = 0;
+      var checkLanding = false;
+      // A change of speed, to tell in the log what it cost: when, the drift then, and the speed it set
+      int? probeAt;
+      var probeDriftMs = 0;
+      var probeSpeed = 1.0;
       _filter.reset(nowMs());
       while (job.isActive) {
         await job.delay(_driftTick);
@@ -1010,12 +1024,16 @@ class GroupSession {
           stalledSince = null;
           if (now - since >= _stallMinMs) {
             _learnBias = false; // what a stall did to the readings says nothing about how late a start is heard
+            checkLanding = false; // nor about where a seek lands
             log('stalled for ${now - since}ms, ${player.bufferedPositionMs() - player.positionMs()}ms buffered now');
             if (health.onStall(now)) log('weak network: the room may run ahead of this device');
             // A seek that is followed by a stall was too soon: leave more time before the next one
             if (now - lastSeekAt < _seekStallWindowMs) {
               _seekGapMs = (_seekGapMs * 2).clamp(0, _maxSeekGapMs);
             }
+          } else {
+            // Too short to be a stall, and heard all the same
+            log('not playing for about ${now - since}ms (readings every ${_driftTick.inMilliseconds}ms)');
           }
         }
         final aheadRaw = player.bufferedPositionMs() - player.positionMs();
@@ -1027,6 +1045,13 @@ class GroupSession {
         }
         final expected = clock.toServer(now) - started + trimMs;
         final driftMs = player.positionMs() - expected;
+        final probed = probeAt;
+        if (probed != null && now - probed >= _speedProbeMs) {
+          probeAt = null;
+          // What the position would be had the change been seamless, less where it is: the sound it cost
+          final lost = probeDriftMs + ((probeSpeed - 1) * (now - probed)).truncate() - driftMs;
+          log('the change to speed $probeSpeed lost ${lost}ms');
+        }
         final weak = health.weak;
         _update((s) => s.copyWith(driftMs: driftMs, weak: weak, lagMs: weak && driftMs < 0 ? -driftMs : 0));
         _tellNetwork(now);
@@ -1036,32 +1061,39 @@ class GroupSession {
         if (smoothed == null) continue;
         if (++tick % _logEveryTicks == 0) {
           log(
-            'drift=${driftMs}ms smoothed=${smoothed}ms offset=${clock.offsetMs.toInt()}ms rtt=${clock.bestRttMs?.toInt()}ms',
+            'drift=${driftMs}ms smoothed=${smoothed}ms offset=${clock.offsetMs.toInt()}ms rtt=${clock.bestRttMs?.toInt()}ms speed=${_snapshot.speed}',
           );
         }
         // A start far from the room (a device that has not learned its speaker's delay yet) is learned from at once
         // and fixed with one seek
         final coldStart = _learnBias && _filter.hasLargeDriftEvidence && smoothed.abs() > _coldStartSeekMs;
         if (coldStart || (_learnBias && _filter.isFull)) _learnStartBias();
+        if (checkLanding && _filter.hasLargeDriftEvidence) {
+          checkLanding = false;
+          _learnSeekLag(smoothed);
+        }
         if (!correctionEnabled) continue;
         final trusted = coldStart ||
             (smoothed.abs() > drift.seekThresholdMs ? _filter.hasLargeDriftEvidence : _filter.isFull);
         if (!trusted) continue;
 
         final decided = coldStart ? const DriftSeek() : drift.decide(smoothed);
-        final action = health.weak && !coldStart ? _whileWeak(decided, smoothed, ahead, now) : decided;
+        final action = _paced(health.weak && !coldStart ? _whileWeak(decided, smoothed, ahead, now) : decided, now);
         switch (action) {
           case DriftNone():
             break;
           case DriftSetSpeed():
             player.setSpeed(action.factor);
             _filter.setSpeed(now, action.factor);
+            probeAt = now;
+            probeDriftMs = driftMs;
+            probeSpeed = action.factor;
             _update((s) => s.copyWith(speed: action.factor));
             log('drift=${smoothed}ms (smoothed) -> speed ${action.factor}');
           case DriftSeek():
             final before = nowMs();
             // Aim a little ahead: the seek itself takes time
-            final target = clock.toServer(before) - started + _seekCostMs + trimMs;
+            final target = clock.toServer(before) - started + _seekCostMs + _seekLagMs + trimMs;
             _learnBias = false; // a corrective seek muddies what the plain start looked like
             final buffered = player.bufferedPositionMs();
             if (target > player.positionMs() && target > buffered - _inBufferMarginMs) {
@@ -1073,9 +1105,12 @@ class GroupSession {
             } else {
               await job.guard(player.seekTo(target));
               _seekCostMs = (nowMs() - before).clamp(50, 1000);
+              checkLanding = true;
               log('drift=${smoothed}ms (smoothed) -> seek to $target within the buffer (took ${_seekCostMs}ms)');
             }
             lastSeekAt = nowMs();
+            _correctionEndedAt = lastSeekAt;
+            probeAt = null;
             _nextSeekAt = lastSeekAt + _seekGapMs;
             drift.reset();
             player.setSpeed(1);
@@ -1085,6 +1120,38 @@ class GroupSession {
         }
       }
     });
+  }
+
+  /// A correction by speed that is needed again soon after the last one ended is chasing what the corrections themselves
+  /// do to the player (an iPhone's player can stop for a moment at each change of speed): each such one doubles the gap
+  /// the next one waits for, so that a player like that stutters now and then instead of every few seconds.
+  DriftAction _paced(DriftAction action, int now) {
+    if (action is! DriftSetSpeed) return action;
+    if (action.factor == 1) {
+      _correctionEndedAt = now;
+      return action;
+    }
+    final ended = _correctionEndedAt;
+    if (ended == null) return action;
+    final since = now - ended;
+    if (since < _correctionGapMs) {
+      drift.reset();
+      return const DriftNone();
+    }
+    if (since >= _correctionGapMs + _chaseWindowMs) {
+      _correctionGapMs = _baseCorrectionGapMs;
+    } else if (_correctionGapMs < _maxCorrectionGapMs) {
+      _correctionGapMs = (_correctionGapMs * 2).clamp(0, _maxCorrectionGapMs);
+      log('drift came back ${since}ms after the last correction, the next one waits ${_correctionGapMs}ms');
+    }
+    return action;
+  }
+
+  /// A seek within the buffer was aimed at the room; [residualMs] is how far off it was heard once it settled.
+  void _learnSeekLag(int residualMs) {
+    final updated = (_seekLagMs - residualMs * _seekLagLearningRate).truncate().clamp(-_maxSeekLagMs, _maxSeekLagMs);
+    log('the seek landed ${residualMs}ms off, seeks aim ${updated}ms further now');
+    _seekLagMs = updated;
   }
 
   /// Tells the room, at most once in [_netTellGapMs], when this device's network turned weak or good (protocol 20).
@@ -1210,6 +1277,18 @@ class GroupSession {
   static const _waitDataMaxMs = 20000;
   static const _seekStallWindowMs = 5000;
   static const _maxSeekGapMs = 80000;
+
+  /// See [_paced]: a correction that starts within the window after the gap is chasing the last one.
+  static const _baseCorrectionGapMs = 2000;
+  static const _maxCorrectionGapMs = 32000;
+  static const _chaseWindowMs = 10000;
+
+  /// How long after a change of speed the log says what it cost.
+  static const _speedProbeMs = 1000;
+
+  /// See [_learnSeekLag]: half of each landing is learned, as one reading of the drift can be off by a sawtooth's worth.
+  static const _seekLagLearningRate = 0.5;
+  static const _maxSeekLagMs = 1000;
   static const _maxJumpAttempts = 3;
   static const _jumpMinSpareMs = 100;
 

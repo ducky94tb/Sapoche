@@ -42,6 +42,15 @@ internal class FakePlayer(private val now: () -> Long) : PlayerPort {
     var startLatencyMs = 0L
     private var holdUntil = 0L
 
+    /** The sound stops this long at each change of speed while playing, as an iPhone player can. */
+    var speedChangeLossMs = 0L
+
+    /** The sound stops this long after each seek while playing, before the player goes on. */
+    var seekResumeLagMs = 0L
+
+    /** Every change of speed asked for. */
+    val speeds = mutableListOf<Float>()
+
     private fun advance() {
         val t = now()
         if (playing) {
@@ -75,6 +84,7 @@ internal class FakePlayer(private val now: () -> Long) : PlayerPort {
         advance()
         position = positionMs
         seeks += positionMs
+        if (playing) holdUntil = now() + seekResumeLagMs
     }
 
     override fun play() {
@@ -97,6 +107,10 @@ internal class FakePlayer(private val now: () -> Long) : PlayerPort {
 
     override fun setSpeed(speed: Float) {
         advance()
+        if (speed != currentSpeed) {
+            speeds += speed
+            if (playing) holdUntil = maxOf(holdUntil, now() + speedChangeLossMs)
+        }
         this.currentSpeed = speed
     }
 
@@ -148,7 +162,8 @@ class GroupSessionTest {
         }
         val player = FakePlayer(now)
         val sent = mutableListOf<String>()
-        val session = GroupSession(scope.backgroundScope, player, clock, now, { sent += it })
+        val logs = mutableListOf<String>()
+        val session = GroupSession(scope.backgroundScope, player, clock, now, { sent += it }, { logs += it })
 
         fun serverNow() = clock.toServer(now())
     }
@@ -251,6 +266,43 @@ class GroupSessionTest {
         val drift = h.player.positionMs() - (h.serverNow() - (h.serverNow() - (h.now() - 1500)))
         assertTrue(abs(drift) < 50, "still off by ${drift}ms")
         assertTrue(h.player.seeks.size <= 1, "no correction seeks expected, got ${h.player.seeks}")
+    }
+
+    @Test
+    fun `a player that stops at each change of speed is not chased with ever more changes`() = runTest {
+        val h = harness()
+        h.player.speedChangeLossMs = 100
+        h.session.onMessage(ServerMessage.Prepare(1, 0, item, 0))
+        runCurrent()
+        h.session.onMessage(ServerMessage.Start(1, h.serverNow() + 1500, 0))
+        step(2500)
+        h.player.nudge(-120)
+        step(120_000)
+        assertTrue(h.player.speeds.size <= 14, "speed changed ${h.player.speeds.size} times: ${h.player.speeds}")
+        val drift = h.player.positionMs() - (h.now() - 1500)
+        assertTrue(abs(drift) < 400, "off by ${drift}ms")
+        // The log says what each change cost, so that a phone's log shows it without working it out
+        val lost = h.logs.mapNotNull { Regex("""the change to speed \S+ lost (-?\d+)ms""").find(it)?.groupValues?.get(1)?.toLong() }
+        assertTrue(lost.isNotEmpty() && lost.all { it in 90..110 }, "lost $lost")
+        assertTrue(h.logs.any { it.startsWith("drift came back") }, "the growing gap is logged")
+    }
+
+    @Test
+    fun `a seek the player is slow to go on from is aimed further the next time`() = runTest {
+        val h = harness()
+        h.player.seekResumeLagMs = 600
+        h.session.onMessage(ServerMessage.Prepare(1, 0, item, 0))
+        runCurrent()
+        h.session.onMessage(ServerMessage.Start(1, h.serverNow() + 1500, 0))
+        step(2500)
+        val seeksBefore = h.player.seeks.size
+        h.player.nudge(-1500)
+        step(30_000)
+        val seeks = h.player.seeks.drop(seeksBefore)
+        assertTrue(seeks.size <= 2, "seeked ${seeks.size} times: $seeks")
+        val drift = h.player.positionMs() - (h.now() - 1500)
+        assertTrue(abs(drift) < 100, "off by ${drift}ms")
+        assertTrue(h.logs.any { it.startsWith("the seek landed -450ms off") }, "the landing is logged: ${h.logs.filter { "seek" in it }}")
     }
 
     private fun TestScope.followingRoom(waitWeak: Boolean?): Harness {

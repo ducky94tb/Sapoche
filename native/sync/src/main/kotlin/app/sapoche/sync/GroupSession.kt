@@ -200,6 +200,16 @@ class GroupSession(
     /** How long the last seek within the buffer took; used to aim a little ahead when correcting drift by seeking. */
     private var seekCostMs = 150L
 
+    /**
+     * How much further than [seekCostMs] a seek within the buffer has to aim, learned from where it lands: a player may stop
+     * for a while after the seek itself is done (an iPhone's waits to fill again), which the time the seek took leaves out.
+     */
+    private var seekLagMs = 0L
+
+    /** Gap kept between the end of one correction by speed and the start of the next; see [paced]. */
+    private var correctionGapMs = CORRECTION_GAP_MS
+    private var correctionEndedAt: Long? = null
+
     /** While the network is weak, no seek before this moment, and the gap between seeks; a seek that stalls doubles it. */
     private var nextSeekAt = 0L
     private var seekGapMs = NetworkHealth.SEEK_GAP_MS
@@ -978,6 +988,11 @@ class GroupSession(
             var stalledSince: Long? = null
             var stallAtMs = 0L
             var lastSeekAt = 0L
+            var checkLanding = false
+            // A change of speed, to tell in the log what it cost: when, the drift then, and the speed it set
+            var probeAt: Long? = null
+            var probeDriftMs = 0L
+            var probeSpeed = 1f
             filter.reset(nowMs())
             while (isActive) {
                 delay(DRIFT_TICK_MS)
@@ -1006,10 +1021,14 @@ class GroupSession(
                     stalledSince = null
                     if (now - since >= STALL_MIN_MS) {
                         learnBias = false // what a stall did to the readings says nothing about how late a start is heard
+                        checkLanding = false // nor about where a seek lands
                         log("stalled for ${now - since}ms, ${player.bufferedPositionMs() - player.positionMs()}ms buffered now")
                         if (health.onStall(now)) log("weak network: the room may run ahead of this device")
                         // A seek that is followed by a stall was too soon: leave more time before the next one
                         if (now - lastSeekAt < SEEK_STALL_WINDOW_MS) seekGapMs = (seekGapMs * 2).coerceAtMost(MAX_SEEK_GAP_MS)
+                    } else {
+                        // Too short to be a stall, and heard all the same
+                        log("not playing for about ${now - since}ms (readings every ${DRIFT_TICK_MS}ms)")
                     }
                 }
                 val ahead = (player.bufferedPositionMs() - player.positionMs()).coerceAtLeast(0)
@@ -1020,36 +1039,51 @@ class GroupSession(
                 }
                 val expected = clock.toServer(now) - started + trimMs
                 val driftMs = player.positionMs() - expected
+                probeAt?.let { at ->
+                    if (now - at >= SPEED_PROBE_MS) {
+                        probeAt = null
+                        // What the position would be had the change been seamless, less where it is: the sound it cost
+                        val lost = probeDriftMs + ((probeSpeed - 1) * (now - at)).toLong() - driftMs
+                        log("the change to speed $probeSpeed lost ${lost}ms")
+                    }
+                }
                         _snapshot.update { it.copy(driftMs = driftMs, weak = health.weak, lagMs = if (health.weak) (-driftMs).coerceAtLeast(0) else 0) }
                 tellNetwork(now)
                 if (now < settleUntil) continue // let a recent seek settle before measuring again
                 filter.add(now, driftMs)
                 val smoothed = filter.estimate(now) ?: continue
                 if (++tick % LOG_EVERY_TICKS == 0) {
-                    log("drift=${driftMs}ms smoothed=${smoothed}ms offset=${clock.offsetMs().toLong()}ms rtt=${clock.bestRttMs()?.toLong()}ms")
+                    log("drift=${driftMs}ms smoothed=${smoothed}ms offset=${clock.offsetMs().toLong()}ms rtt=${clock.bestRttMs()?.toLong()}ms speed=${_snapshot.value.speed}")
                 }
                 // A start far from the room (a phone that has not learned its speaker's delay yet) is learned from at
                 // once and fixed with one seek, rather than pulled in at 3 % for ten seconds or more
                 val coldStart = learnBias && filter.hasLargeDriftEvidence && abs(smoothed) > COLD_START_SEEK_MS
                 if (coldStart || (learnBias && filter.isFull)) learnStartBias()
+                if (checkLanding && filter.hasLargeDriftEvidence) {
+                    checkLanding = false
+                    learnSeekLag(smoothed)
+                }
                 if (!correctionEnabled) continue
                 val trusted = coldStart || if (abs(smoothed) > drift.seekThresholdMs) filter.hasLargeDriftEvidence else filter.isFull
                 if (!trusted) continue
 
                 val decided = if (coldStart) DriftAction.Seek else drift.decide(smoothed)
-                val action = if (health.weak && !coldStart) whileWeak(decided, smoothed, ahead, now) else decided
+                val action = paced(if (health.weak && !coldStart) whileWeak(decided, smoothed, ahead, now) else decided, now)
                 when (action) {
                     DriftAction.None -> Unit
                     is DriftAction.SetSpeed -> {
                         player.setSpeed(action.factor)
                         filter.setSpeed(now, action.factor)
+                        probeAt = now
+                        probeDriftMs = driftMs
+                        probeSpeed = action.factor
                         _snapshot.update { it.copy(speed = action.factor) }
                         log("drift=${smoothed}ms (smoothed) -> speed ${action.factor}")
                     }
                     DriftAction.Seek -> {
                         val before = nowMs()
                         // Aim a little ahead: the seek itself takes time
-                        val target = clock.toServer(before) - started + seekCostMs + trimMs
+                        val target = clock.toServer(before) - started + seekCostMs + seekLagMs + trimMs
                         learnBias = false // a corrective seek muddies what the plain start looked like
                         val buffered = player.bufferedPositionMs()
                         if (target > player.positionMs() && target > buffered - IN_BUFFER_MARGIN_MS) {
@@ -1061,9 +1095,12 @@ class GroupSession(
                         } else {
                             player.seekTo(target)
                             seekCostMs = (nowMs() - before).coerceIn(50, 1000)
+                            checkLanding = true
                             log("drift=${smoothed}ms (smoothed) -> seek to $target within the buffer (took ${seekCostMs}ms)")
                         }
                         lastSeekAt = nowMs()
+                        correctionEndedAt = lastSeekAt
+                        probeAt = null
                         nextSeekAt = lastSeekAt + seekGapMs
                         drift.reset()
                         player.setSpeed(1f)
@@ -1074,6 +1111,38 @@ class GroupSession(
                 }
             }
         }
+    }
+
+    /**
+     * A correction by speed that is needed again soon after the last one ended is chasing what the corrections themselves
+     * do to the player (an iPhone's player can stop for a moment at each change of speed): each such one doubles the gap
+     * the next one waits for, so that a player like that stutters now and then instead of every few seconds.
+     */
+    private fun paced(action: DriftAction, now: Long): DriftAction {
+        if (action !is DriftAction.SetSpeed) return action
+        if (action.factor == 1f) {
+            correctionEndedAt = now
+            return action
+        }
+        val since = now - (correctionEndedAt ?: return action)
+        if (since < correctionGapMs) {
+            drift.reset()
+            return DriftAction.None
+        }
+        if (since >= correctionGapMs + CHASE_WINDOW_MS) {
+            correctionGapMs = CORRECTION_GAP_MS
+        } else if (correctionGapMs < MAX_CORRECTION_GAP_MS) {
+            correctionGapMs = (correctionGapMs * 2).coerceAtMost(MAX_CORRECTION_GAP_MS)
+            log("drift came back ${since}ms after the last correction, the next one waits ${correctionGapMs}ms")
+        }
+        return action
+    }
+
+    /** A seek within the buffer was aimed at the room; [residualMs] is how far off it was heard once it settled. */
+    private fun learnSeekLag(residualMs: Long) {
+        val updated = (seekLagMs - residualMs * SEEK_LAG_LEARNING_RATE).toLong().coerceIn(-MAX_SEEK_LAG_MS, MAX_SEEK_LAG_MS)
+        log("the seek landed ${residualMs}ms off, seeks aim ${updated}ms further now")
+        seekLagMs = updated
     }
 
     /** Tells the room, at most once in [NET_TELL_GAP_MS], when this device's network turned weak or good. Protocol 20. */
@@ -1203,6 +1272,18 @@ class GroupSession(
         const val WAIT_DATA_MAX_MS = 20_000L
         const val SEEK_STALL_WINDOW_MS = 5000L
         const val MAX_SEEK_GAP_MS = 80_000L
+
+        /** See [paced]: a correction that starts within the window after the gap is chasing the last one. */
+        const val CORRECTION_GAP_MS = 2000L
+        const val MAX_CORRECTION_GAP_MS = 32_000L
+        const val CHASE_WINDOW_MS = 10_000L
+
+        /** How long after a change of speed the log says what it cost. */
+        const val SPEED_PROBE_MS = 1000L
+
+        /** See [learnSeekLag]: half of each landing is learned, as one reading of the drift can be off by a sawtooth's worth. */
+        const val SEEK_LAG_LEARNING_RATE = 0.5
+        const val MAX_SEEK_LAG_MS = 1000L
         const val MAX_JUMP_ATTEMPTS = 3
         const val JUMP_MIN_SPARE_MS = 100L
         const val CATCH_UP_LEAD_MS = 400L

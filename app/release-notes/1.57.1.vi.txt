@@ -1,0 +1,4 @@
+Nhạc trong phòng không còn khựng trên iPhone
+- Trong phòng, iPhone có thể khựng một chút sau mỗi vài giây, bài nào cũng vậy, trong lúc giữ nhịp với các máy khác. Mỗi lần app chỉnh nhẹ để theo kịp phòng lại làm tiếng ngắt, rồi lại lệch nhịp. Nay việc chỉnh không làm ngắt tiếng nữa, và máy nào cứ phải chỉnh lại liên tục thì sẽ chỉnh thưa dần.
+- Khi nhảy tới để theo kịp phòng, app nay đáp đúng chỗ phòng đang phát, không còn hụt lại phía sau.
+- Nhật ký (Cài đặt > Chẩn đoán > Nhật ký) nay ghi rõ từng bước giữ nhịp, để lỗi kiểu này dễ tìm hơn.

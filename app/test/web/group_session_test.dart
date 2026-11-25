@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -106,6 +107,78 @@ class FakePlayer extends PlayerPort {
   int bufferedPositionMs() => bufferedMs;
 
   void clear() => calls.clear();
+}
+
+/// A player whose position moves with the clock the test turns, at its speed, and that can stop for a moment at each
+/// change of speed or after a seek while playing, as an iPhone's player can.
+class TimedPlayer extends FakePlayer {
+  TimedPlayer(this.now);
+
+  final int Function() now;
+  var speed = 1.0;
+  var speedChangeLossMs = 0;
+  var seekResumeLagMs = 0;
+  final speeds = <double>[];
+  final seeks = <int>[];
+  late var _last = now();
+  var _holdUntil = 0;
+
+  void _advance() {
+    final t = now();
+    if (playing) {
+      final from = max(_last, _holdUntil);
+      if (t > from) position += ((t - from) * speed).toInt();
+    }
+    _last = t;
+  }
+
+  @override
+  Future<void> prepare(QueueEntry item, int seekToMs) async {
+    _advance();
+    await super.prepare(item, seekToMs);
+  }
+
+  @override
+  Future<void> seekTo(int positionMs) async {
+    _advance();
+    await super.seekTo(positionMs);
+    seeks.add(positionMs);
+    if (playing) _holdUntil = now() + seekResumeLagMs;
+  }
+
+  @override
+  void play() {
+    _advance();
+    super.play();
+  }
+
+  @override
+  void pause() {
+    _advance();
+    super.pause();
+  }
+
+  @override
+  void setSpeed(double speed) {
+    _advance();
+    if (speed != this.speed) {
+      speeds.add(speed);
+      if (playing) _holdUntil = max(_holdUntil, now() + speedChangeLossMs);
+    }
+    this.speed = speed;
+  }
+
+  @override
+  int positionMs() {
+    _advance();
+    return position;
+  }
+
+  /// Shove the position, as if the device drifted.
+  void nudge(int deltaMs) {
+    _advance();
+    position += deltaMs;
+  }
 }
 
 QueueEntry item(String id) => QueueEntry(
@@ -547,6 +620,65 @@ void main() {
         session.onMessage(const PauseMessage(epoch: 3, positionMs: 6000, by: 'dev-b'));
         async.elapse(const Duration(milliseconds: 10));
         expect(events.last, isA<PausedEvent>());
+      });
+    });
+  });
+
+  group('a player that is slow to change', () {
+    /// A room that starts song 1 at local 11.5 s, with the drift corrected as it is on a phone; [body] gets the player
+    /// once it has played for a second, and how far it is off the room.
+    void playing(void Function(FakeAsync a, TimedPlayer player, int Function() offMs, List<String> logs) body) {
+      fakeAsync((a) {
+        int now() => 10000 + a.elapsed.inMilliseconds;
+        final player = TimedPlayer(now);
+        final logs = <String>[];
+        final session = GroupSession(
+          player: player,
+          clock: ClockSync()..addSample(0, 0, 0),
+          nowMs: now,
+          send: (_) {},
+          log: logs.add,
+        );
+        session.onMessage(stateOf(room(phase: 'preparing')));
+        session.onMessage(PrepareMessage(epoch: 1, index: 0, item: item('1'), seekToMs: 0));
+        a.elapse(const Duration(milliseconds: 10));
+        session.onMessage(const StartMessage(epoch: 1, startAt: 11500, positionMs: 0));
+        a.elapse(const Duration(milliseconds: 2490));
+        expect(player.playing, isTrue);
+        body(a, player, () => player.positionMs() - (now() - 11500), logs);
+        session.close();
+        a.flushTimers();
+      });
+    }
+
+    test('a player that stops at each change of speed is not chased with ever more changes', () {
+      playing((a, player, offMs, logs) {
+        player.speedChangeLossMs = 100;
+        player.nudge(-120);
+        a.elapse(const Duration(seconds: 120));
+        expect(player.speeds.length, lessThanOrEqualTo(14), reason: 'speed changed ${player.speeds}');
+        expect(offMs().abs(), lessThan(400));
+        // The log says what each change cost, so that a phone's log shows it without working it out
+        final lost = [
+          for (final line in logs)
+            if (RegExp(r'the change to speed \S+ lost (-?\d+)ms').firstMatch(line) case final m?) int.parse(m.group(1)!),
+        ];
+        expect(lost, isNotEmpty);
+        expect(lost, everyElement(inInclusiveRange(90, 110)));
+        expect(logs.any((l) => l.startsWith('drift came back')), isTrue);
+      });
+    });
+
+    test('a seek the player is slow to go on from is aimed further the next time', () {
+      playing((a, player, offMs, logs) {
+        player.seekResumeLagMs = 600;
+        final before = player.seeks.length;
+        player.nudge(-1500);
+        a.elapse(const Duration(seconds: 30));
+        final seeks = player.seeks.sublist(before);
+        expect(seeks.length, lessThanOrEqualTo(2), reason: 'seeked $seeks');
+        expect(offMs().abs(), lessThan(100));
+        expect(logs.any((l) => l.startsWith('the seek landed -450ms off')), isTrue, reason: '${logs.where((l) => l.contains('seek'))}');
       });
     });
   });

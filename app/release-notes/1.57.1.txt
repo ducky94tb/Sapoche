@@ -1,0 +1,4 @@
+Music in a room no longer stutters on iPhone
+- In a room, an iPhone could stop for a moment every few seconds, on every song, while it kept in step with the others. Each small correction it made to stay in time made the sound pause, which put it out of step again. Corrections are now smooth, and a phone whose corrections keep coming back makes them less and less often.
+- Jumping to catch up with the room now lands where the room is, instead of a little behind it.
+- The log (Settings > Diagnostics > Log) now says how each step of keeping in time went, so that a problem like this one is easier to find.

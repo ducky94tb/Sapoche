@@ -31,6 +31,10 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
     private let loader: PlaylistLoader
     private let maxVideoHeight: () -> Int
     private let log: (String) -> Void
+    /// A wait of the player this long or longer is heard, and logged.
+    private static let audibleWaitMs = 50
+    /// Held this far ahead after a seek, the player goes on at once instead of waiting to fill again.
+    private static let heldToGoOnMs: Int64 = 1000
 
     /// The song the player is on, and the item that holds it; streamed when any of it comes from the network.
     private var current: QueueItem?
@@ -55,6 +59,9 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
     private let equalizer = EqualizerState()
 
     private var speed: Float = 1
+    /// When the player began to wait while meant to play, and why, for the log (see `noteWaiting`).
+    private var waitingSince: CFTimeInterval?
+    private var waitingReason = "unknown"
     private var pauseAtEnd = false
     private var pausedAtEnd = false
     private var wasPlayingBeforeInterruption = false
@@ -148,6 +155,9 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
             }
         }
         if playable.isPlaylist { keepForLater(item) }
+        // Where the sound comes from decides how the player takes a change of speed or a seek: a file never waits
+        let source = playable.isFile ? "from its file" : playable.isPlaylist ? "in pieces" : "from the stream"
+        log("'\(item.title)' plays \(source)\(currentHasVideo ? " with its picture" : ""), waits to minimize stalls: \(currentStreamed)")
         pictureless = wantsVideo && !currentHasVideo ? item.videoId : nil
         showPicture(wantsVideo)
         if seekToMs > 0 { _ = await seek(to: seekToMs) }
@@ -169,8 +179,21 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
 
     func seekTo(_ positionMs: Int64) async throws {
         pausedAtEnd = false
+        let wasPlaying = player.timeControlStatus == .playing
         _ = await seek(to: positionMs)
         try Task.checkCancellation()
+        // Landed within what is held, a player that waits to minimize stalls may still stop to weigh it again before it
+        // goes on: in a room that is a stutter, and the seek lands behind the room
+        if wasPlaying, player.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+            let held = bufferedPositionMs() - self.positionMs()
+            let reason = player.reasonForWaitingToPlay?.rawValue ?? "unknown"
+            if held >= Self.heldToGoOnMs {
+                player.playImmediately(atRate: speed)
+                log("the seek to \(positionMs)ms left the player waiting (\(reason)) with \(held)ms held: going on at once")
+            } else {
+                log("the seek to \(positionMs)ms left the player waiting (\(reason)) with \(held)ms held")
+            }
+        }
         onChange?()
     }
 
@@ -225,8 +248,19 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
 
     func setSpeed(_ newSpeed: Float) {
         speed = newSpeed
-        // Setting a rate on a paused player would start it
-        if player.timeControlStatus != .paused, player.rate != newSpeed { player.rate = newSpeed }
+        switch player.timeControlStatus {
+        case .paused:
+            break // setting a rate on a paused player would start it
+        case .playing where player.rate != newSpeed:
+            // At once: a player that waits to minimize stalls may stop to weigh what it holds again at a new rate, a
+            // silence the room hears as a stutter and then corrects with another change of speed
+            player.playImmediately(atRate: newSpeed)
+        default:
+            if player.rate != newSpeed {
+                log("speed \(newSpeed) asked while the player waits (\(player.reasonForWaitingToPlay?.rawValue ?? "unknown"))")
+                player.rate = newSpeed
+            }
+        }
     }
 
     func setNext(_ item: QueueItem?) {
@@ -733,13 +767,32 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
         // Play, pause and buffering: the screen shows them at once
         player.publisher(for: \.timeControlStatus)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.onChange?() }
+            .sink { [weak self] status in
+                self?.noteWaiting(status)
+                self?.onChange?()
+            }
             .store(in: &cancellables)
         // The player moving on to the song queued behind the current one, by itself
         player.publisher(for: \.currentItem)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] item in self?.currentItemChanged(item) }
             .store(in: &cancellables)
+    }
+
+    /// Logs each wait of the player, while it is meant to play, that is long enough to be heard, and why it waited: a
+    /// wait after a change of speed or a seek is what made rooms stutter on iPhones (docs/systems/ios.md).
+    private func noteWaiting(_ status: AVPlayer.TimeControlStatus) {
+        if status == .waitingToPlayAtSpecifiedRate {
+            if waitingSince == nil {
+                waitingSince = CACurrentMediaTime()
+                waitingReason = player.reasonForWaitingToPlay?.rawValue ?? "unknown"
+            }
+            return
+        }
+        guard let since = waitingSince else { return }
+        waitingSince = nil
+        let ms = Int((CACurrentMediaTime() - since) * 1000)
+        if ms >= Self.audibleWaitMs { log("the player waited \(ms)ms (\(waitingReason)) at speed \(speed)") }
     }
 
     private func watch(_ item: AVPlayerItem) {
@@ -773,6 +826,7 @@ final class AVPlayerEngine: NSObject, PlayerEngine {
         // Only a natural move to the queued successor; our own loads put other items in
         current = next
         adopt(item, hasVideo: queuedHasVideo, streamed: queuedStreamed)
+        log("'\(next.title)' follows with no gap, \(queuedStreamed ? "from the network" : "from its file")")
         // The queued song is made again whenever its picture becomes wanted (see applyVideo): without one now, it has none
         pictureless = wantsVideo && !queuedHasVideo ? next.videoId : nil
         queuedNext = nil

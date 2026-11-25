@@ -87,6 +87,12 @@ final class FakePlayer: PlayerEngine {
     /// Sound only starts moving this long after play(), like real audio output latency.
     var startLatencyMs: Int64 = 0
     private var holdUntil: Int64 = 0
+    /// The sound stops this long at each change of speed while playing, as an iPhone player can.
+    var speedChangeLossMs: Int64 = 0
+    /// The sound stops this long after each seek while playing, before the player goes on.
+    var seekResumeLagMs: Int64 = 0
+    /// Every change of speed asked for.
+    var speeds: [Float] = []
     private let time: VirtualTime
     private lazy var lastUpdate = time.now
 
@@ -130,6 +136,7 @@ final class FakePlayer: PlayerEngine {
         advance()
         position = positionMs
         seeks.append(positionMs)
+        if playing { holdUntil = time.now + seekResumeLagMs }
     }
 
     func play() {
@@ -152,6 +159,10 @@ final class FakePlayer: PlayerEngine {
 
     func setSpeed(_ speed: Float) {
         advance()
+        if speed != currentSpeed {
+            speeds.append(speed)
+            if playing { holdUntil = max(holdUntil, time.now + speedChangeLossMs) }
+        }
         currentSpeed = speed
     }
 

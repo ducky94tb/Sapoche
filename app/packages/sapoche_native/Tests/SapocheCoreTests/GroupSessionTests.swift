@@ -12,6 +12,7 @@ final class GroupSessionTests: XCTestCase {
         let clock = ClockSync()
         let player: FakePlayer
         var sent: [String] = []
+        var logs: [String] = []
         let scope = Scope()
         var session: GroupSession!
 
@@ -19,7 +20,8 @@ final class GroupSessionTests: XCTestCase {
             // rtt 20ms, server clock reads local + serverOffsetMs
             clock.addSample(c0: 0, c2: 20, s1: serverOffsetMs + 10)
             player = FakePlayer(time: time)
-            session = GroupSession(scope: scope, player: player, clock: clock, time: time, send: { [weak self] in self?.sent.append($0) })
+            session = GroupSession(scope: scope, player: player, clock: clock, time: time, send: { [weak self] in self?.sent.append($0) },
+                                   log: { [weak self] in self?.logs.append($0) })
         }
 
         func serverNow() -> Int64 { clock.toServer(time.now) }
@@ -173,6 +175,46 @@ final class GroupSessionTests: XCTestCase {
         XCTAssertEqual(h.player.currentSpeed, 1)
         let expected = h.time.now - 1500
         XCTAssertLessThan(abs(h.player.positionMs() - expected), 250, "position \(h.player.positionMs()) vs \(expected)")
+    }
+
+    func testAPlayerThatStopsAtEachChangeOfSpeedIsNotChasedWithEverMoreChanges() async {
+        let h = harness()
+        h.player.speedChangeLossMs = 100
+        h.message(prepare(1, item))
+        await h.run()
+        h.message(start(1, h.serverNow() + 1500))
+        await h.step(2500)
+        h.player.nudge(-120)
+        await h.step(120_000)
+        XCTAssertLessThanOrEqual(h.player.speeds.count, 14, "speed changed \(h.player.speeds.count) times: \(h.player.speeds)")
+        let drift = h.player.positionMs() - (h.time.now - 1500)
+        XCTAssertLessThan(abs(drift), 400, "off by \(drift)ms")
+        // The log says what each change cost, so that a phone's log shows it without working it out
+        let lost = h.logs.compactMap { line -> Int64? in
+            guard let range = line.range(of: #"the change to speed \S+ lost (-?\d+)ms"#, options: .regularExpression) else { return nil }
+            let words = line[range].split(separator: " ")
+            return Int64(words[words.count - 1].dropLast(2))
+        }
+        XCTAssertFalse(lost.isEmpty)
+        XCTAssertTrue(lost.allSatisfy { (90...110).contains($0) }, "lost \(lost)")
+        XCTAssertTrue(h.logs.contains { $0.hasPrefix("drift came back") }, "the growing gap is logged")
+    }
+
+    func testASeekThePlayerIsSlowToGoOnFromIsAimedFurtherTheNextTime() async {
+        let h = harness()
+        h.player.seekResumeLagMs = 600
+        h.message(prepare(1, item))
+        await h.run()
+        h.message(start(1, h.serverNow() + 1500))
+        await h.step(2500)
+        let seeksBefore = h.player.seeks.count
+        h.player.nudge(-1500)
+        await h.step(30_000)
+        let seeks = Array(h.player.seeks.dropFirst(seeksBefore))
+        XCTAssertLessThanOrEqual(seeks.count, 2, "seeked \(seeks.count) times: \(seeks)")
+        let drift = h.player.positionMs() - (h.time.now - 1500)
+        XCTAssertLessThan(abs(drift), 100, "off by \(drift)ms")
+        XCTAssertTrue(h.logs.contains { $0.hasPrefix("the seek landed -450ms off") }, "the landing is logged: \(h.logs.filter { $0.contains("seek") })")
     }
 
     func testTheSnapshotFollowsStartAndPauseEvenThoughTheServerSendsNoStateForThem() async {
