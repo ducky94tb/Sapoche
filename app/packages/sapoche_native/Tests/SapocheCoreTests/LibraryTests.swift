@@ -869,6 +869,35 @@ final class LibraryBackupTests: XCTestCase {
         return text
     }
 
+    func testASnapshotHasTheIdsOfThisPhoneAndWhatWasBlockedOrMarked() async throws {
+        try await fill()
+        try await from.block(kind: "song", key: "x", label: "X", at: 5)
+        try await from.setTasteMark(kind: "quiet_artist", key: "k", label: "K", on: true, at: 6)
+        let snapshot = try await from.snapshot()
+        let trip = try XCTUnwrap(snapshot.playlists.first { $0.name == "Road trip" })
+        XCTAssertEqual(trip.tracks.map(\.videoId), ["c", "a", "d"])
+        XCTAssertEqual(snapshot.folders.map(\.name), ["Mixes"])
+        XCTAssertEqual(trip.folderId, snapshot.folders.first?.id)
+        XCTAssertNil(try XCTUnwrap(snapshot.playlists.first { $0.name == "Empty" }).folderId)
+        XCTAssertEqual(snapshot.blocked, [LibraryStore.Marked(kind: "song", key: "x", label: "X", at: 5)])
+        XCTAssertEqual(snapshot.marks, [LibraryStore.Marked(kind: "quiet_artist", key: "k", label: "K", at: 6)])
+        let json = try XCTUnwrap(JSON.parse(LibraryBackup.snapshotJson(snapshot)))
+        XCTAssertEqual(json.at("liked").array.count, 2)
+        XCTAssertEqual(json.at("playlists").array.first { $0.at("name").string == "Road trip" }?.at("id").int64, trip.id)
+        XCTAssertEqual(json.at("songs").object?.count, 5)
+    }
+
+    func testMergingAddsBlocksAndMarksAndKeepsTheTimesWithoutTouchingWhatIsHere() async throws {
+        try await to.block(kind: "song", key: "mine", label: "Mine", at: 1)
+        let text = #"{"app":"sapoche","version":1,"songs":{"a":{"title":"A","artist":"x","thumb":null,"durMs":5}},"liked":[{"id":"a","at":7}],"blocked":[{"kind":"song","key":"x","label":"X","at":5},{"kind":"song","key":"mine","label":"Other","at":9}],"marks":[{"kind":"starter","key":"k","label":"K","at":6},{"kind":"","key":"bad","label":"","at":1}]}"#
+        _ = try await to.restore(try LibraryBackup.fromJson(text))
+        let snapshot = try await to.snapshot()
+        XCTAssertEqual(snapshot.blocked.map(\.key).sorted(), ["mine", "x"])
+        XCTAssertEqual(snapshot.blocked.first { $0.key == "mine" }?.label, "Mine")
+        XCTAssertEqual(snapshot.marks, [LibraryStore.Marked(kind: "starter", key: "k", label: "K", at: 6)])
+        XCTAssertEqual(snapshot.liked.map(\.at), [7])
+    }
+
     func testALibraryWrittenAndReadBackIsTheSame() async throws {
         try await fill()
         let text = LibraryBackup.toJson(try await from.backup(), at: 1234)

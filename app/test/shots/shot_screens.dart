@@ -4,6 +4,7 @@ import 'package:sapoche/data/app_settings.dart';
 import 'package:sapoche/data/backend.dart';
 import 'package:sapoche/data/models.dart';
 import 'package:sapoche/data/music_models.dart';
+import 'package:sapoche/data/sync/sync_controller.dart';
 import 'package:sapoche/strings.dart';
 import 'package:sapoche/ui/now_playing_page.dart';
 import 'package:sapoche/ui/artist_page.dart';
@@ -17,10 +18,15 @@ import 'package:sapoche/ui/widgets/player_bar.dart';
 
 import '../fake_backend.dart';
 import '../pump_app.dart';
+import '../sync/sync_harness.dart';
 import 'shot_data.dart';
 import 'shot_harness.dart';
 
 Future<void> _settle(WidgetTester t) => settleShot(t);
+
+/// The engine of the library sync of the screen being drawn: a phone with a server that is only a list in memory.
+SyncController? _shotSync;
+SyncController _newShotSync() => _shotSync = Phone('Pixel', FakeServer(), Clock()).sync;
 
 BuildContext _shell(WidgetTester t) => t.element(find.byType(HomeShell));
 
@@ -444,6 +450,42 @@ final shotScreens = <ShotScreen>[
       await t.tap(find.byKey(ValueKey('settings-$topic')));
       await _settle(t);
     }),
+  ShotScreen('settings-sync-off', sync: _newShotSync, (t, b) async {
+    await _state(t, b, const RoomSnapshot());
+    await t.tap(find.text(S.tabHome));
+    await _settle(t);
+    await _openSettings(t);
+    await _settle(t);
+    await t.tap(find.byKey(const ValueKey('settings-backup')));
+    await _settle(t);
+  }),
+  ShotScreen('settings-sync-on', sync: _newShotSync, (t, b) async {
+    await _state(t, b, const RoomSnapshot());
+    await _shotSync!.enable();
+    await _shotSync!.markSaved();
+    await t.tap(find.text(S.tabHome));
+    await _settle(t);
+    await _openSettings(t);
+    await _settle(t);
+    await t.tap(find.byKey(const ValueKey('settings-backup')));
+    await _settle(t);
+  }),
+  ShotScreen('sync-recovery', sync: _newShotSync, (t, b) async {
+    await _state(t, b, const RoomSnapshot());
+    await t.tap(find.text(S.tabHome));
+    await _settle(t);
+    await _openSettings(t);
+    await _settle(t);
+    await t.tap(find.byKey(const ValueKey('settings-backup')));
+    await _settle(t);
+    await t.tap(find.byKey(const ValueKey('sync-turn-on')));
+    await _settle(t);
+  }),
+  ShotScreen('library-sync-card', sync: _newShotSync, (t, b) async {
+    await _state(t, b, const RoomSnapshot());
+    await _shotSync!.load();
+    await _tab(t, S.tabLibrary);
+  }),
   ShotScreen('log', prepare: _logData, (t, b) => _openLog(t, b)),
   ShotScreen('log-land', prepare: _logData, windows: shotLandscape, (t, b) => _openLog(t, b)),
   ShotScreen('log-detail', prepare: _logData, (t, b) async {

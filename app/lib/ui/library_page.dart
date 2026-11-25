@@ -19,6 +19,7 @@ import 'widgets/folder_sheets.dart';
 import 'widgets/menu_lines.dart';
 import 'widgets/offline_button.dart';
 import 'widgets/library_lost_notice.dart';
+import 'widgets/sync_card.dart';
 import 'widgets/page_width.dart';
 import 'widgets/play_actions.dart';
 import 'widgets/play_row.dart';
@@ -350,6 +351,7 @@ class _Overview extends StatelessWidget {
             ),
           ),
           const LibraryLostNotice(),
+          const SyncCard(),
           _CollectionRow(
             leading: const _IconTile(Icons.favorite_rounded),
             title: S.likedSongs,

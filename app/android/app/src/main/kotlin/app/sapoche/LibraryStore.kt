@@ -72,8 +72,34 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
     /** A playlist as kept in a backup: what it is called, when, its songs in order, and the folder it was in by name. */
     data class SavedPlaylist(val name: String, val createdAt: Long, val updatedAt: Long, val tracks: List<TrackRef>, val folder: String? = null)
 
-    /** What is worth carrying to another phone: likes, playlists and every listen, each with its time. */
-    data class Backup(val liked: List<Entry>, val playlists: List<SavedPlaylist>, val listens: List<Entry>, val skippedLocal: Int = 0)
+    /** A block or a mark on the taste with the time it was made, as the sync carries them. */
+    data class Marked(val kind: String, val key: String, val label: String, val at: Long)
+
+    /** What is worth carrying to another phone: likes, playlists and every listen, each with its time, and what was blocked or marked. */
+    data class Backup(
+        val liked: List<Entry>,
+        val playlists: List<SavedPlaylist>,
+        val listens: List<Entry>,
+        val skippedLocal: Int = 0,
+        val blocked: List<Marked> = emptyList(),
+        val marks: List<Marked> = emptyList(),
+    )
+
+    /** A playlist with the id it has on this phone, and the folder's. */
+    data class SnapshotPlaylist(val id: Long, val name: String, val folderId: Long?, val createdAt: Long, val updatedAt: Long, val tracks: List<TrackRef>)
+
+    /** A folder with its id on this phone. */
+    data class SnapshotFolder(val id: Long, val name: String, val createdAt: Long, val updatedAt: Long)
+
+    /** The library as the sync reads it: [Backup] with the ids of this phone. Songs from files on the phone are not in it. */
+    data class Snapshot(
+        val liked: List<Entry>,
+        val playlists: List<SnapshotPlaylist>,
+        val folders: List<SnapshotFolder>,
+        val listens: List<Entry>,
+        val blocked: List<Marked>,
+        val marks: List<Marked>,
+    )
 
     /** How much of a backup was new to this phone. */
     data class Restored(val liked: Int, val playlists: Int, val listens: Int, val skippedLocal: Int = 0)
@@ -571,18 +597,8 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
      */
     suspend fun backup(): Backup = withContext(io) {
         val db = readableDatabase
-        val liked = db.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, l.liked_at, 0 " +
-                "FROM likes l JOIN tracks t ON t.video_id = l.video_id WHERE t.video_id NOT LIKE '${LocalMusic.PREFIX}%' " +
-                "ORDER BY l.liked_at, t.video_id",
-            null,
-        ).use(::entries)
-        val listens = db.rawQuery(
-            "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, h.played_at, 0 " +
-                "FROM history h JOIN tracks t ON t.video_id = h.video_id WHERE t.video_id NOT LIKE '${LocalMusic.PREFIX}%' " +
-                "ORDER BY h.played_at, h.id",
-            null,
-        ).use(::entries)
+        val liked = likedForBackup(db)
+        val listens = listensForBackup(db)
         val playlists = ArrayList<SavedPlaylist>()
         db.rawQuery(
             "SELECT p.id, p.name, p.created_at, p.updated_at, f.name FROM playlists p LEFT JOIN folders f ON f.id = p.folder_id ORDER BY p.id",
@@ -590,12 +606,7 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
         ).use { c ->
             while (c.moveToNext()) {
                 val id = c.getLong(0)
-                val songs = db.rawQuery(
-                    "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0 " +
-                        "FROM playlist_items i JOIN tracks t ON t.video_id = i.video_id WHERE i.playlist_id = ? " +
-                        "AND t.video_id NOT LIKE '${LocalMusic.PREFIX}%' ORDER BY i.position",
-                    arrayOf(id.toString()),
-                ).use(::entries).map { it.track }
+                val songs = playlistSongs(db, id)
                 playlists += SavedPlaylist(c.getString(1), c.getLong(2), c.getLong(3), songs, c.getString(4))
             }
         }
@@ -605,6 +616,48 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
             null,
         ).use { it.moveToFirst(); it.getInt(0) }
         Backup(liked, playlists, listens, skipped)
+    }
+
+    private fun likedForBackup(db: SQLiteDatabase): List<Entry> = db.rawQuery(
+        "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, l.liked_at, 0 " +
+            "FROM likes l JOIN tracks t ON t.video_id = l.video_id WHERE t.video_id NOT LIKE '${LocalMusic.PREFIX}%' " +
+            "ORDER BY l.liked_at, t.video_id",
+        null,
+    ).use(::entries)
+
+    private fun listensForBackup(db: SQLiteDatabase): List<Entry> = db.rawQuery(
+        "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, h.played_at, 0 " +
+            "FROM history h JOIN tracks t ON t.video_id = h.video_id WHERE t.video_id NOT LIKE '${LocalMusic.PREFIX}%' " +
+            "ORDER BY h.played_at, h.id",
+        null,
+    ).use(::entries)
+
+    private fun playlistSongs(db: SQLiteDatabase, id: Long): List<TrackRef> = db.rawQuery(
+        "SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0 " +
+            "FROM playlist_items i JOIN tracks t ON t.video_id = i.video_id WHERE i.playlist_id = ? " +
+            "AND t.video_id NOT LIKE '${LocalMusic.PREFIX}%' ORDER BY i.position",
+        arrayOf(id.toString()),
+    ).use(::entries).map { it.track }
+
+    private fun marked(db: SQLiteDatabase, table: String): List<Marked> =
+        db.rawQuery("SELECT kind, key, label, at FROM $table ORDER BY at, kind, key", null).use { c ->
+            buildList { while (c.moveToNext()) add(Marked(c.getString(0), c.getString(1), c.getString(2), c.getLong(3))) }
+        }
+
+    /** What the sync reads, in one go: [backup] with the ids of the playlists and folders, what was blocked and the marks on the taste. */
+    suspend fun snapshot(): Snapshot = withContext(io) {
+        val db = readableDatabase
+        val playlists = db.rawQuery("SELECT id, name, folder_id, created_at, updated_at FROM playlists ORDER BY id", null).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add(SnapshotPlaylist(c.getLong(0), c.getString(1), if (c.isNull(2)) null else c.getLong(2), c.getLong(3), c.getLong(4), playlistSongs(db, c.getLong(0))))
+                }
+            }
+        }
+        val folders = db.rawQuery("SELECT id, name, created_at, updated_at FROM folders ORDER BY id", null).use { c ->
+            buildList { while (c.moveToNext()) add(SnapshotFolder(c.getLong(0), c.getString(1), c.getLong(2), c.getLong(3))) }
+        }
+        Snapshot(likedForBackup(db), playlists, folders, listensForBackup(db), marked(db, "blocked"), marked(db, "taste_marks"))
     }
 
     /**
@@ -682,6 +735,12 @@ class LibraryStore(context: Context, name: String? = "library.db") : SQLiteOpenH
                     put("played_at", entry.at)
                 })
                 listens++
+            }
+            for (b in backup.blocked) {
+                execSQL("INSERT OR IGNORE INTO blocked(kind, key, label, at) VALUES(?, ?, ?, ?)", arrayOf<Any>(b.kind, b.key, b.label, b.at))
+            }
+            for (m in backup.marks) {
+                execSQL("INSERT OR IGNORE INTO taste_marks(kind, key, label, at) VALUES(?, ?, ?, ?)", arrayOf<Any>(m.kind, m.key, m.label, m.at))
             }
             // Listens from a backup are older than the ones here, so what is over the limit goes by time, not by row
             execSQL(

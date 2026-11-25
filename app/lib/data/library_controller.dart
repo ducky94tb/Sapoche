@@ -17,6 +17,9 @@ class LibraryController extends ChangeNotifier {
   final Backend _backend;
   final Duration quiet;
 
+  /// The person cleared the history: what keeps the library alike on several devices must tell the others.
+  VoidCallback? onHistoryCleared;
+
   /// Counts the times the library told it had changed: a page that is not showing can keep what it drew until this is
   /// not what it was.
   int get revision => _revision;
@@ -549,6 +552,7 @@ class LibraryController extends ChangeNotifier {
     notifyListeners();
     try {
       await _backend.clearHistory();
+      onHistoryCleared?.call();
     } on Object catch (e) {
       _recent = before;
       notifyListeners();

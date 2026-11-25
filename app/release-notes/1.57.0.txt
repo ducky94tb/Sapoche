@@ -1,0 +1,5 @@
+Keep your library safe and the same on every device
+- Settings > Backup & sync keeps your liked songs, playlists, folders, history and blocked songs on the server, sealed with a key only your devices know: the server cannot read them. No account, no email, no password.
+- Turn it on and save the recovery code it shows. With that code, a new phone, a reinstall or the web gets your library back, and phones on the same code stay alike: a song you like, a playlist you rename or a song you remove shows up on the others.
+- Add a device by scanning its QR code with the camera, or by typing the code. Joining only merges: nothing on the new device is removed.
+- Safety nets: older copies kept on the server to restore, a pause and a question before a sync that would remove a lot, and an undo for the first sync. A new card at the top of Library offers it once. It works on Android, iPhone and the web, and it is off until you turn it on.

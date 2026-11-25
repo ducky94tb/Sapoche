@@ -437,6 +437,101 @@ class LibraryStore {
     _saving = Timer(saveAfter, flush);
   }
 
+  // ------------------------------------------------------------------ sync
+
+  /// The library as the sync engine reads it (see `Backend.librarySnapshot`): songs once each, then likes, playlists and
+  /// folders with their ids here, listens, blocks and marks.
+  String snapshot() {
+    final used = {..._likes.keys, for (final p in _playlists) ...p.items, for (final h in _history) h.$1};
+    return jsonEncode({
+      'songs': {
+        for (final id in used)
+          if (_tracks[id] case final t? when !t.isLocal) id: _songJson(t),
+      },
+      'liked': [for (final e in _likes.entries) {'id': e.key, 'at': e.value}],
+      'playlists': [
+        for (final p in _playlists)
+          {
+            'id': p.id,
+            'name': p.name,
+            'folderId': p.folderId,
+            'createdAt': p.createdAt,
+            'updatedAt': p.updatedAt,
+            'songs': p.items,
+          },
+      ],
+      'folders': [
+        for (final f in _folders) {'id': f.id, 'name': f.name, 'createdAt': f.updatedAt, 'updatedAt': f.updatedAt},
+      ],
+      'history': [for (final (id, at, _) in _history) {'id': id, 'at': at}],
+      'blocked': [for (final b in _blocked) {'kind': b.kind, 'key': b.key, 'label': b.label, 'at': b.at}],
+      'marks': [for (final m in _marks) {'kind': m.kind, 'key': m.key, 'label': m.label, 'at': m.at}],
+    });
+  }
+
+  static Map<String, Object?> _songJson(Track t) => {
+    'title': t.title,
+    'artist': t.artist,
+    'thumb': t.thumb,
+    'durMs': t.durMs,
+    if (t.explicit) 'explicit': true,
+    if (t.year != null) 'year': t.year,
+  };
+
+  /// Adds what [json] holds (`songs`, `liked`, `history`, `blocked`, `marks`) with the times it gives; what is here stays.
+  /// Listens beyond the limit go by time, the oldest first.
+  void merge(String json) {
+    final root = (jsonDecode(json) as Map).cast<String, Object?>();
+    final songs = (root['songs'] as Map? ?? const {}).cast<String, Object?>();
+    Track? song(String id) {
+      final m = (songs[id] as Map?)?.cast<String, Object?>();
+      final title = m?['title'] as String?;
+      if (m == null || title == null || title.trim().isEmpty || id.isEmpty || id.length > 32) return null;
+      return Track(
+        videoId: id,
+        title: title,
+        artist: m['artist'] as String? ?? '',
+        thumb: m['thumb'] as String?,
+        durMs: (m['durMs'] as num?)?.toInt() ?? 0,
+        explicit: m['explicit'] == true,
+        year: m['year'] as String?,
+      );
+    }
+
+    for (final item in root['liked'] as List? ?? const []) {
+      final like = (item as Map).cast<String, Object?>();
+      final track = song(like['id'] as String);
+      if (track == null) continue;
+      _remember(track);
+      _likes.putIfAbsent(track.videoId, () => (like['at'] as num).toInt());
+    }
+    final seen = {for (final (id, at, _) in _history) (id, at)};
+    for (final item in root['history'] as List? ?? const []) {
+      final listen = (item as Map).cast<String, Object?>();
+      final track = song(listen['id'] as String);
+      final at = (listen['at'] as num).toInt();
+      if (track == null || !seen.add((track.videoId, at))) continue;
+      _remember(track);
+      _history.add((track.videoId, at, null));
+    }
+    _history.sort((a, b) => a.$2.compareTo(b.$2));
+    if (_history.length > historyKeep) _history.removeRange(0, _history.length - historyKeep);
+    for (final item in root['blocked'] as List? ?? const []) {
+      final b = (item as Map).cast<String, Object?>();
+      if (!_blocked.any((o) => o.kind == b['kind'] && o.key == b['key'])) {
+        _blocked.add(_Blocked(b['kind'] as String, b['key'] as String, b['label'] as String? ?? '', (b['at'] as num?)?.toInt() ?? 0));
+      }
+    }
+    for (final item in root['marks'] as List? ?? const []) {
+      final m = (item as Map).cast<String, Object?>();
+      if (!_marks.any((o) => o.kind == m['kind'] && o.key == m['key'])) {
+        _marks.add(_Blocked(m['kind'] as String, m['key'] as String, m['label'] as String? ?? '', (m['at'] as num?)?.toInt() ?? 0));
+      }
+    }
+    _dropUnused();
+    _changed();
+  }
+
   /// Writes what changed now rather than after the pause, for a page that is going away.
   Future<void> flush() async {
     if (!_dirty) return;

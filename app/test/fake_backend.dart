@@ -597,6 +597,36 @@ class FakeBackend implements Backend {
     return backupCounts;
   }
 
+  /// What the sync engine reads and what it was given; the tests set them.
+  String snapshotJson = '{}';
+  final merged = <String>[];
+  String roomKey = '';
+  String? savedSyncKey;
+
+  @override
+  Future<String> librarySnapshot() async {
+    await _record('librarySnapshot');
+    return snapshotJson;
+  }
+
+  @override
+  Future<void> libraryMerge(String json) async {
+    merged.add(json);
+    await _record('libraryMerge');
+  }
+
+  @override
+  Future<String> serverKey() async => roomKey;
+
+  @override
+  Future<String?> syncKey() async => savedSyncKey;
+
+  @override
+  Future<void> setSyncKey(String? code) async {
+    savedSyncKey = code;
+    await _record('setSyncKey');
+  }
+
   @override
   Future<void> setSleep(SleepMode mode, {int minutes = 0}) =>
       _record('sleep ${mode.name} $minutes');

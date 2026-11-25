@@ -288,3 +288,12 @@ A device whose network is slow, or comes and goes, stalls for want of data. It c
 - **Going on.** The device waits until it holds 10 seconds of the song ahead (or the whole of it) and sends `buf.ok {epoch}` (the `epoch` of that `pause`). The server then starts the room as `play` does, with the same lead, and sends `start` with `why: "wait"`. It does the same when the 15 seconds pass, when the device leaves, goes `away` or `solo`, when `waitWeak` is turned off, and a `play` or `pause` pressed meanwhile ends the wait too (a `play` starts the room; a `pause` leaves it paused). A device that was waited for and did not answer in time goes on as it did before: a little behind, catching up.
 - **Limits, so that one device cannot hold the room up.** Per song, a device may make the room wait twice and the room three times; a device whose wait was cut short by somebody pressing play or pause has none left on that song. Further `buf` messages are ignored. A new song starts the count again.
 - **Old apps.** They send none of these messages and show `pause` and `start` as usual, with the name of the device that caused it. A client sends `net`, `buf` and `buf.ok` only after a `state` that has `waitWeak`, and `waitWeak {on}` only to such a server (older servers answer `unknown_type`).
+
+## 5n. Library sync (HTTP routes, outside the room protocol)
+
+A device can keep its library (liked songs, playlists, folders, history, blocks) on the server so that it survives a reinstall and matches on the devices of one person. The server stores **opaque bytes only**: the device seals them (gzip, then AES-256-GCM) with a key that never leaves the devices, and the name of the library on the server is derived from that key. All routes need the group key like `/room/*`, and are rate-limited per address. Adding them did not change the protocol version.
+
+- `GET /sync/<id>`: the sealed library and its `ETag`; 404 if there is none. `<id>` is 64 lowercase hex characters.
+- `PUT /sync/<id>` with `X-Sync-Token` (what proves the writer holds the key) and `If-None-Match: *` (first write) or `If-Match: <etag>`: the new library. `412` if another device wrote first, `403` for a wrong token, `413` over 4 MiB, `428` without a condition. The server keeps a few older copies (at most ten, at least hours apart).
+- `GET /sync/<id>/versions` lists the older copies (`[{"t": ms, "size": bytes}]`, newest first); `GET /sync/<id>/v/<t>` returns one.
+- `DELETE /sync/<id>` with the token removes the library and its copies.

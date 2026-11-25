@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'app.dart';
@@ -16,6 +18,8 @@ import 'data/recent_searches.dart';
 import 'data/room_controller.dart';
 import 'data/sticker_licenses.dart';
 import 'data/sticker_store.dart';
+import 'data/sync/sync_controller.dart';
+import 'data/sync/sync_ports.dart';
 import 'data/update_controller.dart';
 import 'frame_boost.dart';
 import 'frame_stats.dart';
@@ -54,9 +58,20 @@ Future<void> main() async {
   registerStickerLicenses();
   // The packs are files of the room server, which the room controller knows the address of
   final stickers = await StickerStore.load(server: () => room.profile.server, cacheFolder: backend.cacheFolder);
+  final sync = createSyncController(
+    backend: backend,
+    server: () => room.profile.server,
+    deviceLabel: () => kIsWeb ? 'Web' : (defaultTargetPlatform == TargetPlatform.iOS ? 'iPhone' : 'Android'),
+  );
+  // The library of this phone changes under the person's hand or while the screen is off: the sync looks a few seconds later
+  backend.events.where((e) => e is LibraryEvent).listen((_) => sync.libraryChanged());
+  library.onHistoryCleared = sync.historyCleared;
+  WidgetsBinding.instance.addObserver(_SyncOnLifecycle(sync));
+  unawaited(sync.load());
   runApp(
     SapocheApp(
       model: AppModel(
+        sync: sync,
         room: room,
         settings: settings,
         recents: recents,
@@ -76,4 +91,16 @@ Future<void> main() async {
       ),
     ),
   );
+}
+
+/// Syncs when the app comes back to the front and when it goes away (an iPhone gives it a few seconds; the next run makes up).
+class _SyncOnLifecycle with WidgetsBindingObserver {
+  _SyncOnLifecycle(this._sync);
+
+  final SyncController _sync;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed || state == AppLifecycleState.paused) _sync.appMoved();
+  }
 }

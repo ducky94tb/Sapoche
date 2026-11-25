@@ -20,15 +20,9 @@ enum LibraryBackup {
 
     static func toJson(_ backup: LibraryStore.Backup, at: Int64) -> String {
         var songs: [String: Any] = [:]
-        func note(_ track: TrackRef) {
-            var obj: [String: Any] = ["title": track.title, "artist": track.artist, "thumb": track.thumb ?? NSNull(), "durMs": track.durMs]
-            if track.explicit { obj["explicit"] = true }
-            if let year = track.year { obj["year"] = year }
-            songs[track.videoId] = obj
-        }
-        backup.liked.forEach { note($0.track) }
-        backup.listens.forEach { note($0.track) }
-        backup.playlists.forEach { $0.tracks.forEach(note) }
+        backup.liked.forEach { note($0.track, into: &songs) }
+        backup.listens.forEach { note($0.track, into: &songs) }
+        backup.playlists.forEach { $0.tracks.forEach { note($0, into: &songs) } }
         let root: [String: Any] = [
             "app": app,
             "version": version,
@@ -39,6 +33,38 @@ enum LibraryBackup {
                 ["name": $0.name, "createdAt": $0.createdAt, "updatedAt": $0.updatedAt, "folder": $0.folder ?? NSNull(), "songs": $0.tracks.map(\.videoId)] as [String: Any]
             },
             "history": backup.listens.map { ["id": $0.track.videoId, "at": $0.at] as [String: Any] },
+        ]
+        return JSONText.encode(root)
+    }
+
+    private static func note(_ track: TrackRef, into songs: inout [String: Any]) {
+        var obj: [String: Any] = ["title": track.title, "artist": track.artist, "thumb": track.thumb ?? NSNull(), "durMs": track.durMs]
+        if track.explicit { obj["explicit"] = true }
+        if let year = track.year { obj["year"] = year }
+        songs[track.videoId] = obj
+    }
+
+    /// What the sync reads: the same songs, likes and listens as [toJson], and the playlists and folders with the ids they have on
+    /// this phone, what was blocked and the marks on the taste. Not a file for a person to keep, and no version of its own.
+    static func snapshotJson(_ snapshot: LibraryStore.Snapshot) -> String {
+        var songs: [String: Any] = [:]
+        snapshot.liked.forEach { note($0.track, into: &songs) }
+        snapshot.listens.forEach { note($0.track, into: &songs) }
+        snapshot.playlists.forEach { $0.tracks.forEach { note($0, into: &songs) } }
+        func marked(_ list: [LibraryStore.Marked]) -> [[String: Any]] {
+            list.map { ["kind": $0.kind, "key": $0.key, "label": $0.label, "at": $0.at] }
+        }
+        let root: [String: Any] = [
+            "songs": songs,
+            "liked": snapshot.liked.map { ["id": $0.track.videoId, "at": $0.at] as [String: Any] },
+            "playlists": snapshot.playlists.map {
+                ["id": $0.id, "name": $0.name, "folderId": $0.folderId ?? NSNull(), "createdAt": $0.createdAt, "updatedAt": $0.updatedAt,
+                 "songs": $0.tracks.map(\.videoId)] as [String: Any]
+            },
+            "folders": snapshot.folders.map { ["id": $0.id, "name": $0.name, "createdAt": $0.createdAt, "updatedAt": $0.updatedAt] as [String: Any] },
+            "history": snapshot.listens.map { ["id": $0.track.videoId, "at": $0.at] as [String: Any] },
+            "blocked": marked(snapshot.blocked),
+            "marks": marked(snapshot.marks),
         ]
         return JSONText.encode(root)
     }
@@ -73,6 +99,16 @@ enum LibraryBackup {
                 folder: playlist.at("folder").string.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : String($0.prefix(maxText)) }
             )
         }
-        return LibraryStore.Backup(liked: entries(root.at("liked")), playlists: playlists, listens: entries(root.at("history")))
+        /// The blocks or marks of the sync (a file a person keeps has none); an entry without a kind or key is skipped.
+        func marked(_ list: JSON) -> [LibraryStore.Marked] {
+            list.array.compactMap { item in
+                let kind = String((item.at("kind").string ?? "").prefix(maxId))
+                let key = String((item.at("key").string ?? "").prefix(maxText))
+                if item.object == nil || kind.trimmingCharacters(in: .whitespaces).isEmpty || key.trimmingCharacters(in: .whitespaces).isEmpty { return nil }
+                return LibraryStore.Marked(kind: kind, key: key, label: String((item.at("label").string ?? "").prefix(maxText)), at: item.at("at").int64 ?? 0)
+            }
+        }
+        return LibraryStore.Backup(liked: entries(root.at("liked")), playlists: playlists, listens: entries(root.at("history")),
+                                   blocked: marked(root.at("blocked")), marks: marked(root.at("marks")))
     }
 }

@@ -161,11 +161,12 @@ class SapocheBridge(
 
     /**
      * Handles an invitation, `sapoche://join/CODE` or the https link of the server's invitation page, and a setup link,
-     * `sapoche://setup?server=…&key=…`, which another phone shows as a QR code; anything else is ignored. The screen checks
+     * `sapoche://setup?server=…&key=…`, which another phone shows as a QR code, and a sync link, `sapoche://sync?k=…`; anything else is ignored. The screen checks
      * a setup link and asks before using it.
      */
     fun onLink(uri: Uri?) {
-        if (uri?.scheme == "sapoche" && uri.host == "setup") {
+        // `sapoche://sync?k=…` carries the key of a synced library; the screen asks before it joins
+        if (uri?.scheme == "sapoche" && (uri.host == "setup" || uri.host == "sync")) {
             val link = uri.toString()
             if (sink != null) emit(UiJson.setup(link)) else pendingSetup = link
             return
@@ -865,6 +866,24 @@ class SapocheBridge(
                 if (restored.liked > 0 && autoDownload) DownloadWorker.enqueue(activity, waiting = true)
                 kickOffline()
                 return restored.toMap()
+            }
+            "librarySnapshot" -> return LibraryBackup.snapshotJson(SapocheApp.library.snapshot())
+            "libraryMerge" -> {
+                val restored = try {
+                    SapocheApp.library.restore(LibraryBackup.fromJson(call.argument<String>("json").orEmpty()))
+                } catch (e: LibraryBackup.FormatException) {
+                    throw IllegalArgumentException(e.message)
+                }
+                if (restored.liked > 0 && autoDownload) DownloadWorker.enqueue(activity, waiting = true)
+                return null
+            }
+            // The key the server asks for goes to the sync, which sends it with its calls; it is not shown or logged
+            "serverKey" -> return Config.authHeaders["X-Sapoche-Key"].orEmpty()
+            "syncKey" -> return prefs.getString("sync_key", null)
+            "setSyncKey" -> {
+                val code = call.argument<String>("code")
+                prefs.edit().apply { if (code == null) remove("sync_key") else putString("sync_key", code) }.apply()
+                return null
             }
             "share" -> {
                 share(call.argument<String>("text").orEmpty())

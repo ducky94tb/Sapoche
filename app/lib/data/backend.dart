@@ -528,6 +528,24 @@ abstract class Backend {
   /// Adds what a file the person picks holds to the library. Null when they backed out; throws when the file is no backup.
   Future<BackupCounts?> importBackup();
 
+  /// The library as JSON, read in one go: songs, likes with their times, playlists and folders with this phone's ids, listens,
+  /// what was blocked and what was marked on the taste. What the sync engine merges (`data/sync`); songs from files on the
+  /// phone are left out.
+  Future<String> librarySnapshot();
+
+  /// Adds what the JSON holds (`songs`, `liked`, `history`, `blocked`, `marks`, as [librarySnapshot] gives them), keeping the
+  /// times; nothing that is here is removed or changed.
+  Future<void> libraryMerge(String json);
+
+  /// The key the room server asks for with every call, for the sync (empty when it asks for none). Never to be shown or logged.
+  Future<String> serverKey();
+
+  /// The key of the synced library, or null when there is none. It is the only way back to the library on the server.
+  Future<String?> syncKey();
+
+  /// Keeps the key of the synced library (where the system can keep a secret: the keychain on an iPhone), or with null forgets it.
+  Future<void> setSyncKey(String? code);
+
   /// Stops the music in [minutes] (mode time), when the song is over (song) or not at all (off).
   Future<void> setSleep(SleepMode mode, {int minutes = 0});
 
@@ -1433,6 +1451,21 @@ class NativeBackend implements Backend {
     final raw = await _call<Map<Object?, Object?>>('backupImport');
     return raw == null ? null : BackupCounts.fromMap(raw);
   }
+
+  @override
+  Future<String> librarySnapshot() async => (await _call<String>('librarySnapshot')) ?? '{}';
+
+  @override
+  Future<void> libraryMerge(String json) => _call('libraryMerge', {'json': json});
+
+  @override
+  Future<String> serverKey() async => (await _call<String>('serverKey')) ?? '';
+
+  @override
+  Future<String?> syncKey() => _call<String>('syncKey');
+
+  @override
+  Future<void> setSyncKey(String? code) => _call('setSyncKey', {'code': code});
 
   @override
   Future<void> setSleep(SleepMode mode, {int minutes = 0}) =>

@@ -1,0 +1,5 @@
+Giữ thư viện an toàn và giống nhau trên mọi máy
+- Cài đặt > Sao lưu và đồng bộ giữ bài thích, playlist, thư mục, lịch sử và bài đã chặn của bạn trên server, được mã hoá bằng một khoá chỉ máy của bạn biết: server không đọc được. Không cần tài khoản, email hay mật khẩu.
+- Bật lên và cất mã khôi phục mà app hiện ra. Có mã đó thì điện thoại mới, cài lại app hay bản web đều lấy lại được thư viện, và các máy dùng chung một mã luôn giống nhau: bài bạn thích, playlist bạn đổi tên hay bài bạn bỏ đi sẽ hiện ở máy kia.
+- Thêm máy bằng cách quét mã QR bằng camera hoặc gõ mã. Nối máy chỉ gộp thêm: không có gì trên máy mới bị xoá.
+- Có lưới an toàn: server giữ các bản cũ để khôi phục, app dừng và hỏi trước khi một lần đồng bộ sắp xoá nhiều, và có thể hoàn tác lần đồng bộ đầu. Một thẻ mới ở đầu Thư viện mời bật một lần. Dùng được trên Android, iPhone và web, và mặc định tắt cho tới khi bạn bật.

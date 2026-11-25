@@ -30,6 +30,7 @@ import 'setup_dialog.dart';
 import 'ios_update_sheet.dart';
 import 'search_page.dart';
 import 'settings_page.dart';
+import 'sync_dialogs.dart';
 import 'update_sheet.dart';
 import 'widgets/artwork.dart';
 import 'widgets/cached_cover.dart';
@@ -362,6 +363,7 @@ class _HomeShellState extends State<HomeShell>
     room.invite.addListener(_onInvite);
     room.chatRequests.addListener(_onChatRequest);
     room.setup.addListener(_onSetup);
+    room.syncLink.addListener(_onSyncLink);
     room.addListener(_precacheCover);
     room.addListener(_watchRoom);
     room.addListener(_askForKey);
@@ -369,6 +371,7 @@ class _HomeShellState extends State<HomeShell>
     WidgetsBinding.instance.addPostFrameCallback((_) => _askForKey());
     WidgetsBinding.instance.addPostFrameCallback((_) => _onInvite());
     WidgetsBinding.instance.addPostFrameCallback((_) => _onSetup());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onSyncLink());
     final update = _update = AppScope.of(context).update;
     update.addListener(_scheduleNudge);
     _sheet.addListener(_scheduleNudge);
@@ -509,6 +512,7 @@ class _HomeShellState extends State<HomeShell>
     _watched?.invite.removeListener(_onInvite);
     _watched?.chatRequests.removeListener(_onChatRequest);
     _watched?.setup.removeListener(_onSetup);
+    _watched?.syncLink.removeListener(_onSyncLink);
     _watched?.removeListener(_precacheCover);
     _watched?.removeListener(_watchRoom);
     _watched?.removeListener(_askForKey);
@@ -596,6 +600,16 @@ class _HomeShellState extends State<HomeShell>
   /// The person touched a notice of the chat: the chat opens, over whatever is shown.
   void _onChatRequest() {
     if (mounted) showChatSheet(context);
+  }
+
+  /// A link with the key of a synced library was opened: offer to join it.
+  Future<void> _onSyncLink() async {
+    final room = AppScope.roomOf(context);
+    final key = room.syncLink.value;
+    final sync = AppScope.of(context).sync;
+    if (key == null || sync == null || !mounted) return;
+    room.syncLink.value = null;
+    if (!sync.enabled) await joinSync(context, sync, key: key);
   }
 
   Future<void> _onSetup() async {

@@ -19,11 +19,14 @@ interface Env {
   LIMIT_YT?: RateLimit;
   LIMIT_JOIN?: RateLimit;
   LIMIT_LASTFM?: RateLimit;
+  LIMIT_SYNC?: RateLimit;
   /**
    * Last.fm (see lastfm.ts): the API key of the account made at last.fm/api/account/create is in `vars` of wrangler.jsonc (it is
    * not secret: it is in the address of the page where a person allows the app), and its shared secret is a secret:
    * `wrangler secret put LASTFM_SECRET`. Without both the server answers 503 and the apps hide Last.fm.
    */
+  /** How old (ms) the newest old version of a synced library must be before the next is kept; only the tests shorten it (see sync.ts). */
+  SYNC_VERSION_GAP_MS?: string;
   LASTFM_KEY?: string;
   LASTFM_SECRET?: string;
   /** Only the tests set this: where Last.fm is asked instead of its real address. */

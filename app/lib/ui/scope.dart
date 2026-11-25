@@ -10,6 +10,7 @@ import '../data/recent_rooms.dart';
 import '../data/recent_searches.dart';
 import '../data/room_controller.dart';
 import '../data/sticker_store.dart';
+import '../data/sync/sync_controller.dart';
 import '../data/update_controller.dart';
 
 /// The long-lived objects every screen may need.
@@ -24,6 +25,7 @@ class AppModel {
     required this.comments,
     required this.update,
     required this.stickers,
+    this.sync,
     this.photoPicker = pickPhoto,
     this.wallpaperPicker = pickWallpaper,
     this.chatPhotoPicker = pickChatPhotos,
@@ -56,6 +58,9 @@ class AppModel {
 
   /// The sticker packs and the stickers used lately.
   final StickerStore stickers;
+
+  /// Keeps the library on the server and alike on every device; null where there is none (the tests).
+  final SyncController? sync;
 
   /// Where the person's own picture comes from.
   final PhotoPicker photoPicker;

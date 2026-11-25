@@ -94,7 +94,7 @@ rmSync(".wrangler/state-lifetime", { recursive: true, force: true });
 const release = seedRelease(".wrangler/state");
 const MEDIA_TICKET_MS = 3000;
 const FILL_MS = 2500;
-const main = startServer(8798, { STALE_MS: 2000, FILL_MS, MEDIA_FILE_MAX: 20_000, MEDIA_ROOM_MAX: 60_000, MEDIA_PER_DAY: 30, MEDIA_TICKET_MS, VAPID_PRIVATE: vapid.d, VAPID_PUBLIC: vapidPublic, PUSH_LOCAL: 1, PUSH_FRESH_MS, LASTFM_KEY: "test-key", LASTFM_SECRET: "test-secret", LASTFM_API: `http://127.0.0.1:${LASTFM_FAKE_PORT}/` }, ".wrangler/state");
+const main = startServer(8798, { STALE_MS: 2000, FILL_MS, SYNC_VERSION_GAP_MS: 0, MEDIA_FILE_MAX: 20_000, MEDIA_ROOM_MAX: 60_000, MEDIA_PER_DAY: 30, MEDIA_TICKET_MS, VAPID_PRIVATE: vapid.d, VAPID_PUBLIC: vapidPublic, PUSH_LOCAL: 1, PUSH_FRESH_MS, LASTFM_KEY: "test-key", LASTFM_SECRET: "test-secret", LASTFM_API: `http://127.0.0.1:${LASTFM_FAKE_PORT}/` }, ".wrangler/state");
 const quick = startServer(
   8799,
   { STALE_MS: 2000, MEDIA_ACCOUNT_MAX: 10_000, DROP_MS: 2500, SWEEP_MS: 1000, EMPTY_MS: 6000, EMPTY_BARE_MS: 1500, CHAT_KEEP_MS: 4000, CHAT_KEEP_MAX: 20, CHAT_PRUNE_MS: 1, LASTFM_KEY: "", LASTFM_SECRET: "" },

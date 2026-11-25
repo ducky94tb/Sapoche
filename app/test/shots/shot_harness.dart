@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sapoche/data/app_settings.dart';
 import 'package:sapoche/data/comments.dart';
+import 'package:sapoche/data/sync/sync_controller.dart';
 import 'package:sapoche/strings.dart';
 
 import '../fake_backend.dart';
@@ -74,6 +75,7 @@ class ShotScreen {
     this.comments,
     this.style = PlayerStyle.classic,
     this.windows,
+    this.sync,
   });
 
   final String id;
@@ -92,6 +94,9 @@ class ShotScreen {
 
   /// The windows to draw it in when not the usual five.
   final List<ShotSize>? windows;
+
+  /// Gives the engine of the library sync, for the screens that show it.
+  final SyncController Function()? sync;
 }
 
 /// The combos to draw: `SHOTS_MATRIX=base` (the default: five sizes, light and dark, English), `full` (all of the plan:
@@ -152,6 +157,7 @@ Future<FakeBackend> pumpShot(WidgetTester tester, ShotScreen screen, ShotCombo c
     listen: screen.listen,
     prepare: screen.prepare,
     commentsTransport: screen.comments ?? shotComments,
+    sync: screen.sync?.call(),
   );
   final size = combo.size;
   tester.view

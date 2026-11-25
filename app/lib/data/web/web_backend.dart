@@ -79,6 +79,7 @@ class WebBackend extends BackendDefaults {
     this.invite,
     this.openChat = false,
     this.inviteSecret,
+    this.syncCode,
     this.secretsDisk,
     this.onShare,
     this.media,
@@ -111,6 +112,11 @@ class WebBackend extends BackendDefaults {
           if (code != null && !_invited) {
             _invited = true;
             _followNotice(code);
+          }
+          // A link with the key of a synced library: the screen offers to join it
+          if (syncCode case final sync? when !_syncOffered) {
+            _syncOffered = true;
+            _events.add(SetupEvent('sapoche://sync?k=$sync'));
           }
         });
       },
@@ -206,6 +212,10 @@ class WebBackend extends BackendDefaults {
   /// The secret that came with the link, for the room [invite]; the page takes it out of the address.
   final String? inviteSecret;
 
+  /// The key of a synced library that came in the address (`#sync=`), which the page takes out of it.
+  final String? syncCode;
+  var _syncOffered = false;
+
   /// Where the secrets are also kept for the service worker of the page, which opens the previews of notices with them.
   final LibraryDisk? secretsDisk;
 
@@ -243,6 +253,7 @@ class WebBackend extends BackendDefaults {
 
   static const _keyServer = 'web.server';
   static const _keyKey = 'web.key';
+  static const _keySync = 'web.syncKey';
   static const _keyName = 'web.name';
   static const _keyClientId = 'web.clientId';
   static const _keyStartBias = 'web.startBias';
@@ -1461,6 +1472,27 @@ class WebBackend extends BackendDefaults {
 
   @override
   Future<void> clearHistory() async => _library.clearHistory();
+
+  @override
+  Future<String> librarySnapshot() async => _library.snapshot();
+
+  @override
+  Future<void> libraryMerge(String json) async => _library.merge(json);
+
+  @override
+  Future<String> serverKey() async => _key;
+
+  @override
+  Future<String?> syncKey() async => prefs.getString(_keySync);
+
+  @override
+  Future<void> setSyncKey(String? code) async {
+    if (code == null) {
+      await prefs.remove(_keySync);
+    } else {
+      await prefs.setString(_keySync, code);
+    }
+  }
 
   @override
   Future<List<SavedPlaylist>> playlists() async => _library.playlists();

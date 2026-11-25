@@ -15,6 +15,7 @@ import '../data/library_controller.dart';
 import '../data/models.dart';
 import '../data/room_controller.dart';
 import '../data/setup_link.dart';
+import '../data/sync/sync_controller.dart';
 import '../data/taste_clusters.dart';
 import '../data/update_controller.dart';
 import '../data/update_info.dart';
@@ -29,6 +30,7 @@ import 'log_page.dart';
 import 'player/video_controls.dart';
 import 'scope.dart';
 import 'setup_dialog.dart';
+import 'sync_dialogs.dart';
 import 'profile_sheet.dart';
 import 'release_history_list.dart';
 import 'update_actions.dart';
@@ -208,14 +210,14 @@ class _SettingsPageState extends State<SettingsPage> {
             label: S.storage,
             onTap: () => _open(context, () => S.storage, _storage),
           ),
-          // The web build cannot save or read a backup file yet
-          if (!kIsWeb)
+          // The web build cannot save or read a backup file, only sync
+          if (!kIsWeb || _canSync(model))
             _NavRow(
               selected: _shows(_backup),
               key: const ValueKey('settings-backup'),
               icon: Icons.backup_outlined,
-              label: S.backup,
-              onTap: () => _open(context, () => S.backup, _backup),
+              label: _canSync(model) ? S.syncTitle : S.backup,
+              onTap: () => _open(context, () => _canSync(model) ? S.syncTitle : S.backup, _backup),
             ),
         ],
       ),
@@ -886,9 +888,13 @@ class _SettingsPageState extends State<SettingsPage> {
         : _StorageGroup(library: model.library),
   ];
 
+  /// The server is known, and there is an engine to sync with it.
+  static bool _canSync(AppModel model) => model.sync != null && model.room.profile.configured;
+
   static List<Widget> _backup(BuildContext context, AppModel model) => [
     const LibraryLostNotice(),
-    _BackupGroup(library: model.library),
+    if (_canSync(model)) _SyncGroup(sync: model.sync!),
+    if (!kIsWeb) _BackupGroup(library: model.library),
   ];
 
   static List<Widget> _scrobble(BuildContext context, AppModel model) => [
@@ -1776,6 +1782,123 @@ class _BrowserStorageGroupState extends State<_BrowserStorageGroup> {
   }
 }
 
+/// Keeps the library on the server, sealed, and alike on every device (see `data/sync`).
+class _SyncGroup extends StatelessWidget {
+  const _SyncGroup({required this.sync});
+
+  final SyncController sync;
+
+  String _status() => switch (sync.phase) {
+    SyncPhase.syncing => S.syncSyncing,
+    SyncPhase.failed => syncFailureText(sync.failure),
+    SyncPhase.refused => S.syncPaused(sync.refused?.loss.likes ?? 0, sync.refused?.loss.playlists ?? 0),
+    _ => sync.lastSync == null ? S.syncNotYet : S.syncDone(syncTime(sync.lastSync!), sync.deviceCount),
+  };
+
+  Future<void> _tapStatus(BuildContext context) async {
+    final refused = sync.refused;
+    if (sync.phase == SyncPhase.refused && refused != null) {
+      if (await askSyncRefused(context, refused)) await sync.syncNow(force: true);
+    } else {
+      await sync.syncNow();
+    }
+  }
+
+  Future<void> _turnOff(BuildContext context) async {
+    final deleteCopy = await askTurnOff(context);
+    if (deleteCopy == null) return;
+    await sync.disable(deleteRemote: deleteCopy);
+  }
+
+  Future<void> _undo(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      animationStyle: Motion.dialog(context),
+      builder: (context) => AlertDialog(
+        content: Text(S.syncUndoQuestion),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(S.cancel)),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text(S.syncUndoFirst)),
+        ],
+      ),
+    );
+    if (ok == true) await sync.undoFirst();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: sync,
+    builder: (context, _) {
+      final p = context.palette;
+      if (!sync.enabled) {
+        return _Group(
+          footer: S.syncOffHelp,
+          children: [
+            _Row(
+              key: const ValueKey('sync-turn-on'),
+              label: S.syncTurnOn,
+              leading: Icon(Icons.cloud_upload_outlined, color: p.primary),
+              onTap: () => startSync(context, sync),
+            ),
+            _Row(
+              key: const ValueKey('sync-use-code'),
+              label: S.syncUseCode,
+              leading: Icon(Icons.key_rounded, color: p.primary),
+              onTap: () => joinSync(context, sync),
+            ),
+          ],
+        );
+      }
+      final problem = sync.phase == SyncPhase.failed || sync.phase == SyncPhase.refused;
+      return _Group(
+        children: [
+          _Row(
+            key: const ValueKey('sync-status'),
+            label: _status(),
+            leading: sync.phase == SyncPhase.syncing
+                ? const SizedBox.square(dimension: 24, child: Padding(padding: EdgeInsets.all(3), child: CircularProgressIndicator(strokeWidth: 2)))
+                : Icon(problem ? Icons.error_outline_rounded : Icons.cloud_done_outlined, color: problem ? p.error : p.primary),
+            trailing: sync.phase == SyncPhase.refused ? null : Icon(Icons.sync_rounded, size: 18, color: p.textTertiary),
+            onTap: sync.phase == SyncPhase.syncing ? null : () => _tapStatus(context),
+          ),
+          _Row(
+            key: const ValueKey('sync-add-device'),
+            label: S.syncAddDevice,
+            leading: Icon(Icons.qr_code_2_rounded, color: p.primary),
+            onTap: () => showAddDevice(context, sync),
+          ),
+          _Row(
+            key: const ValueKey('sync-recovery'),
+            label: S.syncRecovery,
+            value: sync.recoverySaved ? null : S.syncNotSaved,
+            leading: Icon(Icons.key_rounded, color: p.primary),
+            onTap: () => showRecoveryCode(context, sync),
+          ),
+          _Row(
+            key: const ValueKey('sync-restore'),
+            label: S.syncRestore,
+            leading: Icon(Icons.history_rounded, color: p.primary),
+            onTap: () => showSyncVersions(context, sync),
+          ),
+          if (sync.firstCopy != null)
+            _Row(
+              key: const ValueKey('sync-undo'),
+              label: S.syncUndoFirst,
+              leading: Icon(Icons.undo_rounded, color: p.primary),
+              onTap: () => _undo(context),
+            ),
+          _Row(
+            key: const ValueKey('sync-turn-off'),
+            label: S.syncTurnOff,
+            leading: Icon(Icons.cloud_off_outlined, color: p.primary),
+            onTap: () => _turnOff(context),
+          ),
+        ],
+      );
+    },
+  );
+}
+
 /// Rounded block of related rows with a small heading, like a settings group on iOS.
 /// Saves the library to a file and adds one back, for a new phone or after a reinstall.
 class _BackupGroup extends StatelessWidget {
@@ -1820,12 +1943,12 @@ class _BackupGroup extends StatelessWidget {
       children: [
         _Row(
           label: S.backupSave,
-          trailing: Icon(Icons.save_alt_rounded, color: p.textTertiary),
+          leading: Icon(Icons.save_alt_rounded, color: p.primary),
           onTap: () => _save(context),
         ),
         _Row(
           label: S.backupAdd,
-          trailing: Icon(Icons.file_open_outlined, color: p.textTertiary),
+          leading: Icon(Icons.file_open_outlined, color: p.primary),
           onTap: () => _add(context),
         ),
       ],

@@ -595,6 +595,88 @@ abstract final class S {
 
   // Backup
   static String get backup => _t('Backup', 'Sao lưu');
+
+  // Backup and sync (a library kept on the server, sealed with a key only the devices know)
+  static String get syncTitle => _t('Backup & sync', 'Sao lưu và đồng bộ');
+  static String get syncOffHelp => _t(
+    'Keep your library safe and the same on all your devices. Encrypted: the server cannot read it.',
+    'Giữ thư viện an toàn và giống nhau trên mọi máy. Đã mã hoá: server không đọc được.',
+  );
+  static String get syncTurnOn => _t('Turn on sync', 'Bật đồng bộ');
+  static String get syncUseCode => _t('Use a code from another device', 'Dùng mã từ máy khác');
+  static String get syncEnterCode => _t('Enter the code', 'Nhập mã');
+  static String get syncCodeHint => _t('Code or link', 'Mã hoặc liên kết');
+  static String get syncBadCode => _t('That is not a sync code', 'Đây không phải mã đồng bộ');
+  static String get syncNoLibrary => _t('No library for this code', 'Không có thư viện nào cho mã này');
+  static String get syncMergeQuestion => _t(
+    'Merge this device’s library with the synced one? Nothing is removed.',
+    'Gộp thư viện máy này với thư viện đồng bộ? Không có gì bị xoá.',
+  );
+  static String get syncMerge => _t('Merge', 'Gộp');
+  static String get syncSyncing => _t('Syncing…', 'Đang đồng bộ…');
+  static String get syncNotYet => _t('Not synced yet', 'Chưa đồng bộ');
+  static String syncDone(String time, int devices) => _t(
+    'Synced $time · $devices ${devices == 1 ? 'device' : 'devices'}',
+    'Đã đồng bộ $time · $devices máy',
+  );
+  static String get syncOffline => _t('Offline, will try again', 'Không có mạng, sẽ thử lại');
+  static String get syncRefusedKey => _t('The server refused the key', 'Server từ chối khoá');
+  static String get syncUnavailable => _t('This server cannot sync', 'Server này không đồng bộ được');
+  static String get syncTooBig => _t('The library is too big to sync', 'Thư viện quá lớn để đồng bộ');
+  static String get syncTooOften => _t('Too many tries, wait a minute', 'Thử quá nhiều, đợi một phút');
+  static String get syncFailed => _t('Sync failed', 'Đồng bộ lỗi');
+  static String get syncNow => _t('Sync now', 'Đồng bộ ngay');
+  static String syncPaused(int likes, int playlists) => _t(
+    'Paused: this would remove ${_lostParts(likes, playlists, 'likes', 'playlists')}',
+    'Tạm dừng: sẽ xoá ${_lostParts(likes, playlists, 'bài thích', 'playlist')}',
+  );
+  static String _lostParts(int likes, int playlists, String a, String b) =>
+      [if (likes > 0) '$likes $a', if (playlists > 0) '$playlists $b'].join(', ');
+  static String get syncContinue => _t('Continue', 'Tiếp tục');
+  static String syncPausedQuestion(bool fromHere) => fromHere
+      ? _t('Send these removals to your other devices?', 'Gửi các thay đổi xoá này sang máy khác?')
+      : _t('Remove these from this device?', 'Xoá những mục này khỏi máy này?');
+  static String get syncAddDevice => _t('Add a device', 'Thêm máy');
+  static String get syncAddHelp => _t(
+    'Scan with the camera, or enter the code in Backup & sync. Anyone with it can read and change your library.',
+    'Quét bằng camera, hoặc nhập mã ở Sao lưu và đồng bộ. Ai có mã đều đọc và sửa được thư viện.',
+  );
+  static String get syncRecovery => _t('Recovery code', 'Mã khôi phục');
+  static String get syncNotSaved => _t('Not saved', 'Chưa lưu');
+  static String get syncRecoveryHelp => _t(
+    'Save this code somewhere safe. If you lose every device without it, your library cannot be recovered.',
+    'Hãy cất mã này ở nơi an toàn. Mất hết máy mà không có mã thì không lấy lại được thư viện.',
+  );
+  static String get syncCopy => _t('Copy', 'Chép');
+  static String get syncShare => _t('Share', 'Chia sẻ');
+  static String get syncSaved => _t('I saved it', 'Đã lưu');
+  static String get syncCopied => _t('Copied', 'Đã chép');
+  static String get syncRestore => _t('Restore an older copy', 'Khôi phục bản cũ');
+  static String get syncNoCopies => _t('No older copies yet', 'Chưa có bản cũ');
+  static String syncRestoreQuestion(String date) => _t(
+    'Put back the library from $date on all your devices?',
+    'Đưa thư viện ngày $date về mọi máy?',
+  );
+  static String get syncRestoreDo => _t('Restore', 'Khôi phục');
+  static String get syncUndoFirst => _t('Undo the first sync', 'Hoàn tác lần đồng bộ đầu');
+  static String get syncUndoQuestion => _t(
+    'Put this device’s library back as it was before the first sync, and turn sync off?',
+    'Đưa thư viện máy này về như trước lần đồng bộ đầu và tắt đồng bộ?',
+  );
+  static String get syncTurnOff => _t('Turn off sync', 'Tắt đồng bộ');
+  static String get syncTurnOffQuestion => _t(
+    'Your library stays on this device. Delete the copy on the server too?',
+    'Thư viện vẫn ở trên máy này. Xoá luôn bản trên server?',
+  );
+  static String get syncKeepCopy => _t('Keep the copy', 'Giữ bản trên server');
+  static String get syncDeleteCopy => _t('Delete the copy', 'Xoá bản trên server');
+  static String get syncCardTitle => _t('Keep your library safe?', 'Giữ thư viện an toàn?');
+  static String get syncCardBody => _t(
+    'Back it up and keep it the same on every device.',
+    'Sao lưu và giữ giống nhau trên mọi máy.',
+  );
+  static String get syncCardAction => _t('Set up', 'Thiết lập');
+  static String get syncCardLater => _t('Not now', 'Để sau');
   static String get backupSave =>
       _t('Save your library to a file', 'Lưu thư viện của bạn vào một tệp');
   static String get backupAdd =>

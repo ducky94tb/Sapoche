@@ -23,21 +23,7 @@ object LibraryBackup {
             .put("app", APP)
             .put("version", VERSION)
             .put("exportedAt", at)
-            .put(
-                "songs",
-                JSONObject().also { o ->
-                    songs.values.forEach {
-                        o.put(
-                            it.videoId,
-                            JSONObject().put("title", it.title).put("artist", it.artist).put("thumb", it.thumb ?: JSONObject.NULL).put("durMs", it.durMs)
-                                .apply {
-                                    if (it.explicit) put("explicit", true)
-                                    if (it.year != null) put("year", it.year)
-                                },
-                        )
-                    }
-                },
-            )
+            .put("songs", songsJson(songs.values))
             .put("liked", JSONArray().also { a -> backup.liked.forEach { a.put(JSONObject().put("id", it.track.videoId).put("at", it.at)) } })
             .put(
                 "playlists",
@@ -52,6 +38,58 @@ object LibraryBackup {
                 },
             )
             .put("history", JSONArray().also { a -> backup.listens.forEach { a.put(JSONObject().put("id", it.track.videoId).put("at", it.at)) } })
+            .toString()
+    }
+
+    private fun songsJson(songs: Collection<TrackRef>) = JSONObject().also { o ->
+        songs.forEach {
+            o.put(
+                it.videoId,
+                JSONObject().put("title", it.title).put("artist", it.artist).put("thumb", it.thumb ?: JSONObject.NULL).put("durMs", it.durMs)
+                    .apply {
+                        if (it.explicit) put("explicit", true)
+                        if (it.year != null) put("year", it.year)
+                    },
+            )
+        }
+    }
+
+    /**
+     * What the sync reads: the same songs, likes and listens as [toJson], and the playlists and folders with the ids they have on
+     * this phone, what was blocked and the marks on the taste. Not a file for a person to keep, and no version of its own.
+     */
+    fun snapshotJson(snapshot: LibraryStore.Snapshot): String {
+        val songs = LinkedHashMap<String, TrackRef>()
+        snapshot.liked.forEach { songs[it.track.videoId] = it.track }
+        snapshot.listens.forEach { songs[it.track.videoId] = it.track }
+        snapshot.playlists.forEach { p -> p.tracks.forEach { songs[it.videoId] = it } }
+        fun marked(list: List<LibraryStore.Marked>) = JSONArray().also { a ->
+            list.forEach { a.put(JSONObject().put("kind", it.kind).put("key", it.key).put("label", it.label).put("at", it.at)) }
+        }
+        return JSONObject()
+            .put("songs", songsJson(songs.values))
+            .put("liked", JSONArray().also { a -> snapshot.liked.forEach { a.put(JSONObject().put("id", it.track.videoId).put("at", it.at)) } })
+            .put(
+                "playlists",
+                JSONArray().also { a ->
+                    snapshot.playlists.forEach { p ->
+                        a.put(
+                            JSONObject().put("id", p.id).put("name", p.name).put("folderId", p.folderId ?: JSONObject.NULL)
+                                .put("createdAt", p.createdAt).put("updatedAt", p.updatedAt)
+                                .put("songs", JSONArray().also { ids -> p.tracks.forEach { ids.put(it.videoId) } }),
+                        )
+                    }
+                },
+            )
+            .put(
+                "folders",
+                JSONArray().also { a ->
+                    snapshot.folders.forEach { a.put(JSONObject().put("id", it.id).put("name", it.name).put("createdAt", it.createdAt).put("updatedAt", it.updatedAt)) }
+                },
+            )
+            .put("history", JSONArray().also { a -> snapshot.listens.forEach { a.put(JSONObject().put("id", it.track.videoId).put("at", it.at)) } })
+            .put("blocked", marked(snapshot.blocked))
+            .put("marks", marked(snapshot.marks))
             .toString()
     }
 
@@ -93,10 +131,19 @@ object LibraryBackup {
                     )
                 },
                 listens = entries(root.optJSONArray("history")),
+                blocked = marked(root.optJSONArray("blocked")),
+                marks = marked(root.optJSONArray("marks")),
             )
         } catch (e: JSONException) {
             throw FormatException("Not a Sapoche backup")
         }
+    }
+
+    /** The blocks or marks of the sync (a file a person keeps has none); an entry without a kind or key is skipped. */
+    private fun marked(array: JSONArray?): List<LibraryStore.Marked> = array.objects().mapNotNull {
+        val kind = it.optString("kind").take(MAX_ID)
+        val key = it.optString("key").take(MAX_TEXT)
+        if (kind.isBlank() || key.isBlank()) null else LibraryStore.Marked(kind, key, it.optString("label").take(MAX_TEXT), it.optLong("at"))
     }
 
     private fun JSONArray?.objects(): List<JSONObject> =

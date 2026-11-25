@@ -32,7 +32,9 @@ Future<Backend> createBackend() async {
   // The secret of a room whose chat is end-to-end encrypted is in the link after a #: it is taken out of the address
   // at once, so that it stays out of the history
   final inviteSecret = Uri.base.fragment.split('&').where((p) => p.startsWith('k=')).map((p) => p.substring(2)).firstOrNull;
-  if (invite != null) web.window.history.replaceState(null, '', web.window.location.pathname);
+  // The key of a synced library is in the address after a # as well, and goes out of it at once
+  final syncCode = Uri.base.fragment.split('&').where((p) => p.startsWith('sync=')).map((p) => p.substring(5)).firstOrNull;
+  if (invite != null || syncCode != null) web.window.history.replaceState(null, '', web.window.location.pathname);
   final disk = IndexedDbDisk();
   String? stored;
   var keeping = true;
@@ -56,6 +58,7 @@ Future<Backend> createBackend() async {
   invite: invite != null && RegExp(r'^[A-Z0-9]{6}$').hasMatch(invite) ? invite : null,
   openChat: fromNotice,
   inviteSecret: inviteSecret,
+  syncCode: syncCode,
   // The service worker of the page opens the previews of notices with the secrets kept here
   secretsDisk: IndexedDbDisk(name: 'sapoche-keys', key: 'secrets'),
   onShare: _share,

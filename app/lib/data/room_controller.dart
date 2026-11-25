@@ -15,6 +15,7 @@ import 'models.dart';
 import 'recent_rooms.dart';
 import 'setup_link.dart';
 import 'song_key.dart';
+import 'sync/sync_crypto.dart';
 
 /// How many songs a queue holds: a room's is what the server keeps (`MAX_QUEUE` in `server/src/room.ts`), the one outside
 /// a room is larger (`LocalSession.MAX_QUEUE` in Kotlin, `maxQueue` in Swift). A song past it is not taken.
@@ -145,6 +146,9 @@ class RoomController extends ChangeNotifier {
 
   /// A setup link that was opened, for the screen to check and ask about.
   final ValueNotifier<SetupLink?> setup = ValueNotifier(null);
+
+  /// The key of a synced library from a link that was opened (`sapoche://sync?k=…`), for the screen to ask about.
+  final ValueNotifier<SyncKey?> syncLink = ValueNotifier(null);
 
   /// The app is shown in a small window over other apps, where only the picture belongs.
   final ValueNotifier<bool> pictureInPicture = ValueNotifier(false);
@@ -296,8 +300,11 @@ class RoomController extends ChangeNotifier {
         }
       case SetupEvent(:final link):
         // A link that is not one is ignored, as is any other thing that is opened
-        final parsed = SetupLink.parse(link);
-        if (parsed != null) setup.value = parsed;
+        if (link.startsWith('sapoche://sync')) {
+          syncLink.value = SyncKey.fromText(link);
+        } else if (SetupLink.parse(link) case final parsed?) {
+          setup.value = parsed;
+        }
       case SleepEvent(:final sleep):
         _sleep = sleep;
         notifyListeners();

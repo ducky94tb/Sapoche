@@ -51,6 +51,36 @@ class LibraryBackupTest {
     )
 
     @Test
+    fun aSnapshotHasTheIdsOfThisPhoneAndWhatWasBlockedOrMarked() = runTest {
+        fill()
+        from.block("song", "x", "X", at = 5)
+        from.setTasteMark("quiet_artist", "k", "K", on = true, at = 6)
+        val snapshot = from.snapshot()
+        val trip = snapshot.playlists.first { it.name == "Road trip" }
+        assertEquals(listOf("c", "a", "d"), trip.tracks.map { it.videoId })
+        assertEquals(listOf("Mixes"), snapshot.folders.map { it.name })
+        assertEquals(snapshot.folders.first().id, trip.folderId)
+        assertEquals(null, snapshot.playlists.first { it.name == "Empty" }.folderId)
+        assertEquals(listOf(LibraryStore.Marked("song", "x", "X", 5)), snapshot.blocked)
+        assertEquals(listOf(LibraryStore.Marked("quiet_artist", "k", "K", 6)), snapshot.marks)
+        val json = org.json.JSONObject(LibraryBackup.snapshotJson(snapshot))
+        assertEquals(2, json.getJSONArray("liked").length())
+        assertEquals(5, json.getJSONObject("songs").length())
+    }
+
+    @Test
+    fun mergingAddsBlocksAndMarksAndKeepsTheTimesWithoutTouchingWhatIsHere() = runTest {
+        to.block("song", "mine", "Mine", at = 1)
+        val text = """{"app":"sapoche","version":1,"songs":{"a":{"title":"A","artist":"x","thumb":null,"durMs":5}},"liked":[{"id":"a","at":7}],"blocked":[{"kind":"song","key":"x","label":"X","at":5},{"kind":"song","key":"mine","label":"Other","at":9}],"marks":[{"kind":"starter","key":"k","label":"K","at":6},{"kind":"","key":"bad","label":"","at":1}]}"""
+        to.restore(LibraryBackup.fromJson(text))
+        val snapshot = to.snapshot()
+        assertEquals(listOf("mine", "x"), snapshot.blocked.map { it.key }.sorted())
+        assertEquals("Mine", snapshot.blocked.first { it.key == "mine" }.label)
+        assertEquals(listOf(LibraryStore.Marked("starter", "k", "K", 6)), snapshot.marks)
+        assertEquals(listOf(7L), snapshot.liked.map { it.at })
+    }
+
+    @Test
     fun aLibraryWrittenAndReadBackIsTheSame() = runTest {
         fill()
         val text = LibraryBackup.toJson(from.backup(), at = 1234)

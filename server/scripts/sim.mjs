@@ -1,7 +1,7 @@
 // End-to-end simulation of the room protocol against a running server (`npm run dev`).
 // Usage: node scripts/sim.mjs [baseUrl]   (default http://127.0.0.1:8787)
 // When the server has a ROOM_KEY, pass it in SAPOCHE_KEY (npm run sim:keyed does this against a local server).
-import { createHash, createPublicKey, createECDH, hkdfSync, createDecipheriv, verify } from "node:crypto";
+import { createHash, randomBytes, createPublicKey, createECDH, hkdfSync, createDecipheriv, verify } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { createServer } from "node:http";
 import vm from "node:vm";
@@ -109,6 +109,7 @@ const VIDEO_C = "cnHHCR7EW10";
 async function main() {
   if (process.env.SIM_ONLY === "lifetime") {
     await lifetimeSection();
+    await syncGapSection();
     console.log(`\n${passed} passed, ${failed} failed`);
     process.exit(failed === 0 ? 0 : 1);
   }
@@ -431,6 +432,105 @@ async function authSection() {
   check("the comments of a video are an endpoint of it", (await ask("comments", { body: "not json" })).status === 400);
   check("a body that is too large is refused", (await ask("search", { body: JSON.stringify({ query: "x".repeat(9000) }) })).status === 413);
   await lastfmSection();
+  await syncSection();
+}
+
+/** The store of the library for sync: opaque bytes under a document id, written only against the ETag they were based on. */
+async function syncSection() {
+  console.log("Library sync");
+  const id = randomBytes(32).toString("hex");
+  const token = randomBytes(16).toString("hex");
+  const url = (path = "") => `${BASE}/sync/${id}${path}`;
+  const put = (body, headers = {}, at = url()) => fetch(at, { method: "PUT", headers: { ...keyHeaders, "X-Sync-Token": token, ...headers }, body });
+  const blob = (n) => Buffer.from(`blob ${n} `.repeat(50) + randomBytes(16).toString("hex"));
+
+  check("a document is not read without the key", (await fetch(url())).status === 401);
+  check("a document that does not exist is 404", (await fetch(url(), { headers: keyHeaders })).status === 404);
+  check("an address that is not a document id is 404", (await fetch(`${BASE}/sync/${id.slice(1)}`, { headers: keyHeaders })).status === 404 && (await fetch(`${BASE}/sync/${id.toUpperCase()}`, { headers: keyHeaders })).status === 404);
+  check("a write without the key is refused", (await fetch(url(), { method: "PUT", headers: { "X-Sync-Token": token, "If-None-Match": "*" }, body: "x" })).status === 401);
+
+  const first = blob(0);
+  check("a write without a condition is 428", (await put(first)).status === 428);
+  check("a write without a token is 400", (await fetch(url(), { method: "PUT", headers: { ...keyHeaders, "If-None-Match": "*" }, body: first })).status === 400);
+  check("a token that is too short is 400", (await put(first, { "If-None-Match": "*", "X-Sync-Token": "short" })).status === 400);
+  check("a first write that expects a version is 412", (await put(first, { "If-Match": '"nothing"' })).status === 412);
+  const created = await put(first, { "If-None-Match": "*" });
+  const etag1 = created.headers.get("ETag");
+  check("the first write with If-None-Match: * is 200 and gives the ETag", created.status === 200 && !!etag1, `status=${created.status}`);
+  const read = await fetch(url(), { headers: keyHeaders });
+  check("the document is read back byte for byte, with the same ETag", read.status === 200 && Buffer.from(await read.arrayBuffer()).equals(first) && read.headers.get("ETag") === etag1);
+  check("a document is not cached", read.headers.get("Cache-Control") === "no-store" && read.headers.get("Content-Type") === "application/octet-stream");
+
+  const again = await put(blob(1), { "If-None-Match": "*" });
+  check("a second write that says it is the first is 412, with the ETag in the way", again.status === 412 && again.headers.get("ETag") === etag1);
+  const stale = await put(blob(1), { "If-Match": '"0123456789abcdef"' });
+  check("a write against a stale ETag is 412, with the ETag in the way", stale.status === 412 && stale.headers.get("ETag") === etag1);
+  check("a wrong token is 403", (await put(blob(1), { "If-Match": etag1, "X-Sync-Token": "x".repeat(32) })).status === 403);
+  check("a wrong token does not delete", (await fetch(url(), { method: "DELETE", headers: { ...keyHeaders, "X-Sync-Token": "x".repeat(32) } })).status === 403);
+  check("nothing of all that changed the document", (await (await fetch(url(), { headers: keyHeaders })).arrayBuffer()).byteLength === first.length);
+  const tooBig = await put(Buffer.alloc(4 * 1024 * 1024 + 1), { "If-Match": etag1 });
+  check("more than 4 MiB is 413", tooBig.status === 413, `status=${tooBig.status}`);
+  const edge = await put(Buffer.alloc(4 * 1024 * 1024, 7), { "If-Match": etag1 });
+  check("exactly 4 MiB is accepted", edge.status === 200, `status=${edge.status}`);
+
+  const blobs = [blob(2)];
+  const second = await put(blobs[0], { "If-Match": edge.headers.get("ETag") });
+  const etag2 = second.headers.get("ETag");
+  check("a write against the right ETag is 200 with a new ETag", second.status === 200 && etag2 && etag2 !== etag1);
+  check("the ETag of a write is the one that is read", (await fetch(url(), { headers: keyHeaders })).headers.get("ETag") === etag2);
+  check("the ETag may come without its quotes", (await put(blobs[0], { "If-Match": etag2.replace(/"/g, "") })).status === 200);
+
+  // Two devices that write at once from the same ETag: one wins, the other is told (local R2 answers a failed precondition with null, not an error; the Worker takes both as 412)
+  const base = (await fetch(url(), { headers: keyHeaders })).headers.get("ETag");
+  const race = await Promise.all([put(blob(3), { "If-Match": base }), put(blob(4), { "If-Match": base })]);
+  check("of two writes from the same ETag one is 200 and the other 412", race.map((r) => r.status).sort().join() === "200,412", race.map((r) => r.status).join());
+
+  // Twelve writes in a row: of all the old blobs only the ten newest stay
+  let etag = (await fetch(url(), { headers: keyHeaders })).headers.get("ETag");
+  const written = [];
+  for (let i = 0; i < 12; i++) {
+    written.push(blob(10 + i));
+    await sleep(3);
+    const r = await put(written[i], { "If-Match": etag });
+    etag = r.headers.get("ETag");
+    if (r.status !== 200) check(`write ${i} of 12 is 200`, false, `status=${r.status}`);
+  }
+  const list = await (await fetch(url("/versions"), { headers: keyHeaders })).json();
+  check("exactly ten versions are kept", Array.isArray(list) && list.length === 10, JSON.stringify(list));
+  check("they are listed newest first, with their time and size", list.every((v, i) => Number.isInteger(v.t) && v.size > 0 && (i === 0 || list[i - 1].t > v.t)) && Math.abs(list[0].t - Date.now()) < 60_000, JSON.stringify(list.slice(0, 2)));
+  const newest = await fetch(url(`/v/${String(list[0].t).padStart(13, "0")}`), { headers: keyHeaders });
+  check("the newest version is the blob that the last write replaced", newest.status === 200 && Buffer.from(await newest.arrayBuffer()).equals(written[10]));
+  const oldest = await fetch(url(`/v/${list[9].t}`), { headers: keyHeaders });
+  check("an old version is read with its ETag", oldest.status === 200 && Buffer.from(await oldest.arrayBuffer()).equals(written[1]) && !!oldest.headers.get("ETag"));
+  check("a version that is gone is 404", (await fetch(url(`/v/${String(list[9].t - 1).padStart(13, "0")}`), { headers: keyHeaders })).status === 404);
+  check("a version is not written to", (await fetch(url(`/v/${list[0].t}`), { method: "PUT", headers: { ...keyHeaders, "X-Sync-Token": token }, body: "x" })).status === 405);
+  check("another document has no versions", (await (await fetch(`${BASE}/sync/${"0".repeat(64)}/versions`, { headers: keyHeaders })).json()).length === 0);
+
+  check("deleting needs the right token", (await fetch(url(), { method: "DELETE", headers: { ...keyHeaders, "X-Sync-Token": "x".repeat(32) } })).status === 403);
+  check("deleting with the right token is 204", (await fetch(url(), { method: "DELETE", headers: { ...keyHeaders, "X-Sync-Token": token } })).status === 204);
+  check("a deleted document is 404", (await fetch(url(), { headers: keyHeaders })).status === 404);
+  check("and its versions are gone", (await (await fetch(url("/versions"), { headers: keyHeaders })).json()).length === 0);
+  check("deleting what is not there is 404", (await fetch(url(), { method: "DELETE", headers: { ...keyHeaders, "X-Sync-Token": token } })).status === 404);
+  check("a deleted document may be made again, with another token", (await put(first, { "If-None-Match": "*", "X-Sync-Token": "y".repeat(32) })).status === 200);
+}
+
+/** On the server that keeps the default gap between versions (the other one is set to keep every one): only the first old blob is kept. */
+async function syncGapSection() {
+  console.log("Library sync, versions kept apart");
+  const id = randomBytes(32).toString("hex");
+  const headers = { ...keyHeaders, "X-Sync-Token": randomBytes(16).toString("hex") };
+  const put = (body, condition) => fetch(`${BASE}/sync/${id}`, { method: "PUT", headers: { ...headers, ...condition }, body });
+  let etag = (await put("blob 0", { "If-None-Match": "*" })).headers.get("ETag");
+  for (let i = 1; i <= 5; i++) {
+    const r = await put(`blob ${i}`, { "If-Match": etag });
+    if (r.status !== 200) check(`write ${i} is 200`, false, `status=${r.status}`);
+    etag = r.headers.get("ETag");
+  }
+  const list = await (await fetch(`${BASE}/sync/${id}/versions`, { headers: keyHeaders })).json();
+  check("writes minutes apart keep one old version, not one each", list.length === 1, JSON.stringify(list));
+  const old = await fetch(`${BASE}/sync/${id}/v/${String(list[0].t).padStart(13, "0")}`, { headers: keyHeaders });
+  check("which is the blob the first overwrite replaced", (await old.text()) === "blob 0");
+  check("and the document is the last write", (await (await fetch(`${BASE}/sync/${id}`, { headers: keyHeaders })).text()) === "blob 5");
 }
 
 /** The route that signs for Last.fm: a Last.fm that is the test itself (`SIM_LASTFM_FAKE`) shows what it was sent. */

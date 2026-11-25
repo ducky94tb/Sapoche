@@ -89,13 +89,51 @@ actor LibraryStore {
         var folder: String?
     }
 
-    /// What is worth carrying to another phone: likes, playlists and every listen, each with its time.
+    /// A block or a mark on the taste with the time it was made, as the sync carries them.
+    struct Marked: Equatable {
+        let kind: String
+        let key: String
+        let label: String
+        let at: Int64
+    }
+
+    /// What is worth carrying to another phone: likes, playlists and every listen, each with its time, and what was blocked or marked.
     struct Backup: Equatable {
         let liked: [Entry]
         let playlists: [SavedPlaylist]
         let listens: [Entry]
         /// Songs from files on this phone, left out: a file is not on another phone, and its path means nothing there.
         var skippedLocal = 0
+        var blocked: [Marked] = []
+        var marks: [Marked] = []
+    }
+
+    /// A playlist with the id it has on this phone, and the folder's.
+    struct SnapshotPlaylist: Equatable {
+        let id: Int64
+        let name: String
+        let folderId: Int64?
+        let createdAt: Int64
+        let updatedAt: Int64
+        let tracks: [TrackRef]
+    }
+
+    /// A folder with its id on this phone.
+    struct SnapshotFolder: Equatable {
+        let id: Int64
+        let name: String
+        let createdAt: Int64
+        let updatedAt: Int64
+    }
+
+    /// The library as the sync reads it: `Backup` with the ids of this phone. Songs from files on the phone are not in it.
+    struct Snapshot: Equatable {
+        let liked: [Entry]
+        let playlists: [SnapshotPlaylist]
+        let folders: [SnapshotFolder]
+        let listens: [Entry]
+        let blocked: [Marked]
+        let marks: [Marked]
     }
 
     /// How much of a backup was new to this phone.
@@ -488,23 +526,11 @@ actor LibraryStore {
     /// Everything that [restore] can put back. Downloads are not in it: they are the audio itself, and can be fetched again.
     /// Nor are songs from files on this phone: a file is not on another phone, and its path means nothing there.
     func backup() throws -> Backup {
-        let liked = try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, l.liked_at, 0
-            FROM likes l JOIN tracks t ON t.video_id = l.video_id WHERE t.video_id NOT LIKE '\(LocalMusic.prefix)%'
-            ORDER BY l.liked_at, t.video_id
-            """))
-        let listens = try entries(db.rows("""
-            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, h.played_at, 0
-            FROM history h JOIN tracks t ON t.video_id = h.video_id WHERE t.video_id NOT LIKE '\(LocalMusic.prefix)%'
-            ORDER BY h.played_at, h.id
-            """))
+        let liked = try likedForBackup()
+        let listens = try listensForBackup()
         var playlists: [SavedPlaylist] = []
         for row in try db.rows("SELECT p.id, p.name, p.created_at, p.updated_at, f.name FROM playlists p LEFT JOIN folders f ON f.id = p.folder_id ORDER BY p.id") {
-            let songs = try entries(db.rows("""
-                SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0
-                FROM playlist_items i JOIN tracks t ON t.video_id = i.video_id WHERE i.playlist_id = ?
-                AND t.video_id NOT LIKE '\(LocalMusic.prefix)%' ORDER BY i.position
-                """, [.int(row[0].int)])).map(\.track)
+            let songs = try playlistSongs(row[0].int)
             playlists.append(SavedPlaylist(name: row[1].text ?? "", createdAt: row[2].int, updatedAt: row[3].int, tracks: songs, folder: row[4].text))
         }
         let skipped = try db.rows("""
@@ -512,6 +538,49 @@ actor LibraryStore {
             WHERE video_id LIKE '\(LocalMusic.prefix)%'
             """)[0][0].int
         return Backup(liked: liked, playlists: playlists, listens: listens, skippedLocal: Int(skipped))
+    }
+
+    private func likedForBackup() throws -> [Entry] {
+        try entries(db.rows("""
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, l.liked_at, 0
+            FROM likes l JOIN tracks t ON t.video_id = l.video_id WHERE t.video_id NOT LIKE '\(LocalMusic.prefix)%'
+            ORDER BY l.liked_at, t.video_id
+            """))
+    }
+
+    private func listensForBackup() throws -> [Entry] {
+        try entries(db.rows("""
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, h.played_at, 0
+            FROM history h JOIN tracks t ON t.video_id = h.video_id WHERE t.video_id NOT LIKE '\(LocalMusic.prefix)%'
+            ORDER BY h.played_at, h.id
+            """))
+    }
+
+    private func playlistSongs(_ id: Int64) throws -> [TrackRef] {
+        try entries(db.rows("""
+            SELECT t.video_id, t.title, t.artist, t.thumb, t.dur_ms, t.explicit, t.year, 0, 0
+            FROM playlist_items i JOIN tracks t ON t.video_id = i.video_id WHERE i.playlist_id = ?
+            AND t.video_id NOT LIKE '\(LocalMusic.prefix)%' ORDER BY i.position
+            """, [.int(id)])).map(\.track)
+    }
+
+    private func marked(_ table: String) throws -> [Marked] {
+        try db.rows("SELECT kind, key, label, at FROM \(table) ORDER BY at, kind, key").map {
+            Marked(kind: $0[0].text ?? "", key: $0[1].text ?? "", label: $0[2].text ?? "", at: $0[3].int)
+        }
+    }
+
+    /// What the sync reads: `backup()` with the ids of the playlists and folders, what was blocked and the marks on the taste.
+    func snapshot() throws -> Snapshot {
+        let playlists = try db.rows("SELECT id, name, folder_id, created_at, updated_at FROM playlists ORDER BY id").map { row in
+            SnapshotPlaylist(id: row[0].int, name: row[1].text ?? "", folderId: row[2] == .null ? nil : row[2].int,
+                             createdAt: row[3].int, updatedAt: row[4].int, tracks: try playlistSongs(row[0].int))
+        }
+        let folders = try db.rows("SELECT id, name, created_at, updated_at FROM folders ORDER BY id").map {
+            SnapshotFolder(id: $0[0].int, name: $0[1].text ?? "", createdAt: $0[2].int, updatedAt: $0[3].int)
+        }
+        return Snapshot(liked: try likedForBackup(), playlists: playlists, folders: folders, listens: try listensForBackup(),
+                        blocked: try marked("blocked"), marks: try marked("taste_marks"))
     }
 
     /// Adds what [backup] holds to what is here; nothing is removed or overwritten, so restoring twice, or on the phone
@@ -565,6 +634,12 @@ actor LibraryStore {
                 try upsertTrack(entry.track)
                 try db.run("INSERT INTO history(video_id, played_at) VALUES(?, ?)", [.text(entry.track.videoId), .int(entry.at)])
                 listens += 1
+            }
+            for mark in backup.blocked {
+                try db.run("INSERT OR IGNORE INTO blocked(kind, key, label, at) VALUES(?, ?, ?, ?)", [.text(mark.kind), .text(mark.key), .text(mark.label), .int(mark.at)])
+            }
+            for mark in backup.marks {
+                try db.run("INSERT OR IGNORE INTO taste_marks(kind, key, label, at) VALUES(?, ?, ?, ?)", [.text(mark.kind), .text(mark.key), .text(mark.label), .int(mark.at)])
             }
             // Listens from a backup are older than the ones here, so what is over the limit goes by time, not by row
             try db.run("DELETE FROM history WHERE id IN (SELECT id FROM history ORDER BY played_at DESC, id DESC LIMIT -1 OFFSET \(Self.historyKeep))")

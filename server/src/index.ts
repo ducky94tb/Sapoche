@@ -3,6 +3,7 @@ import { LASTFM_ROUTE, serveLastFm } from "./lastfm";
 import { PROTOCOL_VERSION } from "./protocol";
 import { MEDIA_ROUTE, MediaLedger, serveMedia } from "./media";
 import { Room } from "./room";
+import { serveSync, SYNC_ROUTE } from "./sync";
 import { serveUpdate, UPDATE_ROUTE } from "./update";
 import { serveYoutube, YOUTUBE_ROUTE } from "./youtube";
 
@@ -86,14 +87,16 @@ export default {
     const youtube = url.pathname.match(YOUTUBE_ROUTE);
     const media = url.pathname.match(MEDIA_ROUTE);
     const lastfm = url.pathname === LASTFM_ROUTE;
+    const sync = url.pathname.match(SYNC_ROUTE);
     const isRoomRoute = url.pathname === "/rooms" || ROOM_ROUTE.test(url.pathname);
-    if ((isRoomRoute || update || youtube || media || pushKey || lastfm) && !(await authorized(request, url, env))) {
+    if ((isRoomRoute || update || youtube || media || pushKey || lastfm || sync) && !(await authorized(request, url, env))) {
       return new Response("Unauthorized", { status: 401 });
     }
 
     // After the key, so that a wrong key is told so as before; a stranger without it never costs a count
     if (youtube && (await tooOften(env.LIMIT_YT, request, "yt"))) return slowDown();
     if (lastfm && (await tooOften(env.LIMIT_LASTFM, request, "lastfm"))) return slowDown();
+    if (sync && (await tooOften(env.LIMIT_SYNC, request, "sync"))) return slowDown();
     if (request.method === "POST" && url.pathname === "/rooms" && (await tooOften(env.LIMIT_ROOMS, request, "rooms"))) return slowDown();
     if (ROOM_ROUTE.test(url.pathname) && (await tooOften(env.LIMIT_JOIN, request, "join"))) return slowDown();
 
@@ -102,6 +105,7 @@ export default {
     if (update) return serveUpdate(request, env, update[1]);
     if (youtube) return serveYoutube(request, youtube[1]);
     if (lastfm) return serveLastFm(request, env);
+    if (sync) return serveSync(request, env, sync);
     if (media) return serveMedia(request, env, ctx, media[1], media[2]);
 
     // Room codes are only a namespace: the Durable Object is created lazily on first connection

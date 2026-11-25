@@ -322,7 +322,8 @@ final class Bridge {
     /// `sapoche://setup?server=…&key=…`, which another phone shows as a QR code; anything else is ignored. The screen
     /// checks a setup link and asks before using it.
     func onLink(_ url: URL) {
-        if url.scheme == "sapoche" && url.host == "setup" {
+        // `sapoche://sync?k=…` carries the key of a synced library; the screen asks before it joins
+        if url.scheme == "sapoche" && (url.host == "setup" || url.host == "sync") {
             let link = url.absoluteString
             if sink != nil { emit(UiJson.setup(link)) } else { pendingSetup = link }
             return
@@ -827,6 +828,28 @@ final class Bridge {
             return try await exportBackup()
         case "backupImport":
             return try await importBackup()
+        case "librarySnapshot":
+            return LibraryBackup.snapshotJson(try await store.snapshot())
+        case "libraryMerge":
+            let backup: LibraryStore.Backup
+            do {
+                backup = try LibraryBackup.fromJson(string("json"))
+            } catch {
+                throw BridgeError(code: "failed", message: error.localizedDescription)
+            }
+            let restored = try await store.restore(backup)
+            // Liked songs
+            if restored.liked > 0 { kickDownloads(waiting: true) }
+            return nil
+        // The key the server asks for goes to the sync, which sends it with its calls; it is not shown or logged
+        case "serverKey":
+            return settings.key
+        case "syncKey":
+            return controller.secrets.secret(for: Self.syncKeyAccount).flatMap { $0.isEmpty ? nil : String(data: $0, encoding: .utf8) }
+        case "setSyncKey":
+            // The Keychain store of the room secrets holds it too (under an account no room code can be); empty is none
+            controller.secrets.save(Data((args["code"] as? String ?? "").utf8), for: Self.syncKeyAccount)
+            return nil
         case "share":
             platform.share(string("text"))
             return nil
@@ -1230,6 +1253,9 @@ final class Bridge {
     static func inviteCode(_ text: String) -> Bool {
         text.count == 6 && text.allSatisfy { $0.isASCII && ($0.isUppercase || $0.isNumber) }
     }
+
+    /// Where the sync key lives in the store of secrets: not a room code (those are six characters).
+    private static let syncKeyAccount = "SAPOCHE-SYNC-KEY"
 
     private static let keyAutoDownload = "auto_download"
     private static let keyOfflineCellular = "offline_cellular"

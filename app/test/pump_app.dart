@@ -18,6 +18,7 @@ import 'package:sapoche/data/recent_rooms.dart';
 import 'package:sapoche/data/recent_searches.dart';
 import 'package:sapoche/data/room_controller.dart';
 import 'package:sapoche/data/sticker_store.dart';
+import 'package:sapoche/data/sync/sync_controller.dart';
 import 'package:sapoche/strings.dart';
 import 'package:sapoche/data/update_controller.dart';
 import 'package:sapoche/ui/scope.dart';
@@ -66,6 +67,9 @@ Future<(FakeBackend, RoomController)> pumpApp(
 
   /// Sets up what the native side knows before the app is built: the home page asks for some of it as it is drawn.
   void Function(FakeBackend backend)? prepare,
+
+  /// The engine that keeps the library on the server; by default there is none and the settings do not offer sync.
+  SyncController? sync,
 }) async {
   // A tall phone-shaped window; the default 800x600 one is not what the app runs on. Test text is
   // drawn with the wide Ahem font, so it is 540 dp wide instead of the usual 360 to avoid false overflows.
@@ -105,6 +109,7 @@ Future<(FakeBackend, RoomController)> pumpApp(
         music: MusicController(backend),
         comments: CommentsController(CommentsClient(commentsTransport ?? (_) async => throw StateError('no comments'), offload: false)),
         update: UpdateController(backend),
+        sync: sync,
         stickers:
             stickers ??
             StickerStore(
