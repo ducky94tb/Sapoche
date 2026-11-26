@@ -170,16 +170,19 @@ class CardShelf extends StatelessWidget {
     // The line for a count is made once for the whole shelf, from what its cards hold, so that its height is the same
     // from the first frame and the cards stand level whether they have a count or not
     final counted = cards.any((c) => c is SongCard && c.meta != null);
-    final line = counted ? MediaQuery.textScalerOf(context).scale(18) : 0.0;
+    final scaler = MediaQuery.textScalerOf(context);
+    final line = counted ? scaler.scale(18) : 0.0;
+    // The gap under the cover, the title and the artist: 60 at the usual size
+    final lines = 8 + scaler.scale(52);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeading(title),
         SizedBox(
-          // The cover and its two lines, and a third when a card has a count
+          // The cover and its two lines, and a third when a card has a count; the lines grow with the size of the text
           height: video
-              ? SongCard.videoWidth(HomeShell.cardSizeOf(context)) * 9 / 16 + 60 + line
-              : HomeShell.cardSizeOf(context) + 60 + line,
+              ? SongCard.videoWidth(HomeShell.cardSizeOf(context)) * 9 / 16 + lines + line
+              : HomeShell.cardSizeOf(context) + lines + line,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),

@@ -66,7 +66,7 @@ You need Flutter, JDK 17, the Android SDK and a free Cloudflare account. The roo
 Apple does not allow free, lasting installs outside the App Store, so the iOS build is for personal use:
 
 1. GitHub Actions builds an unsigned IPA ([ios.yml](.github/workflows/ios.yml)). Download it and sign it with your own Apple ID through [SideStore](https://sidestore.io).
-2. The server address and room key are not in the app. On a working Android phone open Settings > Set up another phone, then scan the QR code with the iPhone's Camera. Typing them in Settings > Server works too.
+2. The server address and room key are not in the app. On a working Android phone open Settings > Connect another phone, then scan the QR code with the iPhone's Camera. Typing them in Settings > Advanced > Server works too.
 
 There are no over-the-air updates on iPhone (SideStore handles that).
 

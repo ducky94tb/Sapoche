@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../data/home_model.dart';
@@ -247,6 +249,8 @@ class QuickAccess extends StatelessWidget {
     if (tiles.length < 2) return const SizedBox.shrink();
     final p = context.palette;
     final theme = Theme.of(context).textTheme;
+    // Taller when the text is very large, so that a name of two lines still fits; the usual sizes keep 56
+    final height = math.max(_height, MediaQuery.textScalerOf(context).scale(40) + 4);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
       child: LayoutBuilder(
@@ -260,7 +264,7 @@ class QuickAccess extends StatelessWidget {
               for (final tile in tiles)
                 SizedBox(
                   width: width,
-                  height: _height,
+                  height: height,
                   child: Material(
                     color: p.veil,
                     borderRadius: BorderRadius.circular(12),
@@ -270,6 +274,7 @@ class QuickAccess extends StatelessWidget {
                       onTap: tile.onTap,
                       child: Row(
                         children: [
+                          // The cover keeps its size, so that the name has the room
                           tile.cover(_height),
                           const SizedBox(width: 10),
                           Expanded(

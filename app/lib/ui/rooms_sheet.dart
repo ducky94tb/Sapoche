@@ -426,7 +426,9 @@ class _InRoomState extends State<_InRoom> {
         Text(S.invite, style: theme.headlineSmall, textAlign: TextAlign.center),
         const SizedBox(height: 4),
         Text(
-          S.scanToJoin,
+          // The code alone has no key: whoever types it cannot read an encrypted chat, so the link is what to send
+          room.snapshot.encrypted ? S.inviteEncryptedHint : S.scanToJoin,
+          key: const ValueKey('invite-hint'),
           style: theme.bodyMedium?.copyWith(color: p.textSecondary),
           textAlign: TextAlign.center,
         ),

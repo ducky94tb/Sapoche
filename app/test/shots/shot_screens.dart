@@ -99,13 +99,25 @@ Future<void> _openLog(WidgetTester t, FakeBackend b) async {
   await t.tap(gear.evaluate().isNotEmpty ? gear.first : find.text(S.settingsTitle).first);
   await _settle(t);
   await _settle(t);
-  await t.scrollUntilVisible(find.byKey(const ValueKey('settings-log')), 300, scrollable: find.byType(Scrollable).first);
+  await _revealTopic(t, 'advanced');
+  await t.tap(find.byKey(const ValueKey('settings-advanced')));
+  await _settle(t);
   await t.tap(find.byKey(const ValueKey('settings-log')));
   await _settle(t);
   await t.pump(const Duration(milliseconds: 200));
 }
 
 /// Opens Settings: the gear at the top of Home, or in a wide window the row of the sidebar.
+/// Scrolls the list that holds [inside] until [target] shows: a row low on a long page is not built until then.
+Future<void> _reveal(WidgetTester t, Finder target, Finder inside) async {
+  await t.scrollUntilVisible(target, 300, scrollable: find.ancestor(of: inside, matching: find.byType(Scrollable)).first);
+  await _settle(t);
+}
+
+/// Scrolls the first page of the settings until the row of [topic] shows.
+Future<void> _revealTopic(WidgetTester t, String topic) =>
+    _reveal(t, find.byKey(ValueKey('settings-$topic')), find.byKey(const ValueKey('settings-appearance')));
+
 Future<void> _openSettings(WidgetTester t) async {
   final gear = find.byTooltip(S.settingsTitle);
   await t.tap(gear.evaluate().isNotEmpty ? gear : find.text(S.settingsTitle).last);
@@ -158,7 +170,7 @@ final shotScreens = <ShotScreen>[
   _notice('unplayable', 'load_unplayable'),
   _notice('broken', 'load_broken'),
   _notice('failed', 'load_failed'),
-  ShotScreen('home', prepare: (b) {
+  ShotScreen('home', bigText: true, prepare: (b) {
     b.homeResult = homeData;
     fillLibrary(b);
   }, (t, b) => _state(t, b, const RoomSnapshot())),
@@ -193,7 +205,7 @@ final shotScreens = <ShotScreen>[
     b.emit(StateEvent(sampleRoom(local: true, songs: 4)));
     await _settle(t);
   }),
-  ShotScreen('room', listen: true, (t, b) => _playing(t, b)),
+  ShotScreen('room', bigText: true, listen: true, (t, b) => _playing(t, b)),
   ShotScreen('room-played', listen: true, (t, b) async {
     await _state(t, b, busyRoom(index: 3));
     b.emit(const PositionEvent(PlayerPosition(playing: true, positionMs: 64000, durationMs: 295000)));
@@ -211,7 +223,7 @@ final shotScreens = <ShotScreen>[
     await _settle(t);
   }),
   ShotScreen('room-empty', (t, b) => _state(t, b, sampleRoom(songs: 0, phase: 'idle'))),
-  ShotScreen('search', prepare: (b) => b.searchPageResult = searchData, (t, b) async {
+  ShotScreen('search', bigText: true, prepare: (b) => b.searchPageResult = searchData, (t, b) async {
     await _state(t, b, const RoomSnapshot());
     await _search(t, 'sơn tùng');
   }),
@@ -266,7 +278,7 @@ final shotScreens = <ShotScreen>[
     await _state(t, b, const RoomSnapshot());
     await _search(t, 'zzzz');
   }),
-  ShotScreen('player', listen: true, (t, b) async {
+  ShotScreen('player', bigText: true, listen: true, (t, b) async {
     await _playing(t, b);
     await _openPlayer(t);
   }),
@@ -433,22 +445,35 @@ final shotScreens = <ShotScreen>[
     openArtist(_shell(t), artistPage.id);
     await _settle(t);
   }),
-  ShotScreen('settings', (t, b) async {
+  ShotScreen('settings', bigText: true, (t, b) async {
     await _state(t, b, const RoomSnapshot());
     await t.tap(find.text(S.tabHome));
     await _settle(t);
     await _openSettings(t);
     await _settle(t);
   }),
-  for (final topic in ['appearance', 'playback', 'suggestions', 'storage', 'scrobble'])
-    ShotScreen('settings-$topic', (t, b) async {
+  // Each topic, by the rows that lead to it (some are a page further in)
+  for (final path in [
+    ['appearance'],
+    ['playback'],
+    ['suggestions'],
+    ['suggestions', 'taste'],
+    ['storage'],
+    ['advanced'],
+    ['advanced', 'scrobble'],
+  ])
+    ShotScreen('settings-${path.last}', (t, b) async {
       await _state(t, b, const RoomSnapshot());
       await t.tap(find.text(S.tabHome));
       await _settle(t);
       await _openSettings(t);
       await _settle(t);
-      await t.tap(find.byKey(ValueKey('settings-$topic')));
-      await _settle(t);
+      // The first row is on the long list of topics; the second is at the top of its page
+      await _revealTopic(t, path.first);
+      for (final topic in path) {
+        await t.tap(find.byKey(ValueKey('settings-$topic')));
+        await _settle(t);
+      }
     }),
   ShotScreen('settings-sync-off', sync: _newShotSync, (t, b) async {
     await _state(t, b, const RoomSnapshot());
@@ -511,6 +536,9 @@ final shotScreens = <ShotScreen>[
     await _settle(t);
     await _openSettings(t);
     await _settle(t);
+    await _revealTopic(t, 'advanced');
+    await t.tap(find.byKey(const ValueKey('settings-advanced')));
+    await _settle(t);
     await t.tap(find.byKey(const ValueKey('settings-scrobble')));
     await _settle(t);
   }),
@@ -536,7 +564,7 @@ final shotScreens = <ShotScreen>[
     await t.tap(find.byKey(const ValueKey('settings-playback')));
     await _settle(t);
     final row = find.byKey(const ValueKey('settings-equalizer'));
-    await t.ensureVisible(row);
+    await _reveal(t, row, find.byKey(const ValueKey('audio-quality-low')));
     await t.tap(row);
     await _settle(t);
   }),

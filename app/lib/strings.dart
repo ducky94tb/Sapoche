@@ -12,7 +12,7 @@ abstract final class S {
   static String get appName => _t('Sapoche', 'Sapoche');
   static String get tagline => _t(
     'Listen together, in perfect sync.',
-    'Cùng nghe nhạc, đồng bộ từng nhịp.',
+    'Cùng nghe nhạc, chung từng nhịp.',
   );
 
   // Welcome
@@ -22,8 +22,10 @@ abstract final class S {
     'Tên mọi người trong phòng sẽ thấy',
   );
   static String get createRoom => _t('Create a room', 'Tạo phòng');
-  static String get createRoomWithSong =>
-      _t('Create a room with this song', 'Tạo phòng với bài đang nghe');
+  static String get createRoomWithSong => _t(
+    'Create a room with this song',
+    'Bắt đầu với bài đang nghe',
+  );
   static String get createEmptyRoom => _t('Empty room', 'Phòng trống');
   static String get joinRoom => _t('Join a room', 'Vào phòng');
   static String get roomCode => _t('Room code', 'Mã phòng');
@@ -66,7 +68,7 @@ abstract final class S {
   static String nextFrom(String list) =>
       _t('Next from: $list', 'Tiếp theo từ: $list');
   static String get queueCleared =>
-      _t('Queue cleared', 'Đã xóa hàng đợi');
+      _t('Queue cleared', 'Đã xoá hàng đợi');
   static String get played => _t('Played', 'Đã phát');
   static String get emptyQueueTitle =>
       _t('Nothing queued yet', 'Chưa có bài nào trong hàng đợi');
@@ -96,18 +98,18 @@ abstract final class S {
   static String get playAgain => _t('Play again', 'Phát lại');
   static String get queueFinished =>
       _t('The queue has finished', 'Hàng đợi đã phát hết');
-  static String get clearQueue => _t('Clear queue', 'Xóa hàng đợi');
+  static String get clearQueue => _t('Clear queue', 'Xoá hàng đợi');
   static String get clearQueueQuestion =>
-      _t('Remove every song from the queue?', 'Xóa mọi bài khỏi hàng đợi?');
-  static String get clear => _t('Clear', 'Xóa');
-  static String get cancel => _t('Cancel', 'Hủy');
+      _t('Remove every song from the queue?', 'Xoá mọi bài khỏi hàng đợi?');
+  static String get clear => _t('Clear', 'Xoá');
+  static String get cancel => _t('Cancel', 'Huỷ');
   static String get close => _t('Close', 'Đóng');
   static String addedBy(String name) => _t('Added by $name', '$name đã thêm');
   static String get you => _t('You', 'Bạn');
   static String get copyCode => _t('Copy code', 'Sao chép mã');
   static String get codeCopied =>
       _t('Room code copied', 'Đã sao chép mã phòng');
-  static String get removed => _t('Removed from queue', 'Đã xóa khỏi hàng đợi');
+  static String get removed => _t('Removed from queue', 'Đã xoá khỏi hàng đợi');
   static String get invite => _t('Invite friends', 'Mời bạn bè');
   static String get inviteShort => _t('Invite', 'Mời');
   static String get listeningAlone => _t('Listening alone', 'Đang nghe một mình');
@@ -208,8 +210,8 @@ abstract final class S {
   static String get connecting => _t('Connecting…', 'Đang kết nối…');
   static String get offline => _t('Connection lost', 'Mất kết nối');
   static String get unauthorized => _t(
-    'This build is not allowed on the server',
-    'Bản cài này không được phép dùng máy chủ',
+    'This copy of the app cannot use your group\'s server. Ask whoever set Sapoche up for you.',
+    'Bản app này không vào được máy chủ của nhóm. Hãy nhờ người đã cài Sapoche cho bạn.',
   );
 
   // Search
@@ -218,7 +220,7 @@ abstract final class S {
     'Video, bài hát hoặc liên kết YouTube',
   );
   static String get pasteLink => _t('Paste a link', 'Dán liên kết');
-  static String get clearSearch => _t('Clear search', 'Xóa nội dung tìm');
+  static String get clearSearch => _t('Clear search', 'Xoá nội dung tìm');
   static String get searchTop => _t('Top results', 'Hàng đầu');
   static String get topResult => _t('Top result', 'Kết quả hàng đầu');
   static String get searchYouTube => 'YouTube';
@@ -258,7 +260,9 @@ abstract final class S {
   static String get playlistAdded =>
       _t('Playlist added', 'Đã thêm danh sách phát');
   static String get playNext => _t('Play next', 'Phát tiếp theo');
-  static String get addToQueue => _t('Add to queue', 'Thêm vào hàng đợi');
+  static String get playNextShort => _t('Play next', 'Phát tiếp');
+  static String get addToQueue => _t('Add to queue', 'Thêm vào cuối');
+  static String get addToQueueShort => _t('Add to queue', 'Thêm vào cuối');
   static String get addedToQueue =>
       _t('Added to queue', 'Đã thêm vào hàng đợi');
   static String get willPlayNext => _t('Playing next', 'Sẽ phát tiếp theo');
@@ -274,7 +278,7 @@ abstract final class S {
 
   // Downloads and storage
   static String get download => _t('Download', 'Tải về');
-  static String get removeDownload => _t('Remove download', 'Xóa bản tải');
+  static String get removeDownload => _t('Remove download', 'Xoá bản tải');
   static String get downloading => _t('Downloading…', 'Đang tải…');
   static String get downloadAll => _t('Download all', 'Tải tất cả');
   static String get downloadedSongs => _t('Downloaded', 'Đã tải');
@@ -323,10 +327,10 @@ abstract final class S {
     'Stop downloading and take the $n songs not downloaded yet off the list? What is on the phone stays.',
     'Dừng tải và bỏ $n bài chưa tải khỏi danh sách? Bài đã tải vẫn còn trên máy.',
   );
-  static String get deleteAll => _t('Delete all', 'Xóa tất cả');
+  static String get deleteAll => _t('Delete all', 'Xoá tất cả');
   static String get deleteDownloadsQuestion => _t(
     'Remove every downloaded song from this phone?',
-    'Xóa mọi bài đã tải khỏi điện thoại này?',
+    'Xoá mọi bài đã tải khỏi điện thoại này?',
   );
   static String get noDownloadsTitle =>
       _t('Nothing downloaded', 'Chưa tải gì cả');
@@ -342,16 +346,20 @@ abstract final class S {
   static String get browserStorageKeep =>
       _t('Keep my data', 'Giữ dữ liệu của tôi');
   static String get browserStorageKept =>
-      _t('Kept unless you clear it', 'Được giữ, trừ khi bạn tự xóa');
+      _t('Kept unless you clear it', 'Được giữ, trừ khi bạn tự xoá');
   static String get browserStorageNotKept =>
-      _t('The browser may clear it', 'Trình duyệt có thể xóa');
+      _t('The browser may clear it', 'Trình duyệt có thể xoá');
   static String get browserStorageDenied => _t(
     'The browser did not agree. It may agree once the page is installed or used more often.',
     'Trình duyệt chưa đồng ý. Có thể nó sẽ đồng ý khi trang được cài hoặc dùng thường xuyên hơn.',
   );
   static String get browserStorageHelp => _t(
-    'Your library, queue and settings stay in this browser only, and are lost if the browser runs short of space or site data is cleared. Songs are streamed, not saved.',
-    'Thư viện, hàng đợi và cài đặt chỉ nằm trong trình duyệt này, và mất nếu trình duyệt thiếu chỗ hoặc bạn xóa dữ liệu trang. Bài hát được phát trực tiếp, không lưu.',
+    'Your library stays in this browser only.',
+    'Thư viện chỉ nằm trong trình duyệt này.',
+  );
+  static String get browserStorageMore => _t(
+    'It is lost if the browser runs short of space or site data is cleared. Songs are streamed, not saved.',
+    'Nó mất nếu trình duyệt thiếu chỗ hoặc bạn xoá dữ liệu trang. Bài hát được phát trực tiếp, không lưu.',
   );
   static String get webQualityHelp => _t(
     'YouTube picks the quality of the sound in a browser, by your connection. It cannot be set here.',
@@ -360,8 +368,12 @@ abstract final class S {
   static String get cacheLimit =>
       _t('Size for played songs', 'Dung lượng cho bài đã nghe');
   static String get cacheLimitHelp => _t(
-    'Songs you listened to are kept so that they play again without using data. The oldest go first when it is full. A new size counts from the next time the app starts.',
-    'Bài đã nghe được giữ lại để phát lại mà không tốn dữ liệu. Khi đầy thì bài cũ nhất bị xóa trước. Dung lượng mới có hiệu lực từ lần mở app sau.',
+    'Songs you listened to are kept, to play again without using data.',
+    'Bài đã nghe được giữ lại để phát lại mà không tốn dữ liệu.',
+  );
+  static String get cacheLimitMore => _t(
+    'The oldest go first when it is full. A new size counts from the next time the app starts.',
+    'Khi đầy thì bài cũ nhất bị xoá trước. Dung lượng mới có hiệu lực từ lần mở app sau.',
   );
   static String get autoDownload =>
       _t('Download liked songs', 'Tải bài đã thích');
@@ -369,7 +381,7 @@ abstract final class S {
     'Saves your liked songs by itself on Wi-Fi while the phone is charging.',
     'Tự lưu các bài đã thích khi có Wi-Fi và điện thoại đang sạc.',
   );
-  static String get clearCache => _t('Clear', 'Xóa');
+  static String get clearCache => _t('Clear', 'Xoá');
   static String get offlineCellular =>
       _t('Download on mobile data', 'Tự tải qua dữ liệu di động');
   static String get offlineCellularHelp => _t(
@@ -391,7 +403,7 @@ abstract final class S {
     n == 1
         ? 'Songs added later will not download. Remove the 1 downloaded song from this phone too?'
         : 'Songs added later will not download. Remove the $n downloaded songs from this phone too?',
-    'Bài thêm sau sẽ không tự tải nữa. Xóa luôn $n bài đã tải khỏi điện thoại?',
+    'Bài thêm sau sẽ không tự tải nữa. Xoá luôn $n bài đã tải khỏi điện thoại?',
   );
   static String get keepSongs => _t('Keep songs', 'Giữ bài');
 
@@ -479,10 +491,10 @@ abstract final class S {
   static String get like => _t('Like', 'Thích');
   static String get unlike => _t('Unlike', 'Bỏ thích');
   static String get play => _t('Play', 'Phát');
-  static String get clearHistory => _t('Clear history', 'Xóa lịch sử');
+  static String get clearHistory => _t('Clear history', 'Xoá lịch sử');
   static String get clearHistoryQuestion => _t(
     'Remove everything from your listening history? Liked songs are kept.',
-    'Xóa toàn bộ lịch sử nghe? Các bài đã thích vẫn được giữ.',
+    'Xoá toàn bộ lịch sử nghe? Các bài đã thích vẫn được giữ.',
   );
   static String get playlists => _t('Playlists', 'Danh sách phát');
   static String get newPlaylist => _t('New playlist', 'Danh sách phát mới');
@@ -510,12 +522,12 @@ abstract final class S {
   static String alreadyInPlaylist(String name) =>
       _t('Already in $name', 'Đã có trong $name');
   static String get deletePlaylist =>
-      _t('Delete playlist', 'Xóa danh sách phát');
+      _t('Delete playlist', 'Xoá danh sách phát');
   static String deletePlaylistQuestion(String name) => _t(
     'Delete “$name”? This cannot be undone.',
-    'Xóa “$name”? Không thể hoàn tác.',
+    'Xoá “$name”? Không thể hoàn tác.',
   );
-  static String get delete => _t('Delete', 'Xóa');
+  static String get delete => _t('Delete', 'Xoá');
   static String get findSongs => _t('Find songs', 'Tìm bài hát');
   static String get emptyPlaylistTitle =>
       _t('This playlist is empty', 'Danh sách phát này trống');
@@ -544,10 +556,10 @@ abstract final class S {
       _t('Remove from folder', 'Đưa ra khỏi thư mục');
   static String movedToFolder(String name) =>
       _t('Moved to $name', 'Đã chuyển vào $name');
-  static String get deleteFolder => _t('Delete folder', 'Xóa thư mục');
+  static String get deleteFolder => _t('Delete folder', 'Xoá thư mục');
   static String deleteFolderQuestion(String name) => _t(
     'Delete the folder “$name”? Its playlists are kept.',
-    'Xóa thư mục “$name”? Các danh sách phát trong đó vẫn được giữ.',
+    'Xoá thư mục “$name”? Các danh sách phát trong đó vẫn được giữ.',
   );
   static String get emptyFolderTitle =>
       _t('This folder is empty', 'Thư mục này trống');
@@ -600,7 +612,7 @@ abstract final class S {
   static String get syncTitle => _t('Backup & sync', 'Sao lưu và đồng bộ');
   static String get syncOffHelp => _t(
     'Keep your library safe and the same on all your devices. Encrypted: the server cannot read it.',
-    'Giữ thư viện an toàn và giống nhau trên mọi máy. Đã mã hoá: server không đọc được.',
+    'Giữ thư viện an toàn và giống nhau trên mọi máy. Đã mã hoá: máy chủ không đọc được.',
   );
   static String get syncTurnOn => _t('Turn on sync', 'Bật đồng bộ');
   static String get syncUseCode => _t('Use a code from another device', 'Dùng mã từ máy khác');
@@ -609,10 +621,10 @@ abstract final class S {
   static String get syncBadCode => _t('That is not a sync code', 'Đây không phải mã đồng bộ');
   static String get syncNoLibrary => _t('No library for this code', 'Không có thư viện nào cho mã này');
   static String get syncMergeQuestion => _t(
-    'Merge this device’s library with the synced one? Nothing is removed.',
-    'Gộp thư viện máy này với thư viện đồng bộ? Không có gì bị xoá.',
+    'Add this device’s songs and playlists to the shared library? Nothing is removed.',
+    'Thêm bài và danh sách phát của máy này vào thư viện chung? Không có gì bị xoá.',
   );
-  static String get syncMerge => _t('Merge', 'Gộp');
+  static String get syncMerge => _t('Add', 'Thêm');
   static String get syncSyncing => _t('Syncing…', 'Đang đồng bộ…');
   static String get syncNotYet => _t('Not synced yet', 'Chưa đồng bộ');
   static String syncDone(String time, int devices) => _t(
@@ -620,8 +632,8 @@ abstract final class S {
     'Đã đồng bộ $time · $devices máy',
   );
   static String get syncOffline => _t('Offline, will try again', 'Không có mạng, sẽ thử lại');
-  static String get syncRefusedKey => _t('The server refused the key', 'Server từ chối khoá');
-  static String get syncUnavailable => _t('This server cannot sync', 'Server này không đồng bộ được');
+  static String get syncRefusedKey => _t('The server refused the key', 'Khoá nhóm không đúng, chưa đồng bộ được');
+  static String get syncUnavailable => _t('This server cannot sync', 'Máy chủ của nhóm chưa hỗ trợ đồng bộ');
   static String get syncTooBig => _t('The library is too big to sync', 'Thư viện quá lớn để đồng bộ');
   static String get syncTooOften => _t('Too many tries, wait a minute', 'Thử quá nhiều, đợi một phút');
   static String get syncFailed => _t('Sync failed', 'Đồng bộ lỗi');
@@ -658,7 +670,7 @@ abstract final class S {
     'Đưa thư viện ngày $date về mọi máy?',
   );
   static String get syncRestoreDo => _t('Restore', 'Khôi phục');
-  static String get syncUndoFirst => _t('Undo the first sync', 'Hoàn tác lần đồng bộ đầu');
+  static String get syncUndoFirst => _t('Go back to before sync', 'Về lại như trước khi đồng bộ');
   static String get syncUndoQuestion => _t(
     'Put this device’s library back as it was before the first sync, and turn sync off?',
     'Đưa thư viện máy này về như trước lần đồng bộ đầu và tắt đồng bộ?',
@@ -666,10 +678,10 @@ abstract final class S {
   static String get syncTurnOff => _t('Turn off sync', 'Tắt đồng bộ');
   static String get syncTurnOffQuestion => _t(
     'Your library stays on this device. Delete the copy on the server too?',
-    'Thư viện vẫn ở trên máy này. Xoá luôn bản trên server?',
+    'Thư viện vẫn ở trên máy này. Xoá luôn bản trên máy chủ?',
   );
-  static String get syncKeepCopy => _t('Keep the copy', 'Giữ bản trên server');
-  static String get syncDeleteCopy => _t('Delete the copy', 'Xoá bản trên server');
+  static String get syncKeepCopy => _t('Keep the copy', 'Giữ bản trên máy chủ');
+  static String get syncDeleteCopy => _t('Delete the copy', 'Xoá bản trên máy chủ');
   static String get syncCardTitle => _t('Keep your library safe?', 'Giữ thư viện an toàn?');
   static String get syncCardBody => _t(
     'Back it up and keep it the same on every device.',
@@ -682,10 +694,12 @@ abstract final class S {
   static String get backupAdd =>
       _t('Add from a backup file', 'Thêm từ tệp sao lưu');
   static String get backupHelp => _t(
-    'A backup keeps your liked songs, playlists and listening history in one file you can put anywhere. '
-        'Adding one never removes anything. Downloaded songs are not in it.',
-    'Bản sao lưu giữ bài đã thích, danh sách phát và lịch sử nghe trong một tệp, bạn cất ở đâu cũng được. '
-        'Thêm từ tệp sao lưu không bao giờ xóa gì. Bài đã tải không nằm trong đó.',
+    'Saves your liked songs, playlists and listening history in one file.',
+    'Lưu bài đã thích, danh sách phát và lịch sử nghe vào một tệp.',
+  );
+  static String get backupMore => _t(
+    'Keep the file anywhere. Adding one never removes anything. Downloaded songs are not in it.',
+    'Bạn cất tệp ở đâu cũng được. Thêm từ tệp sao lưu không bao giờ xoá gì. Bài đã tải không nằm trong đó.',
   );
   static String _backupParts(int liked, int playlists, int listens) => [
     if (liked > 0) _t('$liked liked', '$liked bài đã thích'),
@@ -716,8 +730,8 @@ abstract final class S {
   static String get choosePhoto => _t('Choose photo', 'Chọn ảnh');
   static String get removePhoto => _t('Remove photo', 'Bỏ ảnh');
   static String get photoOnlyHere => _t(
-    'Others in a room see your photo too. A room that runs an older server only shows your initial.',
-    'Người trong phòng cũng thấy ảnh của bạn. Phòng chạy server cũ thì chỉ thấy chữ cái đầu.',
+    'Others in a room see your photo too.',
+    'Người trong phòng cũng thấy ảnh của bạn.',
   );
 
   // Suggestions: what the person does not want, and the mixes made from what they listen to
@@ -790,7 +804,7 @@ abstract final class S {
       _t('Share my taste with the room', 'Chia sẻ gu với phòng');
   static String get shareTasteHelp => _t(
     'The device chosen to play on by itself will see a few songs you often listen to; in an encrypted room the server cannot read them.',
-    'Máy được chọn để tự phát nhạc sẽ thấy vài bài bạn hay nghe; phòng mã hoá thì server không đọc được.',
+    'Máy được chọn để tự phát nhạc sẽ thấy vài bài bạn hay nghe; phòng mã hoá thì máy chủ không đọc được.',
   );
   static String get tasteMarksHeading =>
       _t('What you told the taste', 'Bạn đã chỉnh gu');
@@ -860,8 +874,8 @@ abstract final class S {
 
   // Player
   static String get buffering => _t('Loading…', 'Đang tải…');
-  static String get inSync => _t('In sync', 'Đã đồng bộ');
-  static String get syncing => _t('Syncing…', 'Đang đồng bộ…');
+  static String get inSync => _t('In sync', 'Cùng nhịp');
+  static String get syncing => _t('Syncing…', 'Đang bắt nhịp…');
   static String get pausedHere =>
       _t('Paused here · room plays on', 'Đã dừng ở máy này · phòng vẫn phát');
   static String get catchingUp => _t('Catching up', 'Đang bắt kịp');
@@ -885,7 +899,7 @@ abstract final class S {
   static String get chatThemeFromPhoto => _t('From a photo', 'Từ một ảnh');
   static String get chatThemeFromPhotoHint => _t(
     'Pick a photo, place it, and it goes behind the chat, blended with its colours. Everyone in the room gets the picture; choosing another look takes it away.',
-    'Chọn một ảnh, căn chỉnh rồi đặt làm nền chat, hòa với màu của ảnh. Cả phòng nhận tấm ảnh này; chọn giao diện khác thì ảnh sẽ bị gỡ.',
+    'Chọn một ảnh, căn chỉnh rồi đặt làm nền chat, hoà với màu của ảnh. Cả phòng nhận tấm ảnh này; chọn giao diện khác thì ảnh sẽ bị gỡ.',
   );
   static String get wallpaperTitle => _t('Fit the picture', 'Căn chỉnh ảnh');
   static String get wallpaperUse => _t('Use', 'Dùng');
@@ -898,7 +912,7 @@ abstract final class S {
   static String get wallpaperShowPhoto =>
       _t('Show the photo alone', 'Chỉ xem ảnh');
   static String get wallpaperShowBlend =>
-      _t('Show it with the colours', 'Xem cùng màu hòa vào');
+      _t('Show it with the colours', 'Xem cùng màu hoà vào');
   static String get wallpaperSample1 =>
       _t('What shall we play next?', 'Mình nghe bài gì tiếp nhỉ?');
   static String get wallpaperSample2 =>
@@ -928,8 +942,12 @@ abstract final class S {
   static String get noticesOff => _t('Off', 'Tắt');
   static String get noticesSwitch => _t('Notify me of the chat', 'Thông báo khi có tin nhắn');
   static String get noticesSwitchHelp => _t(
-    'When a message, an answer to one of yours or a reaction to one of yours comes while the app is not in front. Each room can be kept quiet from its chat.',
-    'Khi có tin nhắn, lời trả lời tin của bạn hoặc cảm xúc lên tin của bạn mà app không đang hiện. Mỗi phòng có thể tắt tiếng từ khung chat.',
+    'Tells you of new messages while the app is not open.',
+    'Báo khi có tin nhắn mới lúc bạn không mở app.',
+  );
+  static String get noticesSwitchMore => _t(
+    'Answers and reactions to your messages too. Each room can be kept quiet from its chat.',
+    'Gồm cả lời trả lời và cảm xúc cho tin của bạn. Mỗi phòng có thể tắt tiếng từ khung chat.',
   );
   static String get noticesPreview => _t('Show the message in the notice', 'Hiện nội dung tin trong thông báo');
   static String get noticesPreviewHelp => _t(
@@ -977,12 +995,17 @@ abstract final class S {
     'Only people with the invitation link can read it.',
     'Chỉ người có liên kết mời đọc được.',
   );
+  static String get advanced => _t('Advanced', 'Nâng cao');
+  static String get inviteEncryptedHint => _t(
+    'Send the link or let them scan: someone who types the code cannot read the chat.',
+    'Gửi liên kết hoặc cho quét mã: ai gõ mã thì không đọc được chat.',
+  );
   static String get learnMore => _t('Learn more', 'Tìm hiểu thêm');
   static String get roomSettings => _t('Room settings', 'Cài đặt phòng');
   static String get encryptionTurnOn => _t('Turn on', 'Bật');
   static String get encryptionConfirmBody => _t(
-    'The messages, the pictures sent in the chat and the photo behind the chat are encrypted, not the room name, the queue or profile pictures. The messages so far are deleted. Everyone needs the new invitation link to read the chat, and people who have not updated the app cannot stay in the room. This cannot be turned off.',
-    'Tin nhắn, ảnh gửi trong chat và ảnh nền chat được mã hoá, không gồm tên phòng, hàng đợi hay ảnh đại diện. Các tin nhắn đến giờ sẽ bị xoá. Mọi người cần liên kết mời mới để đọc chat, và ai chưa cập nhật app sẽ không ở lại phòng được. Không thể tắt lại.',
+    'The messages so far are deleted, and it cannot be turned off. Then send everyone the new invitation link; people on an old app must update.',
+    'Tin cũ sẽ bị xoá, không tắt lại được. Sau đó gửi liên kết mời mới cho mọi người; ai dùng app cũ phải cập nhật.',
   );
   static String get encryptionTurnedOn => _t(
     'On. Send the new invitation link to everyone.',
@@ -1007,8 +1030,8 @@ abstract final class S {
     'Liên kết này không có khoá',
   );
   static String get encryptionNeedsKey => _t(
-    'Open the invitation link of this room, with its key, to read and write here.',
-    'Hãy mở liên kết mời của phòng này, có kèm khoá, để đọc và nhắn ở đây.',
+    'You cannot read the messages yet. Ask someone in the room to send you the invitation link, then open it.',
+    'Bạn chưa đọc được tin nhắn. Hãy nhờ người trong phòng gửi liên kết mời cho bạn, rồi mở nó.',
   );
   static String get chatLocked => _t('Cannot be read', 'Không đọc được');
   static String get linkCannotOpen =>
@@ -1039,7 +1062,7 @@ abstract final class S {
   static String get chatAttachMore => _t('More', 'Thêm');
   static String get stickerSearchHint =>
       _t('Search stickers', 'Tìm nhãn dán');
-  static String get stickerSearchClear => _t('Clear', 'Xóa chữ');
+  static String get stickerSearchClear => _t('Clear', 'Xoá chữ');
   static String get stickerRecent => _t('Recent', 'Gần đây');
   static String get stickerRecentEmpty => _t(
     'The stickers you send show up here',
@@ -1150,7 +1173,7 @@ abstract final class S {
   );
   static String get photoLoadFailed =>
       _t('This photo could not be loaded', 'Không tải được ảnh này');
-  static String get chatCancelSend => _t('Cancel sending', 'Hủy gửi');
+  static String get chatCancelSend => _t('Cancel sending', 'Huỷ gửi');
   static String chatReplyingTo(String name) => _t(
     'Replying to ${name.isEmpty ? someone : name}',
     'Đang trả lời ${name.isEmpty ? someone : name}',
@@ -1202,17 +1225,21 @@ abstract final class S {
   static String get audioQualityHigh => _t('High', 'Cao');
   static String get audioQualityMax => _t('Highest', 'Cao nhất');
   static String get audioQualityLowRate =>
-      _t('about 50 kbps', 'khoảng 50 kbps');
+      _t('about 22 MB an hour', 'khoảng 22 MB mỗi giờ');
   static String get audioQualityNormalRate =>
-      _t('about 70 kbps', 'khoảng 70 kbps');
+      _t('about 32 MB an hour', 'khoảng 32 MB mỗi giờ');
   static String get audioQualityHighRate =>
-      _t('about 128 kbps', 'khoảng 128 kbps');
-  static String get audioQualityMaxRate => _t('up to 160 kbps', 'đến 160 kbps');
+      _t('about 58 MB an hour', 'khoảng 58 MB mỗi giờ');
+  static String get audioQualityMaxRate => _t('up to 72 MB an hour', 'đến 72 MB mỗi giờ');
   static String get audioQualityMaxRateIos =>
-      _t('about 128 kbps', 'khoảng 128 kbps');
+      _t('about 58 MB an hour', 'khoảng 58 MB mỗi giờ');
   static String get audioQualityHelp => _t(
-    'Applies from the next song. Without signing in, YouTube offers no higher stream. Songs already saved or downloaded keep their quality. On a weak network it drops by itself.',
-    'Áp dụng từ bài sau. Khi chưa đăng nhập, YouTube không có luồng nào cao hơn. Bài đã lưu hoặc đã tải giữ chất lượng cũ. Mạng yếu thì chất lượng tự hạ.',
+    'Applies from the next song. On a weak network it drops by itself.',
+    'Áp dụng từ bài sau. Mạng yếu thì tự hạ.',
+  );
+  static String get audioQualityMore => _t(
+    'Without signing in, YouTube offers nothing higher. Songs already saved or downloaded keep their quality.',
+    'Khi chưa đăng nhập, YouTube không có mức nào cao hơn. Bài đã lưu hoặc đã tải giữ chất lượng cũ.',
   );
 
   // Content advisory badge shown beside explicit tracks
@@ -1235,8 +1262,12 @@ abstract final class S {
   static String crossfadeSeconds(int seconds) =>
       _t('$seconds s', '$seconds giây');
   static String get crossfadeHelp => _t(
-    'The end of a song fades out and the next fades in, without overlapping, so a room stays in step. Not used for Next, short songs or video.',
-    'Cuối bài nhỏ dần, đầu bài kế to dần, không chồng nhau nên cả phòng vẫn cùng nhịp. Không áp dụng khi bấm Next, bài ngắn hoặc khi hiện video.',
+    'The end of a song fades out and the next fades in.',
+    'Cuối bài nhỏ dần, đầu bài kế to dần.',
+  );
+  static String get crossfadeMore => _t(
+    'They do not overlap, so a room stays in step. Not used for Next, short songs or video.',
+    'Hai bài không chồng nhau nên cả phòng vẫn cùng nhịp. Không áp dụng khi bấm Bài sau, bài ngắn hoặc khi hiện video.',
   );
 
   static String get equalizer => _t('Equalizer', 'Bộ chỉnh âm');
@@ -1276,8 +1307,12 @@ abstract final class S {
   static String scrobbleConnectedAs(String user) =>
       _t('Connected as $user', 'Đã kết nối: $user');
   static String get scrobbleHelp => _t(
-    'Sends the songs you play on this phone to your ListenBrainz account. Nothing is sent until you connect, and nothing about the room. Listens may be public there.',
-    'Gửi các bài bạn nghe trên máy này lên tài khoản ListenBrainz. Chưa kết nối thì không gửi gì, và không có gì về phòng. Lượt nghe có thể công khai ở đó.',
+    'Sends the songs you play on this phone to your ListenBrainz account.',
+    'Gửi các bài bạn nghe trên máy này lên tài khoản ListenBrainz.',
+  );
+  static String get scrobbleMore => _t(
+    'Nothing is sent until you connect, and nothing about the room. Listens may be public there.',
+    'Chưa kết nối thì không gửi gì, và không có gì về phòng. Lượt nghe có thể công khai ở đó.',
   );
   static String get scrobbleGetToken =>
       _t('Open ListenBrainz to get your token', 'Mở ListenBrainz để lấy token');
@@ -1307,8 +1342,12 @@ abstract final class S {
   );
   static String get lastFmName => 'Last.fm';
   static String get lastFmHelp => _t(
-    'Sends the songs you play here to your Last.fm account. You allow Sapoche on the Last.fm page; no password is typed here. Nothing is sent until you connect, and nothing about the room. The room server signs for the app and keeps nothing.',
-    'Gửi các bài bạn nghe trên máy này lên tài khoản Last.fm. Bạn cho phép Sapoche ngay trên trang Last.fm, không gõ mật khẩu ở đây. Chưa kết nối thì không gửi gì, và không có gì về phòng. Server của phòng ký thay app và không lưu gì.',
+    'Sends the songs you play on this phone to your Last.fm account. You allow it on the Last.fm page; no password is typed here.',
+    'Gửi các bài bạn nghe trên máy này lên tài khoản Last.fm. Bạn cho phép trên trang Last.fm, không gõ mật khẩu ở đây.',
+  );
+  static String get lastFmMore => _t(
+    'Nothing is sent until you connect, and nothing about the room. Your group\'s server signs for the app and keeps nothing.',
+    'Chưa kết nối thì không gửi gì, và không có gì về phòng. Máy chủ của nhóm ký thay app và không lưu gì.',
   );
   static String get lastFmConnect => _t('Connect Last.fm', 'Kết nối Last.fm');
   static String get lastFmAllowed => _t('I have allowed it', 'Tôi đã cho phép');
@@ -1330,7 +1369,7 @@ abstract final class S {
   );
   static String get lastFmUnavailable => _t(
     'Last.fm is not set up on this server.',
-    'Server này chưa bật Last.fm.',
+    'Máy chủ của nhóm chưa bật Last.fm.',
   );
   static String get lastFmOffline => _t(
     'Could not reach Last.fm. Check the connection and try again.',
@@ -1356,8 +1395,12 @@ abstract final class S {
   static String get videoSection => _t('Video', 'Video');
   static String get videoQuality => _t('Picture quality', 'Chất lượng hình');
   static String get videoQualityHelp => _t(
-    'Applies at once, without stopping the song. This is the most: a slow connection lowers it by itself. Above 1080p only on Wi-Fi. The picture stops when the screen is off; the music does not.',
-    'Áp dụng ngay, bài không dừng. Đây là mức cao nhất: mạng chậm thì hình tự hạ. Trên 1080p chỉ khi có Wi-Fi. Tắt màn hình thì hình dừng, nhạc vẫn phát.',
+    'Applies at once. On a slow connection it drops by itself.',
+    'Áp dụng ngay. Mạng chậm thì hình tự hạ.',
+  );
+  static String get videoQualityMore => _t(
+    'The song does not stop. Above 1080p only on Wi-Fi. The picture stops when the screen is off; the music does not.',
+    'Bài không dừng. Trên 1080p chỉ khi có Wi-Fi. Tắt màn hình thì hình dừng, nhạc vẫn phát.',
   );
   static String get videoQualityHelpWeb => _t(
     'A higher quality applies at once; a lower one reloads the picture for a moment. A browser plays no picture below 480p.',
@@ -1580,8 +1623,11 @@ abstract final class S {
     'vi' => 'Tiếng Việt',
     _ => 'English',
   };
-  static String get sync => _t('Sync', 'Đồng bộ');
-  static String get latencyTrim => _t('Latency trim', 'Chỉnh độ trễ');
+  static String get sync => _t('Timing in a room', 'Nhịp trong phòng');
+  static String get latencyTrim => _t(
+    'Latency trim',
+    'Chỉnh sớm hoặc muộn',
+  );
   static String get latencyTrimHelp => _t(
     'If this phone is always a little early or late compared with the others, nudge it here.',
     'Nếu điện thoại này luôn nhanh hoặc chậm hơn các máy khác một chút, hãy chỉnh ở đây.',
@@ -1889,8 +1935,8 @@ abstract final class S {
       _t('No group key yet', 'Chưa có khoá nhóm');
   static String get webKeyEnter => _t('Enter', 'Nhập');
   static String get keyRefused => _t(
-    'The group key was not accepted. Check it in Settings > Server.',
-    'Khoá nhóm không được chấp nhận. Hãy kiểm tra ở Cài đặt > Máy chủ.',
+    'The group key was not accepted. Ask whoever set Sapoche up for you, or check it in Settings > Advanced > Server.',
+    'Khoá nhóm không đúng. Hãy nhờ người đã cài Sapoche cho bạn, hoặc kiểm tra ở Cài đặt > Nâng cao > Máy chủ.',
   );
   static String get serverKeySet => _t('Set', 'Đã đặt');
   static String get serverKeyNotSet => _t('Not set', 'Chưa đặt');
@@ -1907,8 +1953,8 @@ abstract final class S {
   static String get checkServerReached =>
       _t('The server answers', 'Máy chủ có trả lời');
   static String get checkServerUnreachable => _t(
-    'The server does not answer: check the address and the network',
-    'Máy chủ không trả lời: hãy kiểm tra địa chỉ và mạng',
+    'The server does not answer. Check the network, then the address.',
+    'Máy chủ không trả lời. Hãy kiểm tra mạng, rồi đến địa chỉ.',
   );
   static String get checkKeyOk => _t('The group key is accepted', 'Khoá nhóm được chấp nhận');
   static String get checkKeyRefused => _t(
@@ -1922,24 +1968,24 @@ abstract final class S {
     'Máy chủ đủ mới (giao thức $protocol)',
   );
   static String checkVersionOld(int protocol, int needed) => _t(
-    'The server is older than this app expects (protocol $protocol, needs $needed)',
-    'Máy chủ cũ hơn app cần (giao thức $protocol, cần $needed)',
+    'The server needs an update (protocol $protocol, needs $needed). Tell whoever runs your group.',
+    'Máy chủ cần cập nhật (giao thức $protocol, cần $needed). Hãy báo người quản lý nhóm.',
   );
   static String get checkVersionUnknown =>
       _t('The server version is not known', 'Chưa biết phiên bản máy chủ');
   static String get serverHelp => _t(
-    'The address of your Sapoche server and the group key. They stay on this phone. Easiest: on a phone that already works, open Settings > Set up another phone and scan the code.',
-    'Địa chỉ máy chủ Sapoche và khoá nhóm, chỉ nằm trên máy này. Dễ nhất: trên máy đã dùng được, mở Cài đặt > Cài đặt cho máy khác rồi quét mã.',
+    'The address of your Sapoche server and the group key. Easiest: on a phone that already works, open Settings > Connect another phone and scan the code.',
+    'Địa chỉ máy chủ và khoá nhóm, chỉ nằm trên máy này. Dễ nhất: trên máy đã dùng được, mở Cài đặt > Kết nối máy khác rồi quét mã.',
   );
   static String get serverHelpWeb => _t(
     'Where your Sapoche server is and the group key it asks for. They stay in this browser: clearing the site’s data removes them.',
     'Địa chỉ máy chủ Sapoche của bạn và khoá nhóm nó yêu cầu. Chúng chỉ nằm trong trình duyệt này: xoá dữ liệu của trang là mất.',
   );
   static String get setupAnother =>
-      _t('Set up another phone', 'Cài đặt cho máy khác');
+      _t('Connect another phone', 'Kết nối máy khác');
   static String get setupAnotherHelp => _t(
-    'Open the camera on the other phone and point it at this code, or copy the link and send it to yourself. It holds the server address and the group key: show it to nobody else.',
-    'Mở camera trên máy kia và đưa vào mã này, hoặc sao chép liên kết rồi gửi cho chính bạn. Mã chứa địa chỉ máy chủ và khoá nhóm: đừng cho ai khác xem.',
+    'On the other phone, open the camera and point it at this code. Or copy the link and send it to that phone. Show it only to people in your group.',
+    'Trên máy kia, mở camera và đưa vào mã này. Hoặc sao chép liên kết rồi gửi sang máy kia. Chỉ cho người trong nhóm xem mã.',
   );
   static String get setupAnotherWeb => _t('Invite to the web app', 'Mời bạn dùng bản web');
   static String get setupAnotherWebHelp => _t(
@@ -1953,12 +1999,12 @@ abstract final class S {
     'Máy này chưa có máy chủ để chia sẻ',
   );
   static String get setupPaste =>
-      _t('Paste setup link', 'Dán liên kết cài đặt');
+      _t('Paste the group link', 'Dán liên kết của nhóm');
   static String get setupNeededTitle =>
       _t('Set up the server first', 'Cần thiết lập máy chủ trước');
   static String get setupNeededBody => _t(
-    'Rooms live on your Sapoche server. On a phone that has it, open Settings > Set up another phone and point this phone\'s camera at the code, then come back; or paste the link it gives.',
-    'Phòng nằm trên máy chủ Sapoche của bạn. Trên máy đã có sẵn, mở Cài đặt > Cài đặt cho máy khác rồi đưa camera máy này vào mã, sau đó quay lại; hoặc dán liên kết nó cho.',
+    'On a phone where Sapoche already works, open Settings > Connect another phone and point this phone\'s camera at the code. Or paste the link that phone sends you.',
+    'Trên máy đã dùng được Sapoche, mở Cài đặt > Kết nối máy khác rồi đưa camera máy này vào mã. Hoặc dán liên kết máy đó gửi cho bạn.',
   );
   static String get setupEnterByHand =>
       _t('Enter address and key', 'Nhập địa chỉ và khoá');
@@ -1970,13 +2016,13 @@ abstract final class S {
   );
   static String get setupUse => _t('Use', 'Dùng');
   static String get setupBad => _t(
-    'That is not a Sapoche setup link.',
-    'Đó không phải liên kết cài đặt của Sapoche.',
+    'That is not a Sapoche group link. Ask someone in your group to send it again.',
+    'Đây không phải liên kết nhóm Sapoche. Hãy nhờ người trong nhóm gửi lại.',
   );
   static String get setupDone => _t('Server set', 'Đã đặt máy chủ');
   static String get serverNotSet => _t(
-    'Enter the server address and group key first (Settings > Server).',
-    'Hãy nhập địa chỉ máy chủ và khoá nhóm trước (Cài đặt > Máy chủ).',
+    'Enter the server address and group key first (Settings > Advanced > Server).',
+    'Hãy nhập địa chỉ máy chủ và khoá nhóm trước (Cài đặt > Nâng cao > Máy chủ).',
   );
   static String get updateVersion => _t('Version', 'Phiên bản');
   static String get updateUpToDate =>
@@ -1991,7 +2037,7 @@ abstract final class S {
   );
   static String get updateDownload => _t('Download', 'Tải về');
   static String get updateDownloading => _t('Downloading…', 'Đang tải…');
-  static String get updateInstall => _t('Install', 'Cài đặt');
+  static String get updateInstall => _t('Install', 'Cài');
   static String get updateInstalling => _t('Installing…', 'Đang cài…');
   static String get updateRestartTitle =>
       _t('Install the update?', 'Cài bản cập nhật?');
@@ -2001,13 +2047,13 @@ abstract final class S {
   );
   static String get updatePermission => _t(
     'Android asks you to allow Sapoche to install updates, once. Allow it on the page that opens, then come back and press Install.',
-    'Android yêu cầu bạn cho phép Sapoche cài cập nhật, chỉ một lần. Hãy bật ở trang sắp mở, rồi quay lại và bấm Cài đặt.',
+    'Android yêu cầu bạn cho phép Sapoche cài cập nhật, chỉ một lần. Hãy bật ở trang sắp mở, rồi quay lại và bấm Cài.',
   );
   static String get updatePermissionTitle =>
       _t('Allow installing updates', 'Cho phép cài bản cập nhật');
   static String get updatePermissionBody => _t(
-    'To install an update, Android needs you to allow Sapoche to install apps. It asks once: turn on “Allow from this source” on the next page, then come back and press Install again.',
-    'Để cài bản cập nhật, Android cần bạn cho phép Sapoche cài ứng dụng. Chỉ hỏi một lần: hãy bật “Cho phép từ nguồn này” ở trang sắp mở, rồi quay lại và bấm Cài đặt lần nữa.',
+    'Android needs you to allow Sapoche to install updates, once. On the next page turn on “Allow from this source”, then come back and press Install.',
+    'Android cần bạn cho phép Sapoche cài bản mới, chỉ một lần. Ở trang sắp mở, bật “Cho phép từ nguồn này”, rồi quay lại và bấm Cài.',
   );
   static String get updateOpenSettings => _t('Open settings', 'Mở cài đặt');
   static String get updateWhatsNew => _t('What’s new', 'Có gì mới');
@@ -2047,16 +2093,16 @@ abstract final class S {
       'Không kết nối được máy chủ để tìm cập nhật.',
     ),
     'key' => _t(
-      'The server turned the group key down, or this phone has none yet. Set it in Settings > Server.',
-      'Máy chủ từ chối khóa nhóm, hoặc máy này chưa có khóa. Hãy đặt ở Cài đặt > Máy chủ.',
+      'The server turned the group key down, or this phone has none yet. Set it in Settings > Advanced > Server.',
+      'Máy chủ từ chối khoá nhóm, hoặc máy này chưa có khoá. Hãy đặt ở Cài đặt > Nâng cao > Máy chủ.',
     ),
     'download' => _t(
       'The download didn’t work. Try again.',
       'Tải không được. Hãy thử lại.',
     ),
     'signature' => _t(
-      'This update is signed with a different key, so Android won’t install it over this app.',
-      'Bản cập nhật này ký bằng khóa khác nên Android không cho cài đè lên app này.',
+      'This update is signed with a different key, so Android won’t install it over this app. Ask whoever set Sapoche up for you.',
+      'Bản cập nhật này ký bằng khoá khác nên Android không cho cài đè lên app này. Hãy nhờ người đã cài Sapoche cho bạn.',
     ),
     'old' => _t(
       'That version is not newer than the one installed.',
@@ -2068,11 +2114,11 @@ abstract final class S {
     ),
     'aborted' => _t(
       'The installation was cancelled.',
-      'Việc cài đặt đã bị hủy.',
+      'Việc cài đã bị huỷ.',
     ),
     'blocked' => _t(
       'Android blocked the installation.',
-      'Android đã chặn việc cài đặt.',
+      'Android đã chặn việc cài.',
     ),
     'storage' => _t(
       'There is not enough room on the phone to install it.',

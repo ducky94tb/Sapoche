@@ -1,0 +1,8 @@
+Dễ dùng hơn cho mọi người
+- Cài đặt gọn hơn: trang đầu cho biết nhạc trên máy chiếm bao nhiêu chỗ và đồng bộ đang bật hay tắt; các mục ít dùng (Scrobble, Máy chủ, Nhật ký, Kiểm tra kết nối) gom vào Cài đặt > Nâng cao.
+- Lời giải thích dưới mỗi nhóm chỉ còn một câu ngắn. Bấm Tìm hiểu thêm khi muốn đọc kỹ.
+- Cài đặt > Gợi ý chỉ còn các công tắc. Nghệ sĩ, mix và thống kê nghe nằm ở trang riêng: Gu của bạn.
+- Menu của bài hát mở đầu bằng bốn nút lớn: Phát tiếp, Thêm vào cuối, Thích, Tải về.
+- Chữ dễ hiểu hơn, lời báo lỗi nói rõ cần làm gì. Dung lượng dùng mạng tính theo MB mỗi giờ thay cho kbps.
+- Chữ cỡ rất lớn không còn tràn ra ngoài ở Trang chủ, trình phát, phòng, tìm kiếm và Cài đặt.
+- Mời vào phòng có chat mã hoá thì app nhắc gửi liên kết thay vì đọc mã, để bạn bè đọc được tin nhắn.

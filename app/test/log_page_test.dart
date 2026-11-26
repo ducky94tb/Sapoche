@@ -32,10 +32,12 @@ void main() {
     await tester.tap(find.byTooltip(S.settingsTitle));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('settings-log')),
+      find.byKey(const ValueKey('settings-advanced')),
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.tap(find.byKey(const ValueKey('settings-advanced')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('settings-log')));
     await tester.pumpAndSettle();
     return backend;

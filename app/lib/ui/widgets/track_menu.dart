@@ -47,15 +47,26 @@ class TrackMenu extends StatelessWidget {
     final online = !track.isLocal;
     List<MenuLine> lines() => [
       if (onPlayNext != null)
-        MenuLine('next', Icons.playlist_play_rounded, S.playNext),
+        MenuLine(
+          'next',
+          Icons.playlist_play_rounded,
+          S.playNext,
+          short: S.playNextShort,
+        ),
       if (onAdd != null)
-        MenuLine('end', Icons.queue_music_rounded, S.addToQueue),
+        MenuLine(
+          'end',
+          Icons.queue_music_rounded,
+          S.addToQueue,
+          short: S.addToQueueShort,
+        ),
       MenuLine(
         'like',
         library.isLikedSong(track)
             ? Icons.favorite_rounded
             : Icons.favorite_border_rounded,
         library.isLikedSong(track) ? S.unlike : S.like,
+        short: library.isLikedSong(track) ? S.unlike : S.like,
       ),
       MenuLine('playlist', Icons.playlist_add_rounded, S.addToPlaylist),
       // A browser downloads nothing
@@ -66,6 +77,7 @@ class TrackMenu extends StatelessWidget {
               'undownload',
               Icons.download_done_rounded,
               S.removeDownload,
+              short: S.removeDownload,
             ),
           ],
           DownloadState.queued || DownloadState.waiting => [
@@ -74,9 +86,17 @@ class TrackMenu extends StatelessWidget {
               Icons.downloading_rounded,
               S.downloading,
               enabled: false,
+              short: S.downloading,
             ),
           ],
-          _ => [MenuLine('download', Icons.download_rounded, S.download)],
+          _ => [
+            MenuLine(
+              'download',
+              Icons.download_rounded,
+              S.download,
+              short: S.download,
+            ),
+          ],
         },
       if (online)
         MenuLine('artist', Icons.person_outline_rounded, S.goToArtist),

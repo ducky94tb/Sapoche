@@ -1,4 +1,5 @@
 import 'dart:async' show Timer;
+import 'dart:math' as math;
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart'
@@ -191,52 +192,39 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: () =>
                   _open(context, () => S.suggestionsTitle, _suggestions),
             ),
-            _NavRow(
-              selected: _shows(_scrobble),
-              key: const ValueKey('settings-scrobble'),
-              icon: Icons.podcasts_rounded,
-              label: S.scrobbleTitle,
-              onTap: () => _open(context, () => S.scrobbleTitle, _scrobble),
-            ),
           ],
         ),
       ),
       _Group(
         children: [
-          _NavRow(
+          _StorageRow(
             selected: _shows(_storage),
-            key: const ValueKey('settings-storage'),
-            icon: Icons.download_for_offline_outlined,
-            label: S.storage,
+            library: model.library,
             onTap: () => _open(context, () => S.storage, _storage),
           ),
           // The web build cannot save or read a backup file, only sync
           if (!kIsWeb || _canSync(model))
-            _NavRow(
-              selected: _shows(_backup),
-              key: const ValueKey('settings-backup'),
-              icon: Icons.backup_outlined,
-              label: _canSync(model) ? S.syncTitle : S.backup,
-              onTap: () => _open(context, () => _canSync(model) ? S.syncTitle : S.backup, _backup),
+            ListenableBuilder(
+              listenable: model.sync ?? model.room,
+              builder: (context, _) => _NavRow(
+                selected: _shows(_backup),
+                key: const ValueKey('settings-backup'),
+                icon: Icons.backup_outlined,
+                label: _canSync(model) ? S.syncTitle : S.backup,
+                value: _canSync(model)
+                    ? (model.sync!.enabled ? S.noticesOn : S.noticesOff)
+                    : null,
+                onTap: () => _open(context, () => _canSync(model) ? S.syncTitle : S.backup, _backup),
+              ),
             ),
         ],
       ),
       ListenableBuilder(
-        listenable: Listenable.merge([model.room, model.update]),
+        listenable: model.update,
         builder: (context, _) {
           final info = model.update.info;
           return _Group(
             children: [
-              // The server is set by the person on iOS and in a browser; on Android it is built into the app, and only
-              // the build for the public (a GitHub release) has no key and asks for one here
-              if (kIsWeb || Platform.isIOS || !model.room.profile.configured)
-                _NavRow(
-                  selected: _shows(_server),
-                  key: const ValueKey('settings-server'),
-                  icon: Icons.dns_outlined,
-                  label: S.serverSection,
-                  onTap: () => _open(context, () => S.serverSection, _server),
-                ),
               // The phone that has the server built in can set another one up; a browser shares a link to itself
               if (kIsWeb || Platform.isAndroid)
                 _NavRow(
@@ -269,28 +257,16 @@ class _SettingsPageState extends State<SettingsPage> {
           );
         },
       ),
+      // What only someone who knows the app well needs: the server, scrobbling and the log, one page away
       _Group(
-        footer: S.diagnosticsHelp,
         children: [
           _NavRow(
-            key: const ValueKey('settings-log'),
-            icon: Icons.fact_check_rounded,
-            label: S.logTitle,
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute<void>(builder: (_) => const LogPage())),
+            selected: _shows(_advanced),
+            key: const ValueKey('settings-advanced'),
+            icon: Icons.tune_rounded,
+            label: S.advanced,
+            onTap: () => _open(context, () => S.advanced, _advanced),
           ),
-          // Android has the server built in, so it has no Server page to check it from
-          if (!kIsWeb && Platform.isAndroid)
-            _Row(
-              key: const ValueKey('server-check'),
-              label: S.checkConnectionRow,
-              leading: Icon(
-                Icons.network_check_rounded,
-                color: context.palette.primary,
-              ),
-              onTap: () => _showServerCheck(context, model.room),
-            ),
         ],
       ),
       const _VersionLabel(),
@@ -467,23 +443,18 @@ class _SettingsPageState extends State<SettingsPage> {
     ),
   ];
 
-  /// What the listening says about the person and what they told it, and what was blocked from the suggestions, to be
-  /// let back one by one.
+  /// What the person told the suggestions, and what was blocked from them, to be let back one by one; what the
+  /// listening says about the person is a page away, being something to look at rather than to set.
   static List<Widget> _suggestions(BuildContext context, AppModel model) => [
-    ListenableBuilder(
-      listenable: model.library,
-      builder: (context, _) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: _tasteGroups(context, model.library),
-      ),
-    ),
-    ListenableBuilder(
-      listenable: model.library,
-      builder: (context, _) => _Group(
-        title: S.tasteStatsHeading,
-        footer: S.tasteStatsHelp,
-        children: [_TasteStats(stats: model.library.tasteProfile.stats)],
-      ),
+    _Group(
+      children: [
+        _NavRow(
+          key: const ValueKey('settings-taste'),
+          icon: Icons.person_search_outlined,
+          label: S.tasteHeading,
+          onTap: () => _push(context, S.tasteHeading, _taste(context, model)),
+        ),
+      ],
     ),
     _Group(
       footer: S.shareTasteHelp,
@@ -550,6 +521,25 @@ class _SettingsPageState extends State<SettingsPage> {
     ),
   ];
 
+  /// The artists the person listens to most, the mixes they make, and how often suggestions are skipped.
+  static List<Widget> _taste(BuildContext context, AppModel model) => [
+    ListenableBuilder(
+      listenable: model.library,
+      builder: (context, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: _tasteGroups(context, model.library),
+      ),
+    ),
+    ListenableBuilder(
+      listenable: model.library,
+      builder: (context, _) => _Group(
+        title: S.tasteStatsHeading,
+        footer: S.tasteStatsHelp,
+        children: [_TasteStats(stats: model.library.tasteProfile.stats)],
+      ),
+    ),
+  ];
+
   static List<Widget> _notices(BuildContext context, AppModel model) => [
     ListenableBuilder(
       listenable: model.room,
@@ -564,6 +554,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   : blocked
                   ? S.noticesDenied
                   : S.noticesSwitchHelp,
+              more: info.needsInstall || blocked ? null : S.noticesSwitchMore,
               children: [
                 Material(
                   type: MaterialType.transparency,
@@ -615,8 +606,8 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     final labels = {for (final a in artists) a.key: a.label};
     return [
+      // The page is called this already, so the group has no title of its own
       _Group(
-        title: S.tasteHeading,
         footer: artists.isEmpty ? null : S.tasteHelp,
         children: [
           if (artists.isEmpty)
@@ -760,15 +751,15 @@ class _SettingsPageState extends State<SettingsPage> {
     if (kIsWeb)
       _Group(
         title: S.soundSection,
-        footer: '${S.webQualityHelp}\n\n${S.crossfadeHelp}',
+        footer: S.webQualityHelp,
+        more: '${S.crossfadeHelp} ${S.crossfadeMore}',
         children: [_CrossfadeRow(controller: model.room)],
       )
-    else
+    else ...[
       _Group(
         title: S.soundSection,
-        // What the switch under the qualities would say at length is here, as the other pages say theirs
-        footer:
-            '${S.audioQualityHelp}\n\n${S.normalizeVolumeHelp}\n\n${S.crossfadeHelp}',
+        footer: S.audioQualityHelp,
+        more: S.audioQualityMore,
         children: [
           ListenableBuilder(
             listenable: model.room,
@@ -809,6 +800,13 @@ class _SettingsPageState extends State<SettingsPage> {
               ],
             ),
           ),
+        ],
+      ),
+      // How songs sound next to each other, said under them rather than under the qualities
+      _Group(
+        footer: S.crossfadeHelp,
+        more: '${S.crossfadeMore}\n\n${S.normalizeVolumeHelp}',
+        children: [
           // A browser plays through YouTube's own player, which evens songs out by itself and cannot be told not to
           ListenableBuilder(
             listenable: model.room,
@@ -824,28 +822,13 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           _CrossfadeRow(controller: model.room),
-          ListenableBuilder(
-            listenable: model.room,
-            builder: (context, _) => _NavRow(
-              key: const ValueKey('settings-equalizer'),
-              icon: Icons.equalizer_rounded,
-              label: S.equalizer,
-              value: S.eqPreset(model.room.equalizer.preset),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => _SubPage(
-                    title: S.equalizer,
-                    children: [_EqualizerPanel(controller: model.room)],
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
+    ],
     _Group(
       title: S.videoSection,
       footer: kIsWeb ? S.videoQualityHelpWeb : S.videoQualityHelp,
+      more: kIsWeb ? null : S.videoQualityMore,
       children: [
         ListenableBuilder(
           listenable: model.room,
@@ -875,10 +858,28 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       ],
     ),
+    // Rarely changed: the equalizer (a browser has none) and the timing of this device in a room
     _Group(
-      title: S.sync,
+      title: S.advanced,
       footer: kIsWeb ? S.latencyTrimHelpWeb : S.latencyTrimHelp,
-      children: [_TrimRow(controller: model.room)],
+      children: [
+        if (!kIsWeb)
+          ListenableBuilder(
+            listenable: model.room,
+            builder: (context, _) => _NavRow(
+              key: const ValueKey('settings-equalizer'),
+              icon: Icons.equalizer_rounded,
+              label: S.equalizer,
+              value: S.eqPreset(model.room.equalizer.preset),
+              onTap: () => _push(
+                context,
+                S.equalizer,
+                [_EqualizerPanel(controller: model.room)],
+              ),
+            ),
+          ),
+        _TrimRow(controller: model.room),
+      ],
     ),
   ];
 
@@ -910,6 +911,64 @@ class _SettingsPageState extends State<SettingsPage> {
 
   static List<Widget> _updates(BuildContext context, AppModel model) => [
     _UpdateGroup(update: model.update),
+  ];
+
+  /// Opens a page of its own over the settings, from inside a topic.
+  static void _push(BuildContext context, String title, List<Widget> children) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (context) => _SubPage(title: title, children: children),
+        ),
+      );
+
+  static List<Widget> _advanced(BuildContext context, AppModel model) => [
+    _Group(
+      children: [
+        _NavRow(
+          key: const ValueKey('settings-scrobble'),
+          icon: Icons.podcasts_rounded,
+          label: S.scrobbleTitle,
+          onTap: () => _push(context, S.scrobbleTitle, _scrobble(context, model)),
+        ),
+      ],
+    ),
+    // The server is set by the person on iOS and in a browser; on Android it is built into the app, and only the build
+    // for the public (a GitHub release) has no key and asks for one here
+    if (kIsWeb || Platform.isIOS || !model.room.profile.configured)
+      _Group(
+        children: [
+          _NavRow(
+            key: const ValueKey('settings-server'),
+            icon: Icons.dns_outlined,
+            label: S.serverSection,
+            onTap: () => _push(context, S.serverSection, _server(context, model)),
+          ),
+        ],
+      ),
+    _Group(
+      footer: S.diagnosticsHelp,
+      children: [
+        _NavRow(
+          key: const ValueKey('settings-log'),
+          icon: Icons.fact_check_rounded,
+          label: S.logTitle,
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute<void>(builder: (_) => const LogPage())),
+        ),
+        // Android has the server built in, so it has no Server page to check it from
+        if (!kIsWeb && Platform.isAndroid)
+          _Row(
+            key: const ValueKey('server-check'),
+            label: S.checkConnectionRow,
+            leading: Icon(
+              Icons.network_check_rounded,
+              color: context.palette.primary,
+            ),
+            onTap: () => _showServerCheck(context, model.room),
+          ),
+      ],
+    ),
   ];
 
   static List<Widget> _releaseNotes(BuildContext context, AppModel model) => [
@@ -1148,6 +1207,7 @@ class _ScrobbleGroupState extends State<_ScrobbleGroup>
       return _Group(
         title: _name,
         footer: _lastFm ? S.lastFmHelp : S.scrobbleHelp,
+        more: _lastFm ? S.lastFmMore : S.scrobbleMore,
         children: _lastFm ? _lastFmSteps(p, busy) : _listenBrainzSteps(p, icon),
       );
     }
@@ -1623,6 +1683,7 @@ class _StorageGroupState extends State<_StorageGroup> {
     final library = widget.library;
     return _Group(
       footer: S.cacheLimitHelp,
+      more: S.cacheLimitMore,
       children: [
         _Row(
           label: S.storageDownloads,
@@ -1758,6 +1819,7 @@ class _BrowserStorageGroupState extends State<_BrowserStorageGroup> {
     final info = _info;
     return _Group(
       footer: S.browserStorageHelp,
+      more: S.browserStorageMore,
       children: [
         if (info != null) ...[
           _Row(
@@ -1850,48 +1912,58 @@ class _SyncGroup extends StatelessWidget {
         );
       }
       final problem = sync.phase == SyncPhase.failed || sync.phase == SyncPhase.refused;
-      return _Group(
+      // What is used day to day first; going back in time and turning it off apart, below
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Row(
-            key: const ValueKey('sync-status'),
-            label: _status(),
-            leading: sync.phase == SyncPhase.syncing
-                ? const SizedBox.square(dimension: 24, child: Padding(padding: EdgeInsets.all(3), child: CircularProgressIndicator(strokeWidth: 2)))
-                : Icon(problem ? Icons.error_outline_rounded : Icons.cloud_done_outlined, color: problem ? p.error : p.primary),
-            trailing: sync.phase == SyncPhase.refused ? null : Icon(Icons.sync_rounded, size: 18, color: p.textTertiary),
-            onTap: sync.phase == SyncPhase.syncing ? null : () => _tapStatus(context),
+          _Group(
+            children: [
+              _Row(
+                key: const ValueKey('sync-status'),
+                label: _status(),
+                leading: sync.phase == SyncPhase.syncing
+                    ? const SizedBox.square(dimension: 24, child: Padding(padding: EdgeInsets.all(3), child: CircularProgressIndicator(strokeWidth: 2)))
+                    : Icon(problem ? Icons.error_outline_rounded : Icons.cloud_done_outlined, color: problem ? p.error : p.primary),
+                trailing: sync.phase == SyncPhase.refused ? null : Icon(Icons.sync_rounded, size: 18, color: p.textTertiary),
+                onTap: sync.phase == SyncPhase.syncing ? null : () => _tapStatus(context),
+              ),
+              _Row(
+                key: const ValueKey('sync-add-device'),
+                label: S.syncAddDevice,
+                leading: Icon(Icons.qr_code_2_rounded, color: p.primary),
+                onTap: () => showAddDevice(context, sync),
+              ),
+              _Row(
+                key: const ValueKey('sync-recovery'),
+                label: S.syncRecovery,
+                value: sync.recoverySaved ? null : S.syncNotSaved,
+                leading: Icon(Icons.key_rounded, color: p.primary),
+                onTap: () => showRecoveryCode(context, sync),
+              ),
+            ],
           ),
-          _Row(
-            key: const ValueKey('sync-add-device'),
-            label: S.syncAddDevice,
-            leading: Icon(Icons.qr_code_2_rounded, color: p.primary),
-            onTap: () => showAddDevice(context, sync),
-          ),
-          _Row(
-            key: const ValueKey('sync-recovery'),
-            label: S.syncRecovery,
-            value: sync.recoverySaved ? null : S.syncNotSaved,
-            leading: Icon(Icons.key_rounded, color: p.primary),
-            onTap: () => showRecoveryCode(context, sync),
-          ),
-          _Row(
-            key: const ValueKey('sync-restore'),
-            label: S.syncRestore,
-            leading: Icon(Icons.history_rounded, color: p.primary),
-            onTap: () => showSyncVersions(context, sync),
-          ),
-          if (sync.firstCopy != null)
-            _Row(
-              key: const ValueKey('sync-undo'),
-              label: S.syncUndoFirst,
-              leading: Icon(Icons.undo_rounded, color: p.primary),
-              onTap: () => _undo(context),
-            ),
-          _Row(
-            key: const ValueKey('sync-turn-off'),
-            label: S.syncTurnOff,
-            leading: Icon(Icons.cloud_off_outlined, color: p.primary),
-            onTap: () => _turnOff(context),
+          _Group(
+            children: [
+              _Row(
+                key: const ValueKey('sync-restore'),
+                label: S.syncRestore,
+                leading: Icon(Icons.history_rounded, color: p.primary),
+                onTap: () => showSyncVersions(context, sync),
+              ),
+              if (sync.firstCopy != null)
+                _Row(
+                  key: const ValueKey('sync-undo'),
+                  label: S.syncUndoFirst,
+                  leading: Icon(Icons.undo_rounded, color: p.primary),
+                  onTap: () => _undo(context),
+                ),
+              _Row(
+                key: const ValueKey('sync-turn-off'),
+                label: S.syncTurnOff,
+                leading: Icon(Icons.cloud_off_outlined, color: p.primary),
+                onTap: () => _turnOff(context),
+              ),
+            ],
           ),
         ],
       );
@@ -1940,6 +2012,7 @@ class _BackupGroup extends StatelessWidget {
     final p = context.palette;
     return _Group(
       footer: S.backupHelp,
+      more: S.backupMore,
       children: [
         _Row(
           label: S.backupSave,
@@ -2127,12 +2200,71 @@ class _NavRow extends StatelessWidget {
   }
 }
 
+/// The Storage row, with how much the songs kept on this phone take up.
+class _StorageRow extends StatefulWidget {
+  const _StorageRow({
+    required this.library,
+    required this.onTap,
+    required this.selected,
+  });
+
+  final LibraryController library;
+  final VoidCallback onTap;
+  final bool selected;
+
+  @override
+  State<_StorageRow> createState() => _StorageRowState();
+}
+
+class _StorageRowState extends State<_StorageRow> {
+  StorageInfo? _info;
+
+  @override
+  void initState() {
+    super.initState();
+    // A finished download is told through the list of downloads, not the library
+    widget.library.addListener(_load);
+    widget.library.downloadList.addListener(_load);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    widget.library.removeListener(_load);
+    widget.library.downloadList.removeListener(_load);
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final info = await widget.library.storage();
+    if (info != null && mounted) setState(() => _info = info);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final info = _info;
+    return _NavRow(
+      selected: widget.selected,
+      key: const ValueKey('settings-storage'),
+      icon: Icons.download_for_offline_outlined,
+      label: S.storage,
+      value: info == null ? null : formatBytes(info.downloadBytes + info.playBytes),
+      onTap: widget.onTap,
+    );
+  }
+}
+
 class _Group extends StatelessWidget {
-  const _Group({this.title, required this.children, this.footer});
+  const _Group({this.title, required this.children, this.footer, this.more});
 
   final String? title;
   final List<Widget> children;
+
+  /// One short sentence under the group.
   final String? footer;
+
+  /// The rest of what there is to say, shown only when asked for, so that the page stays short.
+  final String? more;
 
   @override
   Widget build(BuildContext context) {
@@ -2178,10 +2310,39 @@ class _Group extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
               child: Text(footer!, style: theme.bodySmall),
             ),
+          if (more != null) _More(text: more!),
         ],
       ),
     );
   }
+}
+
+/// "Learn more" under a group, which turns into the longer explanation in place.
+class _More extends StatefulWidget {
+  const _More({required this.text});
+
+  final String text;
+
+  @override
+  State<_More> createState() => _MoreState();
+}
+
+class _MoreState extends State<_More> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) => _open
+      ? Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+          child: Text(widget.text, style: Theme.of(context).textTheme.bodySmall),
+        )
+      : Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => setState(() => _open = true),
+            child: Text(S.learnMore),
+          ),
+        );
 }
 
 class _Row extends StatelessWidget {
@@ -2212,49 +2373,54 @@ class _Row extends StatelessWidget {
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-        child: Row(
-          children: [
-            if (leading != null) ...[leading!, const SizedBox(width: 14)],
-            Expanded(
-              child: subtitle == null
-                  ? Text(label, style: theme.bodyLarge?.copyWith(color: p.text))
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          label,
-                          style: theme.bodyLarge?.copyWith(color: p.text),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle!,
-                          style: theme.bodySmall?.copyWith(
-                            color: p.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
-            if (value != null)
-              // As wide as the words need, up to half the row: a long address must not push the label out
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.sizeOf(context).width * 0.5,
-                ),
-                child: Text(
-                  value!,
-                  maxLines: 1,
-                  textAlign: TextAlign.end,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.bodyLarge?.copyWith(color: p.textSecondary),
-                ),
-              ),
-            if (trailing != null) ...[const SizedBox(width: 10), trailing!],
-          ],
+        child: LayoutBuilder(
+          builder: (context, box) => _line(context, p, theme, box.maxWidth),
         ),
       ),
     );
   }
+
+  Widget _line(BuildContext context, Palette p, TextTheme theme, double width) => Row(
+    children: [
+      if (leading != null) ...[leading!, const SizedBox(width: 14)],
+      Expanded(
+        child: subtitle == null
+            ? Text(label, style: theme.bodyLarge?.copyWith(color: p.text))
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: theme.bodyLarge?.copyWith(color: p.text),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: theme.bodySmall?.copyWith(
+                      color: p.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+      if (value != null)
+        // As wide as the words need, up to half the window and most of the row (on a wide window the list is narrow):
+        // a long address must not push the label out
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: math.min(MediaQuery.sizeOf(context).width * 0.5, width * 0.6),
+          ),
+          child: Text(
+            value!,
+            maxLines: 1,
+            textAlign: TextAlign.end,
+            overflow: TextOverflow.ellipsis,
+            style: theme.bodyLarge?.copyWith(color: p.textSecondary),
+          ),
+        ),
+      if (trailing != null) ...[const SizedBox(width: 10), trailing!],
+    ],
+  );
 }
 
 /// The equalizer: the presets, the six bands, and (on a phone that has one) a way into its own equalizer.

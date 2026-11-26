@@ -12,7 +12,8 @@ import 'motion.dart';
 import 'sheet_tile.dart';
 
 /// One line of a menu: an icon, the words, and what it does. [apart] sets it at the bottom under a rule, for what the
-/// person is least likely to want (not being shown a song again).
+/// person is least likely to want (not being shown a song again). [short] makes it one of the big buttons at the top
+/// of a phone's sheet, under those words, for what is done most; a popup lists it as a line like the others.
 class MenuLine {
   const MenuLine(
     this.value,
@@ -20,6 +21,7 @@ class MenuLine {
     this.label, {
     this.enabled = true,
     this.apart = false,
+    this.short,
   });
 
   final String value;
@@ -27,6 +29,7 @@ class MenuLine {
   final String label;
   final bool enabled;
   final bool apart;
+  final String? short;
 }
 
 /// What a line of a popup menu says: its icon, then the words.
@@ -416,9 +419,15 @@ class ActionSheet extends StatelessWidget {
       enabled: line.enabled,
       onTap: () => onSelected(line.value),
     );
+    // Two or more things done most become a row of big buttons; one alone stays a line, as a row of one looks lost
+    final quick = [
+      for (final line in lines)
+        if (line.short != null) line,
+    ];
+    if (quick.length < 2) quick.clear();
     final main = [
       for (final line in lines)
-        if (!line.apart) line,
+        if (!line.apart && !quick.contains(line)) line,
     ];
     final apart = [
       for (final line in lines)
@@ -432,12 +441,81 @@ class ActionSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ?head,
+            if (quick.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 8),
+                // As tall as the tallest, when one label takes two lines
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final (i, line) in quick.indexed) ...[
+                        if (i > 0) const SizedBox(width: 8),
+                        Expanded(
+                          child: _QuickButton(
+                            key: ValueKey('menu-${line.value}'),
+                            line: line,
+                            onTap: () => onSelected(line.value),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
             for (final line in main) row(line),
             if (apart.isNotEmpty) ...[
               Divider(height: 17, color: p.outlineSoft),
               for (final line in apart) row(line),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A big button at the top of a sheet: the icon over a word or two, for what is done most.
+class _QuickButton extends StatelessWidget {
+  const _QuickButton({super.key, required this.line, required this.onTap});
+
+  final MenuLine line;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final color = line.enabled ? p.text : p.textTertiary;
+    return Semantics(
+      button: true,
+      label: line.label,
+      excludeSemantics: true,
+      child: Material(
+        color: p.veil,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: line.enabled ? onTap : null,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 72),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(line.icon, color: line.enabled ? p.primary : p.textTertiary),
+                  const SizedBox(height: 6),
+                  Text(
+                    line.short!,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(color: color),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

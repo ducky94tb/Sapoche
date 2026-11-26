@@ -38,7 +38,7 @@ void main() {
 
   for (final screen in shotScreens) {
     if (only != null && !only.contains(screen.id)) continue;
-    for (final combo in combos(sizes: screen.windows)) {
+    for (final combo in combos(sizes: screen.windows, big: screen.bigText)) {
       if (screen.only != null && !screen.only!(combo)) continue;
       testWidgets('${screen.id} ${combo.name}', (tester) async {
         final catcher = ErrorCatcher()..start();

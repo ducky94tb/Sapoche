@@ -76,6 +76,7 @@ class ShotScreen {
     this.style = PlayerStyle.classic,
     this.windows,
     this.sync,
+    this.bigText = false,
   });
 
   final String id;
@@ -97,11 +98,16 @@ class ShotScreen {
 
   /// Gives the engine of the library sync, for the screens that show it.
   final SyncController Function()? sync;
+
+  /// One of the main screens, drawn in the full set with text at 2.0 too: the size people with poor sight set
+  /// (`docs/ops/ui-standard.md`).
+  final bool bigText;
 }
 
 /// The combos to draw: `SHOTS_MATRIX=base` (the default: five sizes, light and dark, English), `full` (all of the plan:
-/// also Vietnamese and text at 1.3), `quick` (one phone and one wide window, light, English).
-List<ShotCombo> combos({List<ShotSize>? sizes}) {
+/// also Vietnamese and text at 1.3, and at 2.0 for a [big] screen), `quick` (one phone and one wide window, light,
+/// English).
+List<ShotCombo> combos({List<ShotSize>? sizes, bool big = false}) {
   final mode = Platform.environment['SHOTS_MATRIX'] ?? 'base';
   if (mode == 'quick') {
     return [for (final size in sizes ?? [shotSizes[1], shotSizes[3]]) ShotCombo(size)];
@@ -110,7 +116,7 @@ List<ShotCombo> combos({List<ShotSize>? sizes}) {
     for (final size in sizes ?? shotSizes)
       for (final dark in [false, true])
         for (final vi in mode == 'full' ? [false, true] : [false])
-          for (final text in mode == 'full' ? [1.0, 1.3] : [1.0])
+          for (final text in mode == 'full' ? [1.0, 1.3, if (big) 2.0] : [1.0])
             ShotCombo(size, dark: dark, vi: vi, text: text),
   ];
 }

@@ -573,7 +573,7 @@ void main() {
     expect(find.textContaining('Nothing here'), findsOneWidget);
   });
 
-  testWidgets('the suggestions page says how often songs of each source were skipped, once there are enough', (
+  testWidgets('the taste page says how often songs of each source were skipped, once there are enough', (
     tester,
   ) async {
     await openHome(
@@ -593,6 +593,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('settings-suggestions')));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('settings-taste')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Autoplay songs skipped: 25%'), 200, scrollable: find.byType(Scrollable).last);
     expect(find.text('Autoplay songs skipped: 25%'), findsOneWidget);
     expect(find.text('Songs you picked skipped: 10%'), findsOneWidget);
     expect(find.textContaining('Suggested songs skipped'), findsNothing);

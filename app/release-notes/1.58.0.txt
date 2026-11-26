@@ -1,0 +1,8 @@
+Easier for everyone
+- Settings is tidier: the first page shows how much space your songs take and whether sync is on, and the rarely used parts (Scrobble, Server, Log, Check connection) are together under Settings > Advanced.
+- Help under each group is one short sentence. Tap Learn more when you want the whole story.
+- Settings > Suggestions keeps only the switches. Your artists, mixes and listening stats are on their own page, Your taste.
+- The song menu starts with four big buttons: Play next, Add to queue, Like and Download.
+- Clearer words and error messages: each problem now says what to do next. Data use is shown in MB per hour instead of kbps.
+- Very large text no longer spills off Home, the player, rooms, search and Settings.
+- Inviting to a room with encrypted chat now reminds you to send the link, not the code, so your friend can read the chat.

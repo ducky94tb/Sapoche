@@ -151,6 +151,12 @@ Future<void> openSettingsList(WidgetTester tester) async {
 /// Opens the settings and one of the topics: appearance, playback, room, storage or backup.
 Future<void> openTopic(WidgetTester tester, String topic) async {
   await openSettingsList(tester);
+  // Some topics are a page further in
+  final under = const {'scrobble': 'advanced', 'server': 'advanced', 'taste': 'suggestions'}[topic];
+  if (under != null) {
+    await tester.tap(find.byKey(ValueKey('settings-$under')));
+    await tester.pumpAndSettle();
+  }
   await tester.tap(find.byKey(ValueKey('settings-$topic')));
   await tester.pumpAndSettle();
 }

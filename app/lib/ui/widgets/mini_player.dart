@@ -129,33 +129,37 @@ class MiniPlayerCapsule extends StatelessWidget {
                     ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        MarqueeText(
-                          current.title,
-                          style: theme.titleSmall,
-                          rounds: MarqueeText.barRounds,
-                        ),
-                        if (fading > 0)
-                          Align(
-                            alignment: Alignment.topLeft,
-                            heightFactor: 1 - folded,
-                            child: Opacity(
-                              opacity: fading,
-                              child: MarqueeText(
-                                controller.snapshot.solo
-                                    ? '${current.artist} · ${S.onYourOwn}'
-                                    : current.artist,
-                                style: theme.bodySmall?.copyWith(
-                                  color: p.textSecondary,
+                    // A bar of a fixed height: two lines of very large text would not fit, so the words stop at 1.3
+                    child: MediaQuery.withClampedTextScaling(
+                      maxScaleFactor: 1.3,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          MarqueeText(
+                            current.title,
+                            style: theme.titleSmall,
+                            rounds: MarqueeText.barRounds,
+                          ),
+                          if (fading > 0)
+                            Align(
+                              alignment: Alignment.topLeft,
+                              heightFactor: 1 - folded,
+                              child: Opacity(
+                                opacity: fading,
+                                child: MarqueeText(
+                                  controller.snapshot.solo
+                                      ? '${current.artist} · ${S.onYourOwn}'
+                                      : current.artist,
+                                  style: theme.bodySmall?.copyWith(
+                                    color: p.textSecondary,
+                                  ),
+                                  rounds: MarqueeText.barRounds,
                                 ),
-                                rounds: MarqueeText.barRounds,
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   ListenableBuilder(

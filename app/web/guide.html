@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cài Sapoche</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #1b1b1f;
+      --soft: #5b5b66;
+      --card: #f3f2f7;
+      --accent: #6750a4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121216;
+        --text: #ececf1;
+        --soft: #b0b0bb;
+        --card: #1f1f26;
+        --accent: #cfbcff;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 19px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 640px; margin: 0 auto; padding: 24px 16px 64px; }
+    h1 { font-size: 30px; margin: 8px 0 4px; }
+    h2 { font-size: 23px; margin: 36px 0 12px; }
+    p.lead { color: var(--soft); margin-top: 0; }
+    nav a, a { color: var(--accent); }
+    nav { display: flex; gap: 16px; flex-wrap: wrap; margin: 16px 0 8px; }
+    nav a { font-weight: 600; text-decoration: none; padding: 10px 0; }
+    ol { padding-left: 1.4em; }
+    li { margin: 10px 0; }
+    .card { background: var(--card); border-radius: 16px; padding: 14px 18px; margin: 16px 0; }
+    .card strong { display: block; margin-bottom: 4px; }
+    hr { border: none; border-top: 1px solid var(--card); margin: 48px 0 24px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Cài Sapoche</h1>
+  <p class="lead">Nghe nhạc cùng nhau, cùng một lúc. Làm theo từng bước dưới đây; mỗi bước chỉ một việc.</p>
+  <nav>
+    <a href="#android">Điện thoại Android</a>
+    <a href="#iphone">iPhone</a>
+    <a href="#room">Vào nghe cùng</a>
+    <a href="#en">English</a>
+  </nav>
+
+  <h2 id="android">Điện thoại Android</h2>
+  <ol>
+    <li>Mở tệp <b>Sapoche</b> (đuôi .apk) mà người trong nhóm gửi cho bạn.</li>
+    <li>Nếu điện thoại hỏi có cho phép cài ứng dụng từ nguồn này không: bấm <b>Cài đặt</b> (hoặc <b>Cho phép</b>), bật công tắc, rồi bấm nút quay lại.</li>
+    <li>Bấm <b>Cài đặt</b>.</li>
+    <li>Nếu hiện bảng của <b>Google Play Protect</b>: chọn quét ứng dụng, đợi quét xong, rồi bấm cài tiếp. Việc này an toàn và sẽ còn hỏi lại mỗi lần cập nhật.</li>
+    <li>Bấm <b>Mở</b>. Xong.</li>
+  </ol>
+  <div class="card">
+    <strong>Khi có bản mới</strong>
+    Sapoche tự báo. Bấm <b>Cập nhật ngay</b>, rồi <b>Cài</b>. Nhạc dừng một chút rồi app tự mở lại. Nếu Play Protect hỏi, làm như bước 4.
+  </div>
+
+  <h2 id="iphone">iPhone</h2>
+  <p>iPhone không cài được app ngoài App Store một cách dễ dàng. <b>Lần đầu, hãy nhờ người rành trong nhóm cài giúp.</b> Người cài làm như sau:</p>
+  <ol>
+    <li>Cài <a href="https://sidestore.io">SideStore</a> lên iPhone theo hướng dẫn của SideStore.</li>
+    <li>Tải tệp <b>sapoche-…ipa</b> mới nhất ở <a href="https://github.com/tranviethungpv/Sapoche/releases/latest">trang phát hành</a>, rồi mở nó bằng SideStore.</li>
+    <li>Trên một điện thoại Android đã dùng được Sapoche: mở <b>Cài đặt › Kết nối máy khác</b>. Trên iPhone, mở <b>Camera</b> và đưa vào mã vừa hiện. Chạm vào liên kết, chọn <b>Dùng</b>.</li>
+  </ol>
+  <div class="card">
+    <strong>Nếu Sapoche không mở được nữa</strong>
+    Mở SideStore và làm mới Sapoche. Tài khoản Apple miễn phí cần làm mới mỗi tuần.
+  </div>
+
+  <h2 id="room">Vào nghe cùng</h2>
+  <ol>
+    <li>Nhờ người trong phòng bấm <b>Mời bạn bè</b> và gửi liên kết cho bạn (qua Zalo, Messenger…).</li>
+    <li>Mở liên kết đó. Sapoche mở ra.</li>
+    <li>Lần đầu, nhập tên của bạn rồi bấm vào phòng. Xong: bạn nghe cùng bài, cùng lúc với mọi người.</li>
+  </ol>
+  <div class="card">
+    <strong>Nên mở liên kết, đừng gõ mã</strong>
+    Gõ mã 6 chữ cũng vào được phòng, nhưng nếu phòng có chat mã hoá thì bạn sẽ không đọc được tin nhắn. Liên kết mời thì có đủ.
+  </div>
+  <div class="card">
+    <strong>Có gì trục trặc?</strong>
+    Mở <b>Cài đặt › Nâng cao › Nhật ký</b>, bấm chia sẻ và gửi cho người đã cài Sapoche cho bạn.
+  </div>
+
+  <hr>
+
+  <h1 id="en" lang="en">Install Sapoche</h1>
+  <div lang="en">
+    <p class="lead">Listen to music together, at the same moment. One thing per step.</p>
+
+    <h2>Android phone</h2>
+    <ol>
+      <li>Open the <b>Sapoche</b> file (ending in .apk) someone in your group sent you.</li>
+      <li>If the phone asks whether to allow installing from this source: tap <b>Settings</b> (or <b>Allow</b>), turn the switch on, then go back.</li>
+      <li>Tap <b>Install</b>.</li>
+      <li>If <b>Google Play Protect</b> shows a box: choose to scan the app, wait for it, then go on installing. This is safe, and it asks again with each update.</li>
+      <li>Tap <b>Open</b>. Done.</li>
+    </ol>
+    <div class="card">
+      <strong>When there is a new version</strong>
+      Sapoche tells you. Tap <b>Update now</b>, then <b>Install</b>. The music stops for a moment and the app opens again. If Play Protect asks, do as in step 4.
+    </div>
+
+    <h2>iPhone</h2>
+    <p>An iPhone does not easily install apps from outside the App Store. <b>The first time, ask someone in your group who knows how.</b> They:</p>
+    <ol>
+      <li>Install <a href="https://sidestore.io">SideStore</a> on the iPhone, following SideStore's guide.</li>
+      <li>Download the newest <b>sapoche-…ipa</b> from the <a href="https://github.com/tranviethungpv/Sapoche/releases/latest">releases page</a> and open it with SideStore.</li>
+      <li>On an Android phone where Sapoche works, open <b>Settings › Connect another phone</b>. On the iPhone, open the <b>Camera</b> and point it at the code. Tap the link and choose <b>Use</b>.</li>
+    </ol>
+    <div class="card">
+      <strong>If Sapoche stops opening</strong>
+      Open SideStore and refresh Sapoche. A free Apple account needs a refresh every week.
+    </div>
+
+    <h2>Listen together</h2>
+    <ol>
+      <li>Ask someone in the room to tap <b>Invite friends</b> and send you the link.</li>
+      <li>Open the link. Sapoche opens.</li>
+      <li>The first time, type your name and join. Done: you hear the same song at the same moment as everyone.</li>
+    </ol>
+    <div class="card">
+      <strong>Open the link rather than typing the code</strong>
+      The 6-letter code gets you into the room too, but if the room's chat is encrypted you will not be able to read it. The invitation link has everything.
+    </div>
+    <div class="card">
+      <strong>Something wrong?</strong>
+      Open <b>Settings › Advanced › Log</b>, tap share and send it to whoever set Sapoche up for you.
+    </div>
+  </div>
+</main>
+</body>
+</html>

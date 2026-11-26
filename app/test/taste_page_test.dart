@@ -22,6 +22,13 @@ Future<void> openSuggestions(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// Opens the page of the taste, under the suggestions.
+Future<void> openTaste(WidgetTester tester) async {
+  await openSuggestions(tester);
+  await tester.tap(find.byKey(const ValueKey('settings-taste')));
+  await tester.pumpAndSettle();
+}
+
 /// Scrolls the settings page until [finder] shows.
 Future<void> reveal(WidgetTester tester, Finder finder) async {
   await tester.scrollUntilVisible(finder, 200, scrollable: find.byType(Scrollable).first);
@@ -32,7 +39,7 @@ void main() {
   group('the taste on the suggestions page', () {
     testWidgets('says once, above the artists, what the two buttons at the end of a row are', (tester) async {
       await openHome(tester, prepare: (b) => b.tasteProfileResult = _profile);
-      await openSuggestions(tester);
+      await openTaste(tester);
       final legend = find.byKey(const ValueKey('taste-legend'));
       expect(legend, findsOneWidget);
       expect(find.descendant(of: legend, matching: find.text('Suggest less')), findsOneWidget);
@@ -41,7 +48,7 @@ void main() {
 
     testWidgets('shows the artists with bars, and Suggest less toggles the mark', (tester) async {
       final b = await openHome(tester, prepare: (b) => b.tasteProfileResult = _profile);
-      await openSuggestions(tester);
+      await openTaste(tester);
       expect(find.byKey(const ValueKey('taste-artist-adele')), findsOneWidget);
       expect(find.byKey(const ValueKey('taste-artist-beck')), findsOneWidget);
       // An artist with nothing in their favour is not listed
@@ -65,7 +72,7 @@ void main() {
           marks: const [TasteMark(kind: TasteMarks.quietArtist, key: 'adele', label: 'Adele')],
         ),
       );
-      await openSuggestions(tester);
+      await openTaste(tester);
       expect(find.text('Fewer suggestions'), findsWidgets);
       await tester.tap(
         find.descendant(of: find.byKey(const ValueKey('taste-artist-adele')), matching: find.byTooltip('Suggest less')),
@@ -76,7 +83,7 @@ void main() {
 
     testWidgets('Block blocks the artist', (tester) async {
       final b = await openHome(tester, prepare: (b) => b.tasteProfileResult = _profile);
-      await openSuggestions(tester);
+      await openTaste(tester);
       await tester.tap(
         find.descendant(of: find.byKey(const ValueKey('taste-artist-beck')), matching: find.byTooltip('Block')),
       );
@@ -86,7 +93,7 @@ void main() {
 
     testWidgets('says so when there is nothing to show yet', (tester) async {
       await openHome(tester, prepare: (b) => b.tasteProfileResult = const TasteProfile());
-      await openSuggestions(tester);
+      await openTaste(tester);
       expect(find.text('Listen to a few songs and your taste shows up here'), findsOneWidget);
     });
 
