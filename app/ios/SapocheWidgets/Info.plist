@@ -4,7 +4,7 @@
 <dict>
 	<key>ALTAppGroups</key>
 	<array>
-		<string>group.app.sapoche.sapoche</string>
+		<string>$(SAPOCHE_APP_GROUP)</string>
 	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>

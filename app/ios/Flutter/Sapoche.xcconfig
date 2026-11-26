@@ -1,0 +1,8 @@
+// The iOS identity of the app: its bundle id (the widgets add `.widgets`) and the App Group the app shares with its widgets.
+// These defaults are what the SideStore build of CI ships with. A build signed with your own Apple Developer team (for
+// TestFlight) sets its own, and DEVELOPMENT_TEAM, in Signing.local.xcconfig next to this file, which is not committed
+// (see app/README.md, "TestFlight").
+SAPOCHE_BUNDLE_ID = app.sapoche.sapoche
+SAPOCHE_APP_GROUP = group.app.sapoche.sapoche
+
+#include? "Signing.local.xcconfig"

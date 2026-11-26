@@ -94,8 +94,13 @@ jobs:
           if [ -d "$app/Frameworks" ]; then
             find "$app/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -exec codesign --force --sign - {} \;
           fi
-          codesign --force --sign - --entitlements ios/SapocheWidgets/SapocheWidgets.entitlements "$app/PlugIns/SapocheWidgets.appex"
-          codesign --force --sign - --entitlements ios/Runner/Runner.entitlements "$app"
+          # The entitlements name the group as a build setting (ios/Flutter/Sapoche.xcconfig): put its value in first
+          group=$(sed -n 's/^SAPOCHE_APP_GROUP *= *//p' ios/Flutter/Sapoche.xcconfig)
+          for e in SapocheWidgets/SapocheWidgets Runner/Runner; do
+            sed "s/\$(SAPOCHE_APP_GROUP)/$group/" "ios/$e.entitlements" > "build/$(basename $e).entitlements"
+          done
+          codesign --force --sign - --entitlements build/SapocheWidgets.entitlements "$app/PlugIns/SapocheWidgets.appex"
+          codesign --force --sign - --entitlements build/Runner.entitlements "$app"
           for target in "$app" "$app/PlugIns/SapocheWidgets.appex"; do
             found=$(codesign -d --entitlements :- "$target" 2>&1)
             echo "$found"

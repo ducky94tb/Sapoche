@@ -54,6 +54,29 @@ packages/sapoche_native/ios/sapoche_native/Sources/sapoche_native/
 
 YouTube songs arrive as fragmented MP4 (DASH); `Core/Mp4.swift` rewrites them as plain MP4 right after the download (no re-encoding), because AVPlayer is unreliable with fragmented files on disk.
 
+### TestFlight
+
+A build signed with a paid Apple Developer team can go to TestFlight instead of SideStore. The bundle id and the App Group are build settings (`ios/Flutter/Sapoche.xcconfig`); their defaults are the SideStore ones, and your own go in `ios/Flutter/Signing.local.xcconfig`, which is not committed:
+
+```
+DEVELOPMENT_TEAM = <team id>
+SAPOCHE_BUNDLE_ID = com.example.sapoche
+SAPOCHE_APP_GROUP = group.com.example.sapoche
+```
+
+Then, with your Apple ID signed in to Xcode (Settings > Accounts):
+
+```bash
+flutter build ios --config-only --release
+cd ios
+xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release -destination 'generic/platform=iOS' \
+  -archivePath ../build/ios/archive/Runner.xcarchive -allowProvisioningUpdates archive
+xcodebuild -exportArchive -archivePath ../build/ios/archive/Runner.xcarchive -exportOptionsPlist ExportOptions-testflight.plist \
+  -exportPath ../build/ios/testflight -allowProvisioningUpdates
+```
+
+The archive registers the ids and the group with the team. The app must exist in App Store Connect (My Apps > New App, with that bundle id) before the export, which uploads the build. Every upload needs a build number (the part after `+` in `pubspec.yaml`) higher than the last one. Internal testers get a build without Apple's review once the export-compliance question is answered in App Store Connect.
+
 ## Inviting friends
 
 The "Room" sheet inside a room has a 6-character code, a QR code and a link `https://<server>/join/CODE`; the share button sends the code with that link (it is tappable in chat apps). For an installed app, Android verifies the server address through `/.well-known/assetlinks.json` (the signing key fingerprint is in `server/src/join-page.ts`; edit it there when the signing key changes) and opens the app directly; until it is verified, the server page tries to open the app and then shows the code to type. The older `sapoche://join/CODE` links still work. Opening a link while outside a room opens the Room sheet with the code filled in; while in another room it asks whether to switch.
