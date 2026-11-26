@@ -1,0 +1,4 @@
+Small fixes
+- With the phone on its side, tapping Settings again, or several times in a row, no longer opens it over itself.
+- The Full cover player stays dark, but what opens from it (sleep timer, song menu, people in the room) now follows the light or dark look of the app.
+- Learn more in Settings now has Less under it, to fold the help away again.

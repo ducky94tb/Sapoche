@@ -2317,7 +2317,7 @@ class _Group extends StatelessWidget {
   }
 }
 
-/// "Learn more" under a group, which turns into the longer explanation in place.
+/// "Learn more" under a group, which turns into the longer explanation in place, with "Less" under it to fold it again.
 class _More extends StatefulWidget {
   const _More({required this.text});
 
@@ -2331,18 +2331,29 @@ class _MoreState extends State<_More> {
   bool _open = false;
 
   @override
-  Widget build(BuildContext context) => _open
-      ? Padding(
+  Widget build(BuildContext context) {
+    final toggle = Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton(
+        onPressed: () => setState(() => _open = !_open),
+        child: Text(_open ? S.showLess : S.learnMore),
+      ),
+    );
+    if (!_open) return toggle;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
           padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
-          child: Text(widget.text, style: Theme.of(context).textTheme.bodySmall),
-        )
-      : Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton(
-            onPressed: () => setState(() => _open = true),
-            child: Text(S.learnMore),
+          child: Text(
+            widget.text,
+            style: Theme.of(context).textTheme.bodySmall,
           ),
-        );
+        ),
+        toggle,
+      ],
+    );
+  }
 }
 
 class _Row extends StatelessWidget {

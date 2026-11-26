@@ -7,6 +7,7 @@ import 'package:sapoche/data/backend.dart';
 import 'package:sapoche/data/models.dart';
 import 'package:sapoche/data/music_models.dart';
 import 'package:sapoche/strings.dart';
+import 'package:sapoche/theme/theme.dart';
 import 'package:sapoche/ui/now_playing_page.dart';
 import 'package:sapoche/ui/player/apple_music_player.dart';
 import 'package:sapoche/ui/player/classic_player.dart';
@@ -1055,6 +1056,33 @@ void main() {
       expect(region.value.systemNavigationBarIconBrightness, Brightness.light);
       expect(region.value.statusBarBrightness, Brightness.dark);
     });
+
+    testWidgets(
+      'a sheet opened from it, as the sleep timer, is in the light theme of the app',
+      (tester) async {
+        await openStyled(tester, PlayerStyle.appleMusic);
+        final app = tester.element(find.byType(NowPlayingPage));
+        await tester.tap(find.byTooltip(S.sleepTimer));
+        await tester.pumpAndSettle();
+        final sheet = tester.element(find.text(S.sleepSongEnd));
+        expect(Theme.of(sheet).brightness, Brightness.light);
+        // The greys of a plain page, not the see-through ones made for a cover
+        expect(sheet.palette.textSecondary, app.palette.textSecondary);
+      },
+    );
+
+    testWidgets(
+      'a sheet opened from it in the dark theme has the greys of a plain page',
+      (tester) async {
+        await openStyled(tester, PlayerStyle.appleMusic, mode: ThemeMode.dark);
+        final app = tester.element(find.byType(NowPlayingPage));
+        await tester.tap(find.byTooltip(S.sleepTimer));
+        await tester.pumpAndSettle();
+        final sheet = tester.element(find.text(S.sleepSongEnd));
+        expect(Theme.of(sheet).brightness, Brightness.dark);
+        expect(sheet.palette.textSecondary, app.palette.textSecondary);
+      },
+    );
 
     testWidgets('classic and cards still follow the light theme of the app', (
       tester,

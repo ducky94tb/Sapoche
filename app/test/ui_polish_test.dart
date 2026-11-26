@@ -641,4 +641,21 @@ void main() {
       }
     });
   });
+
+  testWidgets('"Learn more" in the settings opens in place and folds again', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await openTopic(tester, 'playback');
+    expect(find.text(S.audioQualityMore), findsNothing);
+    await tester.ensureVisible(find.text(S.learnMore).first);
+    await tester.tap(find.text(S.learnMore).first);
+    await tester.pumpAndSettle();
+    expect(find.text(S.audioQualityMore), findsOneWidget);
+    await tester.ensureVisible(find.text(S.showLess));
+    await tester.tap(find.text(S.showLess));
+    await tester.pumpAndSettle();
+    expect(find.text(S.audioQualityMore), findsNothing);
+    expect(find.text(S.showLess), findsNothing);
+  });
 }

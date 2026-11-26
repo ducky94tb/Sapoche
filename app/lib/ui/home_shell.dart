@@ -356,6 +356,7 @@ class _HomeShellState extends State<HomeShell>
     HardwareKeyboard.instance.addHandler(_onKey);
     VideoFullScreen.open.addListener(_fullScreenChanged);
     TabNavigation._active = () => _current;
+    TabNavigation._top = () => _watchers[_tab].top;
     TabNavigation._closePlayer = () {
       if (_sheet.isOpen && !_sheet.docked.value) _sheet.close();
     };
@@ -506,6 +507,7 @@ class _HomeShellState extends State<HomeShell>
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     }
     TabNavigation._active = null;
+    TabNavigation._top = null;
     TabNavigation._closePlayer = null;
     TabNavigation._search = null;
     _stack.dispose();
@@ -1962,14 +1964,19 @@ abstract final class Where {
 /// where such a page belongs.
 abstract final class TabNavigation {
   static NavigatorState? Function()? _active;
+  static String? Function()? _top;
   static VoidCallback? _closePlayer;
   static VoidCallback? _search;
 
   /// Opens Search with the cursor in its field, from a page that has nothing to show but a way to find songs.
   static void search() => _search?.call();
 
+  /// A named page ([Where]) that is already on top of the tab is not opened again: a second touch of Settings, or
+  /// several in a row, leaves the one that is open.
   static Future<T?> push<T>(BuildContext context, Route<T> route) {
     _closePlayer?.call();
+    final name = route.settings.name;
+    if (name != null && name == _top?.call()) return Future.value();
     return (_active?.call() ?? Navigator.of(context)).push(route);
   }
 }

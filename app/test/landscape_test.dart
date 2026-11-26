@@ -11,6 +11,7 @@ import 'package:sapoche/ui/player/lyrics_view.dart';
 import 'package:sapoche/ui/player/up_next_view.dart';
 import 'package:sapoche/ui/player/video_controls.dart' show VideoFullScreen;
 import 'package:sapoche/ui/player_sheet.dart';
+import 'package:sapoche/ui/settings_page.dart' show SettingsScreen;
 import 'package:sapoche/ui/widgets/artwork.dart';
 import 'package:sapoche/ui/widgets/like_button.dart';
 import 'package:sapoche/ui/widgets/marquee_text.dart';
@@ -329,6 +330,27 @@ void main() {
         expect(mini.left, greaterThan(rail.first.right));
         expect(mini.width, lessThanOrEqualTo(400));
         expect(mini.bottom, lessThan(360));
+      },
+    );
+
+    testWidgets(
+      'Settings at the foot of the rail opens once, however often it is touched',
+      (tester) async {
+        await pumpApp(tester);
+        await resize(tester, 660, 360);
+        await tester.pump(const Duration(milliseconds: 700));
+        await tester.tap(find.byTooltip(S.settingsTitle));
+        await tester.tap(find.byTooltip(S.settingsTitle), warnIfMissed: false);
+        await tester.pumpAndSettle();
+        expect(find.byType(SettingsScreen), findsOneWidget);
+        // Once open, a touch more leaves it as it is
+        await tester.tap(find.byTooltip(S.settingsTitle));
+        await tester.pumpAndSettle();
+        expect(find.byType(SettingsScreen), findsOneWidget);
+        // Back is then the page under it, not a second Settings
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        expect(find.byType(SettingsScreen), findsNothing);
       },
     );
 

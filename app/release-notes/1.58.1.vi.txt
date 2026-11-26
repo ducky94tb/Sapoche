@@ -1,0 +1,4 @@
+Sửa vài lỗi nhỏ
+- Khi xoay ngang, bấm Cài đặt thêm lần nữa hoặc bấm liên tục không còn mở chồng nhiều trang Cài đặt.
+- Trình phát kiểu Tràn bìa vẫn luôn tối, nhưng những gì mở từ nó (hẹn giờ tắt, menu bài, người trong phòng) nay theo giao diện sáng hay tối của app.
+- "Tìm hiểu thêm" ở Cài đặt nay có nút "Thu gọn" bên dưới để gập lời giải thích lại.

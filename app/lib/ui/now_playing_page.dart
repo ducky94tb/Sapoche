@@ -61,15 +61,17 @@ class NowPlayingPage extends StatelessWidget {
       ]),
       builder: (context, _) {
         final style = settings.playerStyle;
+        final appTheme = Theme.of(context);
         // Full cover always uses white text and controls on the deep colours of the cover, as Apple Music does: dark
         // covers stay deep and the title over the cover's foot always reads clearly even in the light theme
         final forceDark = style == PlayerStyle.appleMusic;
-        final appDark = Theme.of(context).brightness == Brightness.dark;
+        final appDark = appTheme.brightness == Brightness.dark;
         final dark = appDark || forceDark;
         // Icons in the status bar and the navigation bar: light on a dark player, dark on a light one
         final icons = dark ? Brightness.light : Brightness.dark;
         Widget page = _PlayerPage(
           style: style,
+          appTheme: appTheme,
           docked: docked,
           bottomInset: docked ? bottomInset : 0,
         );
@@ -97,11 +99,13 @@ class NowPlayingPage extends StatelessWidget {
 class _PlayerPage extends StatelessWidget {
   const _PlayerPage({
     required this.style,
+    required this.appTheme,
     required this.docked,
     this.bottomInset = 0,
   });
 
   final PlayerStyle style;
+  final ThemeData appTheme;
   final bool docked;
   final double bottomInset;
 
@@ -127,6 +131,7 @@ class _PlayerPage extends StatelessWidget {
           controller: controller,
           current: current,
           style: style,
+          appTheme: appTheme,
           docked: docked,
         );
       },
@@ -167,12 +172,16 @@ class _Body extends StatefulWidget {
     required this.controller,
     required this.current,
     required this.style,
+    required this.appTheme,
     required this.docked,
   });
 
   final RoomController controller;
   final QueueEntry current;
   final PlayerStyle style;
+
+  /// The theme of the app outside the player, for the sheets and dialogs opened from it ([_PopupTheme]).
+  final ThemeData appTheme;
   final bool docked;
 
   @override
@@ -267,9 +276,12 @@ class _BodyState extends State<_Body> {
             // greys of a plain page
             Theme(
               data: _onCoverTheme(context),
-              child: ReactionShower(
-                controller: _c,
-                child: SafeArea(top: !bleed, child: player(panel)),
+              child: _PopupTheme(
+                theme: widget.appTheme,
+                child: ReactionShower(
+                  controller: _c,
+                  child: SafeArea(top: !bleed, child: player(panel)),
+                ),
               ),
             ),
           ],
@@ -277,4 +289,21 @@ class _BodyState extends State<_Body> {
       ),
     );
   }
+}
+
+/// Gives the sheets and dialogs opened from the player (sleep timer, song menu, members...) the theme of the app, light
+/// or dark as it is set: a popup takes the themes around the button that opened it (`InheritedTheme.capture`), and the
+/// dark theme of the full cover and the colours made for a cover are the player's, not theirs. Themes the player sets
+/// further in, as the video's controls do, still come after this one.
+class _PopupTheme extends InheritedTheme {
+  const _PopupTheme({required this.theme, required super.child});
+
+  final ThemeData theme;
+
+  @override
+  Widget wrap(BuildContext context, Widget child) =>
+      Theme(data: theme, child: child);
+
+  @override
+  bool updateShouldNotify(_PopupTheme oldWidget) => theme != oldWidget.theme;
 }
